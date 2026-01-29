@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+authors:
+- family-names: "NeuroJAX Contributors"
+title: "NeuroJAX: JAX-accelerated Electrophysiology Analysis CLI"
+version: 0.1.0
+date-released: 2026-01-28
+url: "https://github.com/AthenaEPI/neurojax"
+license: MIT

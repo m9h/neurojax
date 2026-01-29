@@ -1,0 +1,75 @@
+[build-system]
+requires = ["uv_build >= 0.5.0"]
+build-backend = "uv_build"
+
+[project]
+name = "neurojax"
+version = "0.1.0"
+description = "JAX-accelerated Electrophysiology Analysis CLI"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mne >= 1.6.0",
+    "scipy >= 1.10.0",
+    "click >= 8.1.0",
+    "jax[cuda12_pip] >= 0.4.20",
+    "jaxlib >= 0.4.20",
+    "equinox >= 0.11.0",
+    "diffrax >= 0.5.0",
+    "lineax >= 0.0.1",
+    "optimistix >= 0.0.1",
+    "optax >= 0.1.9",
+    "distrax >= 0.1.0",
+    "jaxtyping >= 0.2.20",
+    "scico>=0.0.1",
+    "signax >= 0.1.0",
+    "pyxdf >= 1.17.0",
+    "numpy >= 1.26.0",
+    "requests >= 2.25.0",
+    "tqdm",
+    "tensorstore",
+    "chex",
+    "vbjax >= 0.0.1",
+    "dandi >= 0.50.0",
+    "pynwb >= 2.0.0",
+    "fsspec >= 2023.0.0",
+    "s3fs >= 2023.0.0",
+    "jraph >= 0.0.6.dev0",
+    "jinns>=1.5.1",
+]
+
+[project.scripts]
+neurojax = "neurojax.cli:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest >= 7.0.0",
+    "sybil",
+    "pytest-cov",
+    "ruff >= 0.1.0",
+    "matplotlib",
+    "tqdm",
+    "openneuro-py",
+    "pandas",
+    "scikit-learn",
+]
+doc = [
+    "sphinx",
+    "furo",
+    "myst-parser",
+    "sphinx-copybutton",
+    "sphinxcontrib-bibtex",
+]
+
+[tool.pytest.ini_options]
+addopts = "--cov=neurojax --cov-report=term-missing"
+testpaths = [
+    "tests",
+    "docs",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]

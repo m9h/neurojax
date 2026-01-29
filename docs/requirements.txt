@@ -1,0 +1,6 @@
+sphinx
+furo
+myst-parser
+sphinx-autobuild
+sphinx-copybutton
+sphinxcontrib-bibtex
