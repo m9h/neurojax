@@ -1,9 +1,9 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**NeuroJAX** (OSL-JAX) is a differentiable, GPU-accelerated reimplementation of the OSL (Oxford Centre for Human Brain Activity) analysis stack.
+**NeuroJAX** is a differentiable, GPU-accelerated cli tool for EMEG processing and non linear dynamical systems analysis
 
 ## Vision
-To unify **Preprocessing** (osl-ephys) and **Modelling** (osl-dynamics) into a single computational graph, enabling end-to-end gradient descent from sensor error to biophysical parameters.
+To unify **Preprocessing** and **Modelling** into a single computational graph, enabling end-to-end gradient descent from sensor error to biophysical parameters.
 
 ## The Stack
 * **Core:** `JAX`, `Equinox`
