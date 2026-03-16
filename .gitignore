@@ -32,7 +32,8 @@ env.bak/
 venv.bak/
 
 # NeuroJAX Specific
-data/
+/data/
+!/src/neurojax/data/
 downloads/
 results*/
 *.nii.gz
