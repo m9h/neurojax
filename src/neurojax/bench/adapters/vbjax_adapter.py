@@ -24,6 +24,8 @@ from neurojax.bench.monitors.bold import BalloonWindkessel
 from neurojax.bench.monitors.fc import fc, matrix_correlation
 from neurojax.bench.monitors.fcd import fcd_ks_distance
 from neurojax.bench.monitors.leadfield import ForwardProjection
+from neurojax.bench.monitors.tep import extract_tep, extract_tep_sensor, tep_combined_loss
+from neurojax.bench.stimuli.tms import TMSProtocol, make_stimulus_train
 
 
 # JR parameters we expose for optimization (subset of JRTheta fields)
@@ -48,6 +50,7 @@ class LossWeights:
     fc: float = 1.0
     fcd: float = 0.0
     sensor: float = 0.0
+    tep: float = 0.0
 
 
 @dataclass
@@ -98,6 +101,12 @@ class VbjaxFitnessAdapter:
         Apply average reference in leadfield projection (EEG=True, MEG=False).
     loss_weights : LossWeights, optional
         Weights for multi-modal loss terms.
+    tms_protocols : TMSProtocol or list of TMSProtocol, optional
+        TMS stimulus specification(s). When provided, stimulus current is
+        injected into the JR model's ``mu`` parameter at each timestep.
+    empirical_tep : jnp.ndarray, optional
+        Empirical TMS-evoked potential (n_sensors_or_regions, n_tep_samples)
+        for TEP loss. Requires tms_protocols and loss_weights.tep > 0.
     """
 
     def __init__(
@@ -112,6 +121,8 @@ class VbjaxFitnessAdapter:
         leadfield: Optional[jnp.ndarray] = None,
         leadfield_avg_ref: bool = False,
         loss_weights: Optional[LossWeights] = None,
+        tms_protocols: Optional[list[TMSProtocol] | TMSProtocol] = None,
+        empirical_tep: Optional[jnp.ndarray] = None,
     ):
         self.weights = jnp.asarray(weights)
         self.n_regions = weights.shape[0]
@@ -151,6 +162,22 @@ class VbjaxFitnessAdapter:
                 bold_dt=bold_dt_sec,
             )
 
+        # TMS stimulus
+        self._stimulus = None
+        self.empirical_tep = (
+            jnp.asarray(empirical_tep) if empirical_tep is not None else None
+        )
+        if tms_protocols is not None:
+            n_steps = int(self.config.duration / self.config.dt)
+            self._stimulus = make_stimulus_train(
+                tms_protocols, self.n_regions, self.config.dt, self.config.duration
+            )
+            # Store onset for TEP extraction
+            if isinstance(tms_protocols, TMSProtocol):
+                self._tms_onset = tms_protocols.t_onset
+            else:
+                self._tms_onset = tms_protocols[0].t_onset
+
         # Precompute coupling function
         self._cfun = vbjax.make_linear_cfun(self.weights)
 
@@ -167,6 +194,38 @@ class VbjaxFitnessAdapter:
         self._grad_step, self._grad_loop = vbjax.make_sde(
             self.config.dt, _grad_drift, _grad_diffusion
         )
+
+        # Build stimulus-aware integrator (custom scan loop)
+        if self._stimulus is not None:
+            def _stim_drift(y, p, stim):
+                """Drift with external stimulus added to JR mu parameter."""
+                theta, k_gl = p
+                psp = y[1] - y[2]
+                c = self._cfun(psp) * k_gl
+                # Inject stimulus into the coupling term (adds to excitatory input)
+                c_with_stim = c + stim
+                return vbjax.jr_dfun(y, c_with_stim, theta)
+
+            sqrt_dt = jnp.sqrt(self.config.dt)
+
+            def _stim_step(y, z_t, stim_t, p):
+                """Single Heun step with stimulus injection."""
+                noise = sqrt_dt * z_t * self.config.noise_sigma
+                d1 = _stim_drift(y, p, stim_t)
+                y_tilde = y + self.config.dt * d1 + noise
+                d2 = _stim_drift(y_tilde, p, stim_t)
+                return y + 0.5 * self.config.dt * (d1 + d2) + noise
+
+            @jax.jit
+            def _stim_loop(y0, zs, stimulus, p):
+                def op(y, inputs):
+                    z_t, stim_t = inputs
+                    y_next = _stim_step(y, z_t, stim_t, p)
+                    return y_next, y_next
+                _, states = jax.lax.scan(op, y0, (zs, stimulus))
+                return states
+
+            self._stim_loop = _stim_loop
 
     # ------------------------------------------------------------------
     # Parameter space
@@ -282,6 +341,9 @@ class VbjaxFitnessAdapter:
 
         Parameters are passed as (theta, k_gl) pytree through the `p`
         argument of the scan loop — no closure over traced values.
+
+        When TMS stimulus is configured, uses the stimulus-aware loop
+        that injects external current at each timestep.
         """
         theta = self._make_theta(
             {k: v for k, v in params.items() if k in vbjax.jr_default_theta._asdict()}
@@ -293,18 +355,54 @@ class VbjaxFitnessAdapter:
         warmup_steps = int(self.config.warmup / self.config.dt)
 
         y0 = jnp.zeros((6, self.n_regions))
-        noise = (
-            jax.random.normal(key, (n_steps, 6, self.n_regions))
-            * self.config.noise_sigma
-        )
+        noise = jax.random.normal(key, (n_steps, 6, self.n_regions))
 
-        states = self._grad_loop(y0, noise, combined_params)
+        if self._stimulus is not None:
+            states = self._stim_loop(y0, noise, self._stimulus, combined_params)
+        else:
+            # Scale noise for the non-stimulus path (vbjax loop expects pre-scaled)
+            states = self._grad_loop(y0, noise * self.config.noise_sigma, combined_params)
 
         neural_activity = states[:, 1, :] - states[:, 2, :]
         neural_activity = neural_activity[warmup_steps:]
 
         bold = self._neural_to_bold(neural_activity)
         return bold
+
+    def _simulate_jax_neural(
+        self, params: dict[str, jnp.ndarray], key: jax.Array
+    ) -> jnp.ndarray:
+        """Like _simulate_jax but returns neural activity instead of BOLD.
+
+        Used for TEP extraction where we need the raw neural timeseries
+        at simulation resolution, not BOLD-subsampled.
+
+        Returns
+        -------
+        jnp.ndarray
+            Neural activity of shape (n_regions, n_timepoints) at
+            simulation dt resolution (post-warmup).
+        """
+        theta = self._make_theta(
+            {k: v for k, v in params.items() if k in vbjax.jr_default_theta._asdict()}
+        )
+        k_gl = params.get("K_gl", jnp.array(0.01))
+        combined_params = (theta, k_gl)
+
+        n_steps = int(self.config.duration / self.config.dt)
+        warmup_steps = int(self.config.warmup / self.config.dt)
+
+        y0 = jnp.zeros((6, self.n_regions))
+        noise = jax.random.normal(key, (n_steps, 6, self.n_regions))
+
+        if self._stimulus is not None:
+            states = self._stim_loop(y0, noise, self._stimulus, combined_params)
+        else:
+            states = self._grad_loop(y0, noise * self.config.noise_sigma, combined_params)
+
+        neural_activity = states[:, 1, :] - states[:, 2, :]
+        neural_activity = neural_activity[warmup_steps:]
+        return neural_activity.T  # (n_regions, n_timepoints)
 
     # ------------------------------------------------------------------
     # Neural → BOLD conversion (shared by both paths)
@@ -491,6 +589,31 @@ class VbjaxFitnessAdapter:
         ):
             sensor_loss = self._forward.sensor_loss(bold, self.empirical_sensor)
             total_loss = total_loss + self.loss_weights.sensor * sensor_loss
+
+        # TEP loss: waveform + GFP matching for TMS-evoked potentials
+        if (
+            self.loss_weights.tep > 0
+            and self._stimulus is not None
+            and self.empirical_tep is not None
+        ):
+            neural = self._simulate_jax_neural(params, key)
+            # Project to sensor space if leadfield available
+            if self._forward is not None:
+                sim_tep = extract_tep_sensor(
+                    neural, self._forward,
+                    t_onset=self._tms_onset, dt=self.config.dt,
+                )
+            else:
+                sim_tep = extract_tep(
+                    neural,
+                    t_onset=self._tms_onset, dt=self.config.dt,
+                )
+            # Match shapes: truncate to smaller of sim/empirical
+            n_samples = min(sim_tep.shape[1], self.empirical_tep.shape[1])
+            sim_tep = sim_tep[:, :n_samples]
+            emp_tep = self.empirical_tep[:, :n_samples]
+            tep_loss_val = tep_combined_loss(sim_tep, emp_tep)
+            total_loss = total_loss + self.loss_weights.tep * tep_loss_val
 
         return total_loss
 
