@@ -7,7 +7,7 @@ name = "neurojax"
 version = "0.1.0"
 description = "JAX-accelerated EMEG analysis toolkit — osl-dynamics-compatible, GPU-native"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11,<3.13"
 dependencies = [
     "mne >= 1.6.0",
     "scipy >= 1.10.0",
@@ -37,12 +37,17 @@ dependencies = [
     "s3fs >= 2023.0.0",
     "jraph >= 0.0.6.dev0",
     "jinns>=1.5.1",
+    "anthropic>=0.86.0",
 ]
 
 [project.scripts]
 neurojax = "neurojax.cli:main"
 
 [project.optional-dependencies]
+bench = [
+    "cma >= 3.3.0",
+    "llamea",
+]
 test = [
     "pytest >= 7.0.0",
     "sybil",
@@ -71,6 +76,10 @@ testpaths = [
 filterwarnings = [
     "ignore::DeprecationWarning",
 ]
+
+[tool.uv.sources]
+jaxctrl = { path = "../jaxctrl", editable = true }
+vbjax = { git = "https://github.com/ins-amu/vbjax" }
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
