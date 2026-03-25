@@ -31,6 +31,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# OS
+.DS_Store
+
 # NeuroJAX Specific
 /data/
 !/src/neurojax/data/
@@ -45,6 +48,20 @@ results*/
 *.fif
 *.h5
 *.mat
+
+# Artifact images
+*.png
+
+# Generated files
+index.html
+RECORDS
+SHA256SUMS
+
+# Dataset stubs
+ds004745/
+
+# Agent/internal
+.agent/
 
 # IDEs
 .vscode/
