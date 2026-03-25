@@ -11,9 +11,24 @@ from jaxctrl import (
     polynomial_library,
 )
 
+from neurojax.dynamics.windowed import (
+    windowed_sindy,
+    windowed_dmd,
+    windowed_signatures,
+    WindowedSINDyResult,
+    WindowedDMDResult,
+    WindowedSignatureResult,
+)
+
 __all__ = [
     "SINDyOptimizer",
     "KoopmanEstimator",
     "polynomial_library",
     "fourier_library",
+    "windowed_sindy",
+    "windowed_dmd",
+    "windowed_signatures",
+    "WindowedSINDyResult",
+    "WindowedDMDResult",
+    "WindowedSignatureResult",
 ]

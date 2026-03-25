@@ -1,0 +1,99 @@
+name: osldynamics
+version: 3.0.0
+
+copyright:
+  - license: MIT
+    url: https://github.com/OHBA-analysis/osl-dynamics/blob/main/LICENSE
+
+architectures:
+  - x86_64
+
+build:
+  kind: neurodocker
+  base-image: nvidia/cuda:12.3.2-cudnn9-runtime-ubuntu22.04
+  pkg-manager: apt
+
+  directives:
+    - environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    - install:
+        - build-essential
+        - ca-certificates
+        - curl
+        - git
+        - libffi-dev
+        - libhdf5-dev
+        - libssl-dev
+        - pkg-config
+        - wget
+
+    - template:
+        name: miniconda
+        version: latest
+        env_name: osldynamics
+        conda_install: python=3.12 pip
+        pip_install: >-
+          tensorflow==2.17.1
+          tf-keras
+          tensorflow-probability[tf]
+          mne>=1.6
+          nibabel
+          nilearn
+          numba
+          scikit-image
+          seaborn
+          pqdm
+          scikit-learn
+          osl-dynamics==3.0.0
+
+    - deploy:
+        path: []
+        bins:
+          - python
+
+    - environment:
+        PATH: /opt/miniconda-latest/envs/osldynamics/bin:$PATH
+        LD_LIBRARY_PATH: /usr/local/cuda/lib64:$LD_LIBRARY_PATH
+        NVIDIA_VISIBLE_DEVICES: all
+        NVIDIA_DRIVER_CAPABILITIES: compute,utility
+
+    - test:
+        name: Import osl-dynamics
+        script: python -c "import osl_dynamics; print(osl_dynamics.__version__)"
+
+readme: |-
+  ----------------------------------
+  ## osldynamics/{{ context.version }} ##
+
+  osl-dynamics is a Python toolbox for studying brain dynamics using
+  generative models of neuroimaging data. It includes implementations of
+  the Hidden Markov Model (HMM), Dynamic Network Modes (DyNeMo), and
+  Multi-Dynamic Network Modes (M-DyNeMo) for inferring brain state
+  dynamics from M/EEG and fMRI data.
+
+  This container includes GPU support via CUDA for TensorFlow acceleration.
+
+  Example:
+  ```
+  python -c "from osl_dynamics.models.hmm import Config, Model; print('HMM ready')"
+  ```
+
+  More documentation can be found here: https://github.com/OHBA-analysis/osl-dynamics
+
+  Citation:
+  ```
+  Gohil, C., Huang, R., Roberts, E., van Es, M.W.J., Quinn, A.J.,
+  Vidaurre, D., Woolrich, M.W. (2024). osl-dynamics, a toolbox for
+  modeling fast dynamic brain activity. eLife, 12, RP91949.
+  https://doi.org/10.7554/eLife.91949
+  ```
+
+  To run container outside of this environment: ml osldynamics/{{ context.version }}
+
+  License: MIT https://github.com/OHBA-analysis/osl-dynamics/blob/main/LICENSE
+  ----------------------------------
+
+categories:
+  - electrophysiology
+  - machine learning

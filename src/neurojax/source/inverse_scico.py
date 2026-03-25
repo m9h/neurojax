@@ -18,61 +18,81 @@ def soft_threshold(x: jax.Array, threshold: float) -> jax.Array:
     """Soft thresholding operator for L1 prox."""
     return jnp.sign(x) * jnp.maximum(jnp.abs(x) - threshold, 0.0)
 
+def compute_depth_prior(L: jax.Array, gamma: float = 0.8, limit: float = 1e-4) -> jax.Array:
+    """
+    Computes depth weighting prior (whitener).
+    W = diag(1 / ||L_i||^gamma)
+    
+    Args:
+        L: Leadfield (n_sensors, n_sources)
+        gamma: Weighting exponent (0.8 is standard for loose orientation)
+        limit: Stability limit for very small norms
+        
+    Returns:
+        W: Weighting matrix (n_sources, n_sources) - represented as diagonal vector (n_sources,)
+    """
+    # Column norms
+    norms = jnp.linalg.norm(L, axis=0)
+    # Clip for stability
+    norms = jnp.maximum(norms, limit * jnp.max(norms))
+    # Weight is inverse power
+    weights = 1.0 / (norms ** gamma)
+    return weights
+
 def solve_inverse_admm(
     Y: jax.Array,
     L: jax.Array,
     lambda_reg: float = 0.1,
     rho: float = 1.0,
     maxiter: int = 100,
-    penalty: str = 'l1' 
+    penalty: str = 'l1',
+    depth: float = 0.0 # 0.0 = off, 0.8 = standard
 ) -> InverseResult:
     """
     Solves the inverse problem using ADMM.
     Minimize 0.5 * ||Y - LX||_2^2 + lambda * R(X)
     
-    Args:
-        Y: Sensor data (n_sensors, n_times)
-        L: Leadfield matrix (n_sensors, n_sources)
-        lambda_reg: Regularization strength
-        rho: ADMM penalty parameter (augmented Lagrangian)
-        maxiter: Number of iterations
-        penalty: 'l1' (Lasso) or 'tv' (Total Variation - 1D naive for now)
-        
-    Returns:
-        InverseResult struct.
+    If depth > 0, applies depth weighting:
+    Problem becomes: Minimize ||Y - L W^-1 (WX)||^2 + lambda |WX|
+    Let X_w = WX (Weighted source)
+    L_w = L W^-1 (Whitened Leadfield)
+    Solve for X_w, then X = W^-1 X_w
     """
     n_sensors, n_sources = L.shape
+    
+    # 0. Depth Weighting
+    if depth > 0.0:
+        # W vector (diagonal)
+        W_diag = compute_depth_prior(L, gamma=depth)
+        # We want to solve for X_w such that X = X_w / W
+        # Y = L (X_w / W) = (L / W) X_w
+        # This means we scale columns of L by 1/W
+        L_eff = L / W_diag[None, :] # Broadcast divide columns
+        
+        # We solve the standard problem for L_eff and X_w
+        L_solve = L_eff
+    else:
+        L_solve = L
+        W_diag = None
     
     # Precompute Matrix Inversion for the x-update (Ridge-like step)
     # (L'L + rho I)^-1 L'
     # This is static for the loop
-    Lt = L.T
-    LtL = Lt @ L
+    Lt = L_solve.T
+    LtL = Lt @ L_solve
     Identity = jnp.eye(n_sources)
     LinearOp = LtL + rho * Identity
-    # Using Cholesky for stability if positive definite, or standard solve
-    # This inverse is (Sources x Sources), might be large.
-    # For massive sources, use Matrix Inversion Lemma (Woodbury) if Sensors << Sources
-    # (L'L + rho I)^-1 = (1/rho) (I - L' (rho I + LL')^-1 L)
-    # Since N_sensors usually << N_sources in EEG/MEG, Woodbury is much faster.
     
     use_woodbury = True
     if use_woodbury:
-        # Woodbury Identity
-        # Inv = (1/rho)*I - (1/rho)*L.T @ inv(rho*I + L@L.T) @ L * (1/rho) ? 
-        # Actually standard form: (A + UCV)^-1 = A^-1 - A^-1 U (C^-1 + V A^-1 U)^-1 V A^-1
-        # A = rho * I, U = L.T, V = L, C = I
-        # Inv = (1/rho)I - (1/rho)L.T @ inv(I + L(1/rho)I L.T) @ L(1/rho)
-        # Inv = (1/rho)I - (1/rho^2) L.T @ inv(I + (1/rho)LL.T) @ L
-        
+        # Woodbury Identity setup (same as before but using L_solve)
         inv_rho = 1.0 / rho
-        LLt = L @ Lt
+        LLt = L_solve @ Lt
         mid_term = jnp.linalg.inv(jnp.eye(n_sensors) + inv_rho * LLt)
         
         def apply_inverse(b):
-            # x = (1/rho)b - (1/rho^2) L.T @ (mid_term @ (L @ b))
             term1 = inv_rho * b
-            term2 = (inv_rho**2) * (Lt @ (mid_term @ (L @ b)))
+            term2 = (inv_rho**2) * (Lt @ (mid_term @ (L_solve @ b)))
             return term1 - term2
     else:
         InvOp = jnp.linalg.inv(LinearOp)
@@ -88,38 +108,30 @@ def solve_inverse_admm(
         i, x, z, u = carry
         
         # 1. x-update: Minimize 0.5||Y - Lx||^2 + (rho/2)||x - z + u||^2
-        # (L'L + rho I) x = L'Y + rho(z - u)
         rhs = Lt @ Y + rho * (z - u)
         x_new = apply_inverse(rhs)
         
-        # 2. z-update: Minimize lambda*R(z) + (rho/2)||x - z + u||^2
-        # Proximal operator of R evaluated at (x + u)
+        # 2. z-update: Proximal operator of R evaluated at (x + u)
         v = x_new + u
         threshold = lambda_reg / rho
+        z_new = soft_threshold(v, threshold)
         
-        if penalty == 'l1':
-            z_new = soft_threshold(v, threshold)
-        else:
-            # Fallback to L1
-            z_new = soft_threshold(v, threshold)
-            
         # 3. u-update: Dual ascent
         u_new = u + x_new - z_new
         
         return (i + 1, x_new, z_new, u_new)
 
-    # Run loop
-    # We use scan or lax.while_loop but for a fixed iter implementation simple python loop is fine 
-    # if we jit the whole solver.
-    # Using lax.fori_loop compatible structure
-    
     init_val = (0, x, z, u)
-    # We just run standard loop unrolled or lax.scan if we want history
-    # Let's use lax.fori_loop for speed
-    
     _, x_final, z_final, u_final = jax.lax.fori_loop(0, maxiter, lambda i, val: body_fun(val), init_val)
     
-    return InverseResult(sources=z_final, residuals=Y - L @ z_final)
+    # 4. Un-weight if needed
+    if W_diag is not None:
+        # X = X_w / W
+        sources_final = z_final / W_diag[:, None]
+    else:
+        sources_final = z_final
+        
+    return InverseResult(sources=sources_final, residuals=Y - L @ sources_final)
 
 def compute_resolution_matrix(
     L: jax.Array,

@@ -39,6 +39,7 @@ venv.bak/
 !/src/neurojax/data/
 downloads/
 results*/
+ds*/
 *.nii.gz
 *.vhdr
 *.vmrk
@@ -49,19 +50,13 @@ results*/
 *.h5
 *.mat
 
-# Artifact images
-*.png
+# Figures at top level (keep docs/figures/ tracked)
+/*.png
 
 # Generated files
 index.html
 RECORDS
 SHA256SUMS
-
-# Dataset stubs
-ds004745/
-
-# Agent/internal
-.agent/
 
 # IDEs
 .vscode/
