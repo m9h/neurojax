@@ -1,8 +1,8 @@
 """Gradient-based optimizer using optax through vbjax autodiff.
 
 Leverages JAX automatic differentiation to compute gradients of the
-FC loss w.r.t. model parameters. This is only possible because vbjax
-provides a differentiable simulation pipeline — a unique advantage
+multi-modal loss w.r.t. model parameters. This is only possible because
+vbjax provides a differentiable simulation pipeline — a unique advantage
 over neurolib's numpy/numba stack.
 """
 
@@ -21,7 +21,17 @@ from neurojax.bench.optimizers.base import OptimizationResult
 class GradientOptimizer:
     """Gradient-based optimizer using optax Adam through vbjax autodiff.
 
-    Requires a VbjaxFitnessAdapter (which provides fc_loss).
+    Requires a VbjaxFitnessAdapter (which provides loss/fc_loss).
+
+    Parameters
+    ----------
+    learning_rate : float
+        Step size for the optimizer.
+    algorithm : str
+        Optax algorithm name: "adam", "sgd", "adamw".
+    use_multimodal_loss : bool
+        If True, use adapter.loss() (multi-modal: FC + FCD + sensor).
+        If False, use adapter.fc_loss() (FC only, backward compatible).
     """
 
     name: str = "Adam-JAX"
@@ -30,9 +40,11 @@ class GradientOptimizer:
         self,
         learning_rate: float = 1e-3,
         algorithm: str = "adam",
+        use_multimodal_loss: bool = False,
     ):
         self.learning_rate = learning_rate
         self.algorithm = algorithm
+        self.use_multimodal_loss = use_multimodal_loss
 
     def optimize(
         self,
@@ -45,75 +57,66 @@ class GradientOptimizer:
         if not isinstance(adapter, VbjaxFitnessAdapter):
             raise TypeError(
                 "GradientOptimizer requires a VbjaxFitnessAdapter "
-                "(needs fc_loss for autodiff)"
+                "(needs loss/fc_loss for autodiff)"
             )
 
         t0 = time.perf_counter()
-        ps = adapter.parameter_space
-        param_names = list(ps.keys())
 
         # Initialize at center of bounds
-        x = jnp.array([(lo + hi) / 2 for lo, hi in ps.values()])
-        bounds_lo = jnp.array([lo for lo, _ in ps.values()])
-        bounds_hi = jnp.array([hi for _, hi in ps.values()])
+        x = adapter.default_param_array()
+        bounds_lo, bounds_hi = adapter.bounds_arrays()
+
+        # Select loss function
+        loss_fn = adapter.loss if self.use_multimodal_loss else adapter.fc_loss
 
         # Setup optax optimizer
         if self.algorithm == "adam":
             opt = optax.adam(self.learning_rate)
         elif self.algorithm == "sgd":
             opt = optax.sgd(self.learning_rate)
+        elif self.algorithm == "adamw":
+            opt = optax.adamw(self.learning_rate)
         else:
             opt = optax.adam(self.learning_rate)
 
         opt_state = opt.init(x)
-
-        # Gradient function
-        grad_fn = jax.grad(adapter.fc_loss)
+        grad_fn = jax.grad(loss_fn)
 
         history = []
-        best_fc = -float("inf")
-        best_params = {}
-        best_result = None
+        best_loss = float("inf")
+        best_x = x
+        param_names = list(adapter.parameter_space.keys())
 
         for step in range(budget):
-            # Compute gradient
             g = grad_fn(x)
 
-            # Check for NaN gradients
             if not jnp.all(jnp.isfinite(g)):
                 break
 
-            # Update
             updates, opt_state = opt.update(g, opt_state)
             x = optax.apply_updates(x, updates)
-
-            # Clip to bounds
             x = jnp.clip(x, bounds_lo, bounds_hi)
 
-            # Evaluate (fc_loss returns negative correlation)
-            loss = float(adapter.fc_loss(x))
-            fc_corr = -loss
+            current_loss = float(loss_fn(x))
 
-            if fc_corr > best_fc:
-                best_fc = fc_corr
-                best_params = {
-                    name: float(x[i]) for i, name in enumerate(param_names)
-                }
+            if current_loss < best_loss:
+                best_loss = current_loss
+                best_x = x
 
             history.append({
                 "gen": step + 1,
-                "best_fc": best_fc,
-                "mean_fc": fc_corr,
+                "best_fc": -best_loss if not self.use_multimodal_loss else None,
+                "loss": current_loss,
+                "best_loss": best_loss,
                 "n_evals": step + 1,
-                "loss": loss,
                 "grad_norm": float(jnp.linalg.norm(g)),
             })
 
         # Final evaluation for full FitnessResult
-        if best_params:
-            best_result = adapter.evaluate(best_params)
-        else:
-            best_result = FitnessResult(fc_correlation=0.0, fcd_ks_distance=1.0)
+        best_params = {
+            name: float(best_x[i]) for i, name in enumerate(param_names)
+        }
+        best_result = adapter.evaluate(best_params)
 
         return OptimizationResult(
             best_params=best_params,
