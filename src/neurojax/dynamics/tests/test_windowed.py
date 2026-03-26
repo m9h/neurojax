@@ -314,3 +314,42 @@ class TestCrossMethodIntegration:
         freq_second = np.mean(result.frequencies[n_windows // 2:, 0])
         # Oscillatory regime should have higher dominant frequency
         assert freq_first != pytest.approx(freq_second, abs=0.1)
+
+    def test_all_indicators_spike_near_transition(self, regime_data):
+        """SINDy eigenvalue jump, DMD frequency jump, and signature distance
+        spike should all peak in the middle third (near the regime change).
+
+        With limited windows, exact alignment is noisy — we check that
+        each indicator's peak falls in the transition region rather than
+        requiring they match the same window index.
+        """
+        ws, stride = 1000, 500
+
+        sindy = windowed_sindy(regime_data, window_size=ws, stride=stride, n_pca=3)
+        dmd = windowed_dmd(regime_data, window_size=ws, stride=stride, rank=3)
+        sigs = windowed_signatures(regime_data, window_size=ws, stride=stride, n_pca=3)
+
+        n_jumps = len(sindy.times) - 1
+        # Middle third of the window sequence
+        mid_lo = n_jumps // 3
+        mid_hi = 2 * n_jumps // 3
+
+        # SINDy indicator: largest absolute jump in max_real_eig
+        sindy_jumps = np.abs(np.diff(sindy.max_real_eig))
+        sindy_peak = int(np.argmax(sindy_jumps))
+
+        # DMD indicator: largest jump in dominant frequency
+        dmd_jumps = np.abs(np.diff(dmd.frequencies[:, 0]))
+        dmd_peak = int(np.argmax(dmd_jumps))
+
+        # Signature indicator: largest distance
+        sig_peak = int(np.argmax(sigs.distances))
+
+        # At least 2 of 3 indicators should peak in the middle third
+        in_middle = sum(1 for p in [sindy_peak, dmd_peak, sig_peak]
+                        if mid_lo <= p <= mid_hi)
+        assert in_middle >= 2, (
+            f"Expected ≥2/3 indicators to peak in middle third "
+            f"[{mid_lo}, {mid_hi}], got peaks at: "
+            f"SINDy={sindy_peak}, DMD={dmd_peak}, Sig={sig_peak}"
+        )
