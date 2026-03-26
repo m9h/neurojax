@@ -602,6 +602,11 @@ def _viterbi(
         return log_delta_t, (log_delta_t, psi_t)
 
     log_delta_0 = log_pi + log_B[0]
+
+    # Handle T=1 edge case before scan
+    if T == 1:
+        return jnp.array([jnp.argmax(log_delta_0)])
+
     _, (log_deltas, psis) = jax.lax.scan(scan_fn, log_delta_0, log_B[1:])
 
     # Backtrack
@@ -609,11 +614,7 @@ def _viterbi(
     for t in range(T - 2, 0, -1):
         states_rev.append(psis[t - 1][states_rev[-1]])
     # First state
-    states_rev.append(jnp.argmax(log_delta_0) if T == 1 else psis[0][states_rev[-1]])
-
-    # Handle T=1 edge case
-    if T == 1:
-        return jnp.array([jnp.argmax(log_delta_0)])
+    states_rev.append(psis[0][states_rev[-1]])
 
     states = jnp.array(states_rev[::-1])
     return states
