@@ -209,12 +209,13 @@ class WANDMEGLoader:
         n_parcels: Optional[int] = None,
         method: str = "sLORETA",
         snr: float = 3.0,
+        max_duration: float = 120.0,
+        spacing: str = "oct5",
     ) -> np.ndarray:
         """Source reconstruct and parcellate MEG data.
 
-        Uses a template MRI (fsaverage) with the CTF head coil positions
-        for co-registration.  Computes a single-sphere forward model
-        (fast, reasonable for CTF) and applies an inverse operator.
+        Uses a template MRI (fsaverage) with a single-sphere forward model.
+        Parcellates in chunks to keep memory under control.
 
         Parameters
         ----------
@@ -229,12 +230,27 @@ class WANDMEGLoader:
             Inverse method (``"sLORETA"``, ``"dSPM"``, ``"MNE"``).
         snr : float
             Assumed SNR for regularisation (lambda2 = 1/snr^2).
+        max_duration : float
+            Maximum duration (seconds) to source-reconstruct. Longer
+            recordings are cropped to save memory. Set to ``None``
+            to use the full recording.
+        spacing : str
+            Source space resolution (``"oct5"`` ~1k sources/hemi,
+            ``"oct6"`` ~4k — use oct5 for memory efficiency).
 
         Returns
         -------
         parcellated : (n_samples, n_parcels) array
             Sign-flipped parcellated source time courses.
         """
+        # Crop to max_duration to avoid OOM
+        if max_duration is not None and raw.times[-1] > max_duration:
+            logger.info(
+                "Cropping from %.0fs to %.0fs for source reconstruction",
+                raw.times[-1], max_duration,
+            )
+            raw = raw.copy().crop(tmax=max_duration)
+
         subjects_dir = mne.datasets.fetch_fsaverage(verbose=False)
         if isinstance(subjects_dir, str):
             subjects_dir = Path(subjects_dir).parent
@@ -243,15 +259,21 @@ class WANDMEGLoader:
 
         fs_subject = "fsaverage"
 
-        # Source space
+        # Source space (oct5 = ~1k sources/hemi, oct6 = ~4k)
         src = mne.setup_source_space(
-            fs_subject, spacing="oct6",
+            fs_subject, spacing=spacing,
             subjects_dir=str(subjects_dir), verbose=False,
         )
 
-        # Forward model (single-sphere — fast for CTF)
+        # Forward model — use a fixed-origin sphere to avoid needing
+        # digitization points (CTF .ds often lacks EXTRA dig points).
+        meg_picks = mne.pick_types(raw.info, meg=True)
+        meg_locs = np.array([raw.info["chs"][p]["loc"][:3] for p in meg_picks])
+        r0 = meg_locs.mean(axis=0)
+        r0[2] -= 0.04  # shift toward head centre
+
         sphere = mne.make_sphere_model(
-            r0="auto", head_radius="auto", info=raw.info, verbose=False,
+            r0=r0, head_radius=0.09, verbose=False,
         )
         fwd = mne.make_forward_solution(
             raw.info, trans="fsaverage",
@@ -259,8 +281,7 @@ class WANDMEGLoader:
             eeg=False, verbose=False,
         )
 
-        # Noise covariance from data (empty-room proxy: use pre-stim or
-        # first 30s as noise estimate for resting-state)
+        # Noise covariance (first 30s as proxy)
         noise_cov = mne.compute_raw_covariance(
             raw, tmin=0, tmax=min(30.0, raw.times[-1]),
             method="shrunk", verbose=False,
@@ -271,35 +292,45 @@ class WANDMEGLoader:
             raw.info, fwd, noise_cov, verbose=False,
         )
 
-        # Apply inverse
-        lambda2 = 1.0 / snr ** 2
-        stc = mne.minimum_norm.apply_inverse_raw(
-            raw, inv, lambda2=lambda2, method=method, verbose=False,
-        )
-
-        # Parcellate
+        # Labels for parcellation
         labels = mne.read_labels_from_annot(
             fs_subject, parc=parcellation,
             subjects_dir=str(subjects_dir), verbose=False,
         )
-        # Remove "unknown" label if present
         labels = [l for l in labels if "unknown" not in l.name.lower()]
 
-        label_ts = mne.extract_label_time_course(
-            stc, labels, src, mode="mean_flip", verbose=False,
-        )
+        # Apply inverse in chunks to keep memory bounded
+        lambda2 = 1.0 / snr ** 2
+        sfreq = raw.info["sfreq"]
+        chunk_sec = 30.0  # process 30s at a time
+        chunk_samples = int(chunk_sec * sfreq)
+        total_samples = len(raw.times)
+        all_label_ts = []
 
-        parcellated = label_ts.T  # (n_samples, n_parcels)
+        for start in range(0, total_samples, chunk_samples):
+            tmin = start / sfreq
+            tmax = min((start + chunk_samples) / sfreq, raw.times[-1])
+            raw_chunk = raw.copy().crop(tmin=tmin, tmax=tmax)
+
+            stc = mne.minimum_norm.apply_inverse_raw(
+                raw_chunk, inv, lambda2=lambda2, method=method, verbose=False,
+            )
+            label_ts = mne.extract_label_time_course(
+                stc, labels, src, mode="mean_flip", verbose=False,
+            )
+            all_label_ts.append(label_ts)
+            del stc  # free memory immediately
+            logger.info("  chunk %.0f-%.0fs done", tmin, tmax)
+
+        parcellated = np.concatenate(all_label_ts, axis=1).T  # (n_samples, n_parcels)
         logger.info(
             "Parcellated: %s (%d parcels from %s)",
             parcellated.shape, len(labels), parcellation,
         )
 
         if n_parcels is not None and n_parcels < parcellated.shape[1]:
-            # PCA reduction
             from neurojax.data.loading import prepare_pca
             import jax.numpy as jnp
-
             parcellated = np.array(
                 prepare_pca(jnp.array(parcellated), n_pca_components=n_parcels)
             )
