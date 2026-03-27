@@ -136,6 +136,71 @@ WAND provides ground truth from QMT (bound pool fraction), multi-echo GRE T2*, a
 
 ---
 
+## Key Design Decisions
+
+### 1. Spatial Anchor: ses-02 T1w
+All sessions register TO the ses-02 T1w because that is the DWI session. The structural connectome (Cmat/Dmat) defines the spatial reference frame for whole-brain simulation — everything else aligns to it. Cross-session registration uses FLIRT 6-DOF rigid body (same subject, different days).
+
+### 2. Native Space First
+All processing stays in native (subject) space as long as possible. Standard space transforms are computed and stored but not applied until needed for group analysis. This avoids interpolation artifacts in microstructure maps, preserves individual anatomical detail for source reconstruction, and keeps the connectome in the space where it was estimated.
+
+### 3. Standard Space: FNIRT Now, FSL DL Reg + OM-1 Later
+Current scripts use FNIRT for nonlinear registration to MNI152. When FSL's new deep learning registration tool and the OM-1 template become available, the `fsl-reg/struct-to-standard/` directory will hold both transforms, allowing comparison and eventual migration without re-running upstream processing.
+
+### 4. MRS Quantification via fsl_mrs
+WAND MRS is sLASER acquisitions (`.dat` format) with water references in 4 brain regions per session:
+- Anterior cingulate cortex (ACC) — prefrontal GABA/glutamate
+- Occipital cortex — visual area baseline
+- Right auditory cortex — sensory processing
+- Left sensorimotor cortex — motor excitability
+
+Pipeline: `svs_segment` creates voxel mask in T1 space → FAST tissue fractions (GM/WM/CSF) → `fsl_mrs` with Newton fitting and water-scaled absolute quantification. Two sessions (ses-04, ses-05) enable test-retest reliability.
+
+### 5. Microstructure-Informed Connectome (Not Just Streamline Counts)
+Standard connectomes use streamline count for weights and fiber_length/7 m/s for delays. WAND enables a better approach:
+- **Cmat weights**: ConnectomeMapper samples microstructural metrics (ICVF, axon diameter) along each streamline
+- **Dmat delays**: Hursh-Rushton velocity from AxCaliber diameter per tract segment: `delay = Σ(segment_length / local_velocity)`
+- This gives connection-specific conduction delays rather than a single global velocity
+
+### 6. T1w/T2w Ratio as Myelin Proxy — Validated Against Ground Truth
+The Valdes-Sosa ξ-αNET paper uses T1w/T2w ratio to infer cortical hierarchy and constrain conduction delays. WAND uniquely allows validating this proxy against:
+- **QMT bound pool fraction** (ses-02) — direct measurement of macromolecular (myelin) content
+- **Multi-echo GRE T2*** (ses-06) — sensitive to myelin and iron
+- **VFA T1 mapping** (ses-02) — quantitative T1 relaxation
+- **AxCaliber g-ratio** (from diameter + myelin thickness via sbi4dwi)
+
+This comparison is a standalone publication: "Validating the T1w/T2w myelin proxy against quantitative MRI in a large healthy cohort."
+
+### 7. Four-Way Microstructure Comparison
+The AxCaliber data (4 shells, b=0-15500 s/mm², 264 volumes on 300 mT/m) is processed through four independent estimation pipelines:
+- **DIPY**: DTI, DKI, MAPMRI, Free Water DTI (Python community standard)
+- **FSL**: dtifit + NODDI via AMICO
+- **sbi4dwi/dmipy-jax**: JAX-accelerated cylinder models + simulation-based inference
+- **DMI.jl**: Julia SANDI/AxCaliber
+
+This benchmarks methods on data that was specifically acquired for microstructure estimation, unlike most comparisons that use standard clinical DWI.
+
+### 8. Advanced FreeSurfer Beyond recon-all
+FreeSurfer 8.2.0 provides tools that most labs don't use:
+- **SynthSeg**: DL segmentation that works on any contrast — enables consistent parcellation across all WAND sessions despite different acquisition protocols
+- **Thalamic nuclei with DTI**: Uses DWI to improve thalamic subnucleus boundaries — critical for thalamocortical conduction velocity estimation
+- **SAMSEG**: Jointly segments T1+T2 (or any combination of contrasts) — better than running FAST on T1 alone
+- **SynthStrip**: DL skull stripping — more robust than BET for the diverse contrasts in WAND
+
+### 9. BIDS Derivatives Compliance
+Each processing stage produces its own derivatives directory with `dataset_description.json` recording tool versions and provenance. Outputs follow BIDS naming conventions so neurojax loaders (BIDSConnectomeLoader, WANDMEGLoader) can discover them automatically. Full specification in `docs/BIDS_DERIVATIVES_STRUCTURE.md`.
+
+### 10. Parallel Processing Strategy
+The dependency graph allows significant parallelism:
+- **Independent** (run simultaneously): fsl_anat, FreeSurfer recon-all, DWI preprocessing, qMRI fitting
+- **After DWI**: bedpostx (bottleneck: ~12-24h CPU, ~1h GPU) → xtract, TRACULA, connectome
+- **After FreeSurfer**: advanced segmentations, surface projections, TRACULA
+- **After both**: MEG source reconstruction, TMS fitting
+
+On a multi-core workstation or cluster, total wall time for one subject is ~24h (dominated by bedpostx and recon-all running in parallel).
+
+---
+
 ## Processing Pipeline
 
 All scripts in `scripts/wand_processing/`:
