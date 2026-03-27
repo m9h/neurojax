@@ -296,8 +296,26 @@ All sessions register TO the ses-02 T1w because that is the DWI session. The str
 ### 2. Native Space First
 All processing stays in native (subject) space as long as possible. Standard space transforms are computed and stored but not applied until needed for group analysis. This avoids interpolation artifacts in microstructure maps, preserves individual anatomical detail for source reconstruction, and keeps the connectome in the space where it was estimated.
 
-### 3. Standard Space: FNIRT Now, FSL DL Reg + OM-1 Later
-Current scripts use FNIRT for nonlinear registration to MNI152. When FSL's new deep learning registration tool and the OM-1 template become available, the `fsl-reg/struct-to-standard/` directory will hold both transforms, allowing comparison and eventual migration without re-running upstream processing.
+### 3. Registration: SynthMorph (DL) + FNIRT (classic) + FSL DL Reg (future)
+**FreeSurfer `mri_synthmorph`** (SynthMorph, Hoffmann et al. 2022) is now the primary registration tool for cross-session and cross-contrast alignment. Unlike FLIRT/FNIRT which assume similar contrast between images, SynthMorph is **contrast-agnostic** — trained on synthetic images to learn anatomy, not intensity. This is critical for WAND where each session has different contrasts:
+- ses-02 T1w ↔ ses-03 T1w: trivial (same contrast)
+- ses-02 QMT ↔ ses-03 T1w: **different contrast** — FLIRT fails, SynthMorph handles it
+- ses-06 MP2RAGE ↔ ses-02 T1w: **very different contrast** — SynthMorph handles it
+- ses-06 multi-echo GRE ↔ ses-02 T1w: **different contrast** — SynthMorph handles it
+
+**Registration modes available:**
+- `joint`: affine + deformable in one symmetric pass (default, best quality)
+- `affine`: linear alignment with `-t aff.lta` output
+- `rigid`: 6-DOF rigid body (cross-session same-subject)
+- `deform`: nonlinear only (after affine initialization)
+
+**Three-way registration comparison:**
+```
+SynthMorph (FreeSurfer 8.2.0, DL, contrast-agnostic)
+FLIRT + FNIRT (FSL 6.0.7, classic, intensity-based)
+FSL DL Reg + OM-1 template (when available)
+```
+All transforms stored in `fsl-reg/` so any tool can apply them. The `fsl-reg/cross-session/` directory will contain both FLIRT and SynthMorph transforms for comparison.
 
 ### 4. MRS Quantification via fsl_mrs
 WAND MRS is sLASER acquisitions (`.dat` format) with water references in 4 brain regions per session:
@@ -613,7 +631,7 @@ Most neuroimaging pipelines use FreeSurfer only for `recon-all`. The 8.x series 
 - **`mri_synthseg`**: Segments any brain image regardless of contrast, resolution, or orientation. On WAND, this enables consistent parcellation across ses-02 (T1w), ses-03 (T1w+T2w), ses-04 (T1w), ses-06 (MP2RAGE, multi-echo GRE) without session-specific recon-all. Outputs volume estimates + QC scores.
 - **`mri_synthstrip`**: DL skull stripping that outperforms BET on non-standard contrasts. Critical for WAND's QMT and VFA volumes where BET frequently fails.
 - **`mri_synthsr`**: Super-resolution synthesis — could upsample lower-resolution functional data for improved registration.
-- **`mri_synthmorph` / `fs-synthmorph-reg`**: Learning-based registration — a potential alternative/complement to FSL's planned DL registration tool.
+- **`mri_synthmorph` / `fs-synthmorph-reg`**: DL contrast-agnostic registration. **Now the primary cross-session registration tool** — handles T1w↔QMT↔MP2RAGE↔multi-echo GRE without intensity-based assumptions. Modes: joint (affine+deform), affine, rigid, deform. Symmetric, anatomy-aware, no skull stripping needed. 24GB model.
 - **`mri_WMHsynthseg`**: White matter hyperintensity segmentation — relevant for aging subjects in the WAND cohort (ages 18-63).
 
 ### Subcortical Nuclei Segmentation
