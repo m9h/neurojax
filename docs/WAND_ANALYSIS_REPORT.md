@@ -192,7 +192,29 @@ WAND provides ground truth for validating tissue boundaries: QMT (WM/GM contrast
 
 **Potential finding:** qMRI-based skull conductivity may be more accurate than pseudo-CT because it measures the actual physical property rather than predicting it from T1 contrast. This would establish WAND-type acquisitions as the gold standard for TMS planning.
 
-### 10. FOOOF/specparam Aperiodic + Periodic Decomposition
+### 10. Simulation-Based MRS Lipid Contamination Modeling
+**Question:** Can subject-specific head geometry + MR physics simulation predict and correct lipid contamination in WAND's sLASER MRS?
+
+**The problem:** SVS voxels near cortex (especially sensorimotor, auditory VOIs) are contaminated by scalp fat and skull marrow fat via chemical shift displacement error (CSDE) and imperfect slice profiles. This biases GABA/glutamate estimates — the metabolites we need for constraining neural mass models.
+
+**WAND provides the geometry and tissue properties:**
+- `betsurf` / `charm`: scalp fat and skull marrow boundaries
+- QMT: macromolecular content in bone (fat fraction)
+- VFA T1: tissue-specific T1 (fat ~300ms vs muscle ~1400ms)
+- Multi-echo GRE: fat/water separation via chemical shift effects
+- `svs_segment` voxel mask: exact voxel geometry in T1 space
+
+**Simulation approach (building on prior MIDAS/MCMRSimulator work):**
+1. Build subject-specific multi-compartment phantom from charm/betsurf segmentation with tissue-specific T1/T2/chemical shift from qMRI
+2. Simulate sLASER sequence spatial response using MCMRSimulator.jl (~/dev/mcmrsimulator.jl) or KomaMRI.jl for Bloch-based slice profile + CSDE
+3. Use fsl_mrs_sim for metabolite + lipid basis spectra (J-coupling, chemical shifts)
+4. Predict lipid contamination per VOI per subject
+5. Correct fsl_mrs fitting results → improved GABA/Glu quantification
+6. Test: does correction improve ses-04 ↔ ses-05 test-retest reliability?
+
+**Tools:** MCMRSimulator.jl (spatial/Bloch), fsl_mrs_sim (spectral basis), KomaMRI.jl (GPU-accelerated alternative), FID-A/Spinach (J-coupling if needed).
+
+### 11. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
 - **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
