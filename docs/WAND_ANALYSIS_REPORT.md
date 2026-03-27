@@ -517,6 +517,50 @@ The ξ-αNET model decomposes spectral Granger causality — it's a frequency-do
 
 ---
 
+## Geodesic Cortical Flow (Liu, Wiesman & Baillet 2026)
+
+**Paper:** "Hierarchical Flows of Human Cortical Activity" — bioRxiv 2026.03.19.712872. Montreal Neurological Institute, McGill.
+
+### Method
+Introduces **geodesic cortical flow**: surface-based optical flow that estimates millisecond-resolved propagation vectors **tangent to the cortical surface** from source-imaged MEG. Unlike connectivity (which pair of regions interact) or states (which state is the brain in), this captures the actual *direction and speed* of activity propagating across the cortical sheet.
+
+### Key Findings (608 healthy adults, resting-state MEG)
+1. **Slow activity (1-13 Hz) propagates upstream** — sensory → association cortex (feedforward direction along the functional gradient)
+2. **Beta activity (13-30 Hz) propagates downstream** — association → sensory cortex (feedback)
+3. **Aging shifts the balance**: weaker upstream slow flow, stronger downstream beta flow
+4. **Kinetic energy** of cortical flow follows a posterior→anterior gradient; higher frontoparietal kinetic energy predicts better fluid intelligence
+5. **Dwell times** of stable kinetic-energy states track regional neuronal timescales
+
+### Integration with WAND Analysis
+
+This approach is directly complementary to our existing pipeline:
+
+| Our approach | Their approach | Combined |
+|---|---|---|
+| HMM/DyNeMo: *which state* | Geodesic flow: *which direction* | Which direction during each state |
+| State lifetimes | Kinetic-energy dwell times | Cross-validate: do they agree? |
+| AxCaliber conduction velocity | Surface propagation speed | Microstructure predicts flow speed |
+| Parcellated timeseries | Vertex-level surface activity | Flow computed before parcellation |
+
+### Specific Opportunities for WAND
+1. **Flow × microstructure**: AxCaliber conduction velocity should predict surface propagation speed. Thick-axon tracts → faster flow.
+2. **Flow × TMS**: After TMS, does the evoked flow follow the structural connectome? Virtual lesion: disconnect a region and predict how flow patterns change.
+3. **Flow × brain states**: Compute geodesic flow within each HMM state window. Do different states have different dominant flow directions?
+4. **Flow kinetic energy as prediction feature**: Add to Phase 4 — does flow KE predict TMS response better than static connectivity measures?
+5. **Frequency-specific flow × Valdes-Sosa ξ-αNET**: The alpha upstream/beta downstream organization maps onto ξ-αNET's feedforward/feedback hierarchy. WAND can test whether subject-specific conduction delays (from AxCaliber) predict the flow direction bias.
+
+### Implementation Requirements
+A `geodesic_cortical_flow` module would need:
+- Source-space MEG on cortical surface (vertices × time) — from FreeSurfer + MNE source reconstruction
+- Surface mesh with geodesic distance computation — `geometry/surface.py` provides the mesh IO
+- Optical flow estimation on surface manifold — Horn-Schunck or Lucas-Kanade adapted to triangulated surfaces
+- Frequency-band filtering → per-band flow statistics
+- Kinetic energy timecourse → dwell time analysis (reuse `summary_stats.py` machinery)
+
+This is implementable in JAX: the surface mesh defines a sparse adjacency, the optical flow becomes a regularized least-squares problem solvable with `jax.scipy.sparse.linalg`, and the temporal iteration uses `jax.lax.scan`.
+
+---
+
 ## Key References
 
 1. Momi D et al. (2023). TMS-evoked responses are driven by recurrent large-scale network dynamics. *eLife* 12:e83232.
@@ -524,3 +568,4 @@ The ξ-αNET model decomposes spectral Granger causality — it's a frequency-do
 3. Matsulevits A et al. (2024). Deep learning disconnectomes to accelerate long-term post-stroke predictions. *Brain Communications* 6(5):fcae338.
 4. Griffiths JD et al. (2022). Whole-brain modelling: past, present, and future. *Computational Modelling of the Brain*.
 5. Gohil C et al. (2024). osl-dynamics: A toolbox for modelling fast dynamic brain activity. *eLife* 13:e91949.
+6. Liu X, Wiesman AI, Baillet S (2026). Hierarchical flows of human cortical activity. *bioRxiv* 2026.03.19.712872.
