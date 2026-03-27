@@ -134,7 +134,20 @@ WAND provides ground truth from QMT (bound pool fraction), multi-echo GRE T2*, a
 ### 7. 4-Way Microstructure Comparison
 **Benchmarking:** DIPY vs. FSL vs. sbi4dwi vs. DMI.jl on WAND AxCaliber data. Which method best estimates axon diameter on ultra-strong gradient data?
 
-### 8. FOOOF/specparam Aperiodic + Periodic Decomposition
+### 8. FEM Head Mesh Comparison: brain2mesh vs SimNIBS charm vs MNE BEM
+**Three-way comparison** of tetrahedral head meshing for TMS E-field and MEG/EEG forward modeling:
+
+| Method | Tool | Tissues | Input | Strengths |
+|---|---|---|---|---|
+| brain2mesh | `pip install iso2mesh` (Fang, v0.5.5) | 5 | FreeSurfer segmentation → tissue prob maps | Customizable, open source, EEG 10-20 landmarks |
+| SimNIBS charm | SimNIBS 4.x | 5 | T1w + T2w (raw) | DL-based, TMS-optimized, no FreeSurfer needed |
+| MNE BEM | MNE-Python | 3 | FreeSurfer watershed surfaces | Standard for MEG/EEG, fast, well-validated |
+
+WAND provides ground truth for validating tissue boundaries: QMT (WM/GM contrast), T2* (CSF boundaries), T1w+T2w (skull). Script: `17_brain2mesh_comparison.sh`.
+
+**Note on iso2mesh**: The Python package (`pip install iso2mesh`, `NeuroJSON/pyiso2mesh`) is a native Python reimplementation (not MATLAB wrapper) but still auto-downloads external CGAL and TetGen binaries. CGAL also available via `brew install cgal`. The `brain2mesh()` function expects 5 tissue probability maps (CSF, GM, WM, bone, scalp) — FreeSurfer `aparc+aseg` needs conversion to these, with approximate skull/scalp from morphological dilation.
+
+### 9. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
 - **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
