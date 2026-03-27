@@ -134,6 +134,31 @@ WAND provides ground truth from QMT (bound pool fraction), multi-echo GRE T2*, a
 ### 7. 4-Way Microstructure Comparison
 **Benchmarking:** DIPY vs. FSL vs. sbi4dwi vs. DMI.jl on WAND AxCaliber data. Which method best estimates axon diameter on ultra-strong gradient data?
 
+### 8. FOOOF/specparam Aperiodic + Periodic Decomposition
+**Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
+
+- **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
+- **Periodic peaks** (centre frequency, power, bandwidth): individual alpha frequency (IAF), beta peak, theta peak per region. IAF connects to AxCaliber conduction velocity (Valdes-Sosa ξ-αNET).
+- **Per-state FOOOF**: Run FOOOF on the state-specific power spectra from HMM/DyNeMo. Each brain state gets its own aperiodic slope + peak parameters. This reveals: "Does state 3 have a steeper 1/f slope (more inhibition)? Is its alpha peak shifted?"
+
+**Pipeline:**
+```
+Resting MEG → source reconstruction → parcellated (68 or 148 regions)
+  → Per-region PSD (multitaper)
+  → FOOOF: aperiodic (offset, exponent) + peaks (frequency, power, bandwidth)
+  → Per-state: state_spectra.py PSD → FOOOF per state
+  → Features: IAF, aperiodic exponent, peak power per band per region
+  → Prediction model (Phase 4): do FOOOF features predict TMS response?
+```
+
+**Cross-modal validation:**
+- Aperiodic exponent vs. MRS GABA/glutamate ratio (E/I balance)
+- IAF vs. AxCaliber conduction velocity (speed → resonance frequency)
+- Aperiodic exponent vs. cortical thickness (thicker cortex → more layers → steeper 1/f)
+- Peak power vs. QMT myelin (more myelin → faster oscillations → different peak structure)
+
+**Implementation:** `specparam` (formerly `fooof`) Python package, or native JAX reimplementation for differentiability. Per-region, per-state, per-subject → feature matrix for prediction.
+
 ---
 
 ## Key Design Decisions
