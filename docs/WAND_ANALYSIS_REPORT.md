@@ -369,7 +369,33 @@ FreeSurfer 8.2.0 provides tools that most labs don't use:
 - **SAMSEG**: Jointly segments T1+T2 (or any combination of contrasts) — better than running FAST on T1 alone
 - **SynthStrip**: DL skull stripping — more robust than BET for the diverse contrasts in WAND
 
-### 9. BIDS Derivatives Compliance
+### 9. Neurodesk Containers for All Processing
+All neuroimaging tools run via **Neurodesk containers with explicit version pinning** on all systems (local Mac, DGX Spark, collaborator machines). This ensures:
+- **Reproducibility**: exact same tool version and dependencies everywhere
+- **No build headaches**: no compiling C++ (QUIT), no MATLAB licenses (qMRLab via Octave), no dependency conflicts
+- **Version tracking**: container tags recorded in `dataset_description.json` per derivatives directory
+- **Portability**: same pipeline runs on laptop, HPC, and cloud
+
+Key containers for WAND processing:
+
+| Tool | Container | Use |
+|---|---|---|
+| FSL | `fsl/6.0.7` | DWI preproc, bedpostx, xtract, fsl_mrs, MMORF |
+| FreeSurfer | `freesurfer/8.2.0` | recon-all, SynthSeg, SynthMorph, thalamic nuclei |
+| ANTs | `ants/2.5.x` | SyN registration, DiReCT cortical thickness |
+| QUIT | `quit/3.4` | All qMRI fitting (T1, T2, MWF, BPF, T2*, MP2RAGE) |
+| qMRLab | `qmrlab/2.5.x` | QMT two-pool fitting (Sled-Pike model) |
+| hMRI | `hmri/x.x` | R2* with B1/impurity correction |
+| SimNIBS | `simnibs/4.x` | charm head model, TMS E-field simulation |
+| FastSurfer | `fastsurfer/2.x` | Fast DL segmentation (GPU) |
+| CAT12/T1Prep | `cat12/x.x` | AMAP segmentation, cortical thickness |
+| DIPY | `dipy/1.x` | Diffusion processing comparison |
+| MRtrix3 | `mrtrix3/3.x` | CSD tractography, tckgen, connectome |
+| iso2mesh | `iso2mesh/x.x` | brain2mesh FEM head modeling |
+
+Processing scripts call containers with data mounted from BIDS directories. The container version is the single source of truth — no local installs needed except neurojax/sbi4dwi (JAX ecosystem, developed locally).
+
+### 10. BIDS Derivatives Compliance
 Each processing stage produces its own derivatives directory with `dataset_description.json` recording tool versions and provenance. Outputs follow BIDS naming conventions so neurojax loaders (BIDSConnectomeLoader, WANDMEGLoader) can discover them automatically. Full specification in `docs/BIDS_DERIVATIVES_STRUCTURE.md`.
 
 ### 10. Parallel Processing Strategy
