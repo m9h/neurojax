@@ -145,14 +145,20 @@ WAND provides ground truth from QMT (bound pool fraction), multi-echo GRE T2*, a
 
 Additional brain-tissue segmentation tools for comparison:
 
-| Tool | Method | Tissues | Speed | Install |
-|---|---|---|---|---|
-| **T1Prep** (Gaser) | AMAP + DeepMriPrep | GM/WM/CSF + cortical thickness + lesion maps | Fast (DL) | GitHub, Python+C, Apache 2.0 |
-| **GRACE** | MONAI U-Net | 11 tissues incl. cortical/cancellous bone | Fast (DL) | GitHub, MONAI |
-| **FastSurfer** | FastSurferCNN | 95 brain classes | < 1 min | GitHub, PyTorch |
-| **SynthSeg** | Contrast-agnostic CNN | 40 brain structures | 6s GPU | FreeSurfer 8.2.0 |
-| **deepmriprep** | Neural networks | GM/WM/CSF | 37x faster than CAT12 | `pip install deepmriprep` |
-| **FSL FAST** | Hidden Markov RF + EM | GM/WM/CSF | Minutes | FSL 6.0.7 |
+| Tool | Method | Tissues | Speed | Where to run | Install |
+|---|---|---|---|---|---|
+| **T1Prep** (Gaser) | AMAP + DeepMriPrep | GM/WM/CSF + thickness + lesions | Fast (DL) | **DGX Spark** (GPU) | GitHub, Python+C |
+| **GRACE** | MONAI U-Net | 11 tissues incl. cortical/cancellous bone | Fast (DL) | **DGX Spark** (GPU, MONAI) | GitHub |
+| **FastSurfer** | FastSurferCNN | 95 brain classes | < 1 min GPU | **DGX Spark** (GPU) | GitHub, PyTorch |
+| **SynthSeg** | Contrast-agnostic CNN | 40 brain structures | 6s GPU / 2min CPU | Local or DGX | FreeSurfer 8.2.0 |
+| **deepmriprep** | Neural networks | GM/WM/CSF | 37x faster than CAT12 | **DGX Spark** (GPU) | `pip install deepmriprep` |
+| **FSL FAST** | Hidden Markov RF + EM | GM/WM/CSF | Minutes | Local (CPU) | FSL 6.0.7 |
+| **SimNIBS charm** | DL atlas | 10 tissues incl. compact/spongy bone | ~30 min | Local or DGX | `pip install simnibs` |
+| **brain2mesh** | iso2mesh/TetGen | 5 tissues (approx skull) | ~10 min | Local (CPU) | `pip install iso2mesh` |
+| **MNE BEM** | FreeSurfer watershed | 3 shells | ~5 min | Local (CPU) | MNE-Python |
+
+**DGX Spark workload** (batch 170 subjects): T1Prep, GRACE, FastSurfer, deepmriprep, bedpostx_gpu, DyNeMo training, TMS fitting.
+**Local workload** (single subject validation): FSL FAST, SynthSeg, charm, brain2mesh, MNE BEM, recon-all.
 
 **T1Prep** (github.com/ChristianGaser/T1Prep) is particularly notable: it's CAT12 rewritten in Python by the same author (Christian Gaser), using DeepMriPrep for DL-accelerated processing with AMAP tissue segmentation. BIDS-native output, Apache 2.0 license. Provides cortical thickness maps and lesion detection alongside standard tissue probability maps.
 
