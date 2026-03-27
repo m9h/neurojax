@@ -309,13 +309,19 @@ All processing stays in native (subject) space as long as possible. Standard spa
 - `rigid`: 6-DOF rigid body (cross-session same-subject)
 - `deform`: nonlinear only (after affine initialization)
 
-**Three-way registration comparison:**
+**FSL MMORF** (MultiModal Registration Framework, FSL 6.0.7+) is the new nonlinear registration tool that **simultaneously aligns multiple modalities** — critically, it handles **DTI tensor registration** alongside scalar images. Uses SPRED regularization (log Jacobian singular values) and bias field estimation. This is the right tool for registering AxCaliber DWI to T1w while preserving tensor orientation — neither FNIRT nor SynthMorph can do this.
+
+**Four-way registration comparison:**
 ```
-SynthMorph (FreeSurfer 8.2.0, DL, contrast-agnostic)
-FLIRT + FNIRT (FSL 6.0.7, classic, intensity-based)
+SynthMorph  (FreeSurfer 8.2.0, DL, contrast-agnostic, fast)
+MMORF       (FSL 6.0.7, multimodal+tensor, SPRED regularization)
+FLIRT+FNIRT (FSL 6.0.7, classic, intensity-based)
 FSL DL Reg + OM-1 template (when available)
 ```
-All transforms stored in `fsl-reg/` so any tool can apply them. The `fsl-reg/cross-session/` directory will contain both FLIRT and SynthMorph transforms for comparison.
+All transforms stored in `fsl-reg/`. Each tool has a strength:
+- **SynthMorph**: cross-contrast (QMT↔T1w, MP2RAGE↔T1w) — fast, no preprocessing
+- **MMORF**: DWI tensor → T1w — multimodal simultaneous alignment, preserves tensor orientation
+- **FLIRT+FNIRT**: standard baseline, widely validated, reproducible
 
 ### 4. MRS Quantification via fsl_mrs
 WAND MRS is sLASER acquisitions (`.dat` format) with water references in 4 brain regions per session:
