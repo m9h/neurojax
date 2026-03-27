@@ -146,6 +146,102 @@ JOB_MICRO=$(fsl_sub \
     bash "${SCRIPT_DIR}/07_microstructure_comparison.sh" "${SUBJECT}")
 echo "Stage H (microstructure): job ${JOB_MICRO} (after DWI preproc)"
 
+# ---------------------------------------------------------------
+# Stage I: MRS quantification (depends on fsl_anat for tissue seg)
+# ---------------------------------------------------------------
+
+echo ""
+echo "--- MRS Processing ---"
+
+MRS_DIR="${WAND_DERIVATIVES}/fsl-mrs/${SUBJECT}"
+mkdir -p "${MRS_DIR}"
+
+# MRS needs tissue segmentation from fsl_anat for water-scaled quantification
+JOB_MRS=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "mrs_${SUBJECT}" \
+    -R 4 \
+    -T 60 \
+    -j "${JOB_ANAT}" \
+    bash "${SCRIPT_DIR}/10_mrs_processing.sh" "${SUBJECT}")
+echo "Stage I (MRS): job ${JOB_MRS} (after fsl_anat)"
+
+# ---------------------------------------------------------------
+# Stage J: MEG source reconstruction (depends on FreeSurfer)
+# ---------------------------------------------------------------
+
+echo ""
+echo "--- MEG Dynamics Pipeline ---"
+
+MEG_DEPS=""
+[ -n "${JOB_FS}" ] && MEG_DEPS="-j ${JOB_FS}"
+
+JOB_MEG_SRC=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "meg_source_${SUBJECT}" \
+    -R 8 \
+    -T 60 \
+    ${MEG_DEPS} \
+    bash "${SCRIPT_DIR}/11_meg_source_recon.sh" "${SUBJECT}")
+echo "Stage J (MEG source recon): job ${JOB_MEG_SRC}"
+
+# ---------------------------------------------------------------
+# Stage K: HMM + DyNeMo brain states (depends on MEG source recon)
+# ---------------------------------------------------------------
+
+JOB_DYNAMICS=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "dynamics_${SUBJECT}" \
+    -R 8 \
+    -T 120 \
+    -j "${JOB_MEG_SRC}" \
+    bash "${SCRIPT_DIR}/12_meg_dynamics.sh" "${SUBJECT}")
+echo "Stage K (HMM/DyNeMo): job ${JOB_DYNAMICS} (after MEG source)"
+
+# ---------------------------------------------------------------
+# Stage L: FOOOF spectral parameterization (depends on MEG source)
+# ---------------------------------------------------------------
+
+JOB_FOOOF=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "fooof_${SUBJECT}" \
+    -R 4 \
+    -T 30 \
+    -j "${JOB_MEG_SRC}" \
+    bash "${SCRIPT_DIR}/13_fooof.sh" "${SUBJECT}")
+echo "Stage L (FOOOF): job ${JOB_FOOOF} (after MEG source)"
+
+# ---------------------------------------------------------------
+# Stage M: TMS-EEG fitting (depends on connectome + MEG dynamics)
+# ---------------------------------------------------------------
+
+TMS_DEPS="${JOB_CONN}"
+[ -n "${JOB_DYNAMICS}" ] && TMS_DEPS="${TMS_DEPS},${JOB_DYNAMICS}"
+
+JOB_TMS=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "tms_fit_${SUBJECT}" \
+    -R 8 \
+    -T 240 \
+    -j "${TMS_DEPS}" \
+    bash "${SCRIPT_DIR}/14_tms_fitting.sh" "${SUBJECT}")
+echo "Stage M (TMS fitting): job ${JOB_TMS} (after connectome + dynamics)"
+
+# ---------------------------------------------------------------
+# Stage N: Prediction features (depends on everything)
+# ---------------------------------------------------------------
+
+ALL_DEPS="${JOB_TMS},${JOB_MRS},${JOB_FOOOF},${JOB_ADV},${JOB_MICRO}"
+
+JOB_FEATURES=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "features_${SUBJECT}" \
+    -R 4 \
+    -T 30 \
+    -j "${ALL_DEPS}" \
+    bash "${SCRIPT_DIR}/15_extract_features.sh" "${SUBJECT}")
+echo "Stage N (feature extraction): job ${JOB_FEATURES} (after all)"
+
 echo ""
 echo "=============================================="
 echo " All jobs submitted"
@@ -153,10 +249,15 @@ echo " Monitor: ls ${LOG_DIR}/"
 echo "=============================================="
 echo ""
 echo " Dependency graph:"
-echo "   A (fsl_anat)  ──────────────────────────────"
+echo ""
+echo "   A (fsl_anat) ──────────── I (MRS: fsl_mrs)"
 echo "   B (recon-all) ──┬── E (TRACULA)"
-echo "                   ├── F (connectome)"
-echo "                   └── G (advanced FS)"
+echo "                   ├── F (connectome) ──────── M (TMS fitting)"
+echo "                   ├── G (advanced FS)              │"
+echo "                   └── J (MEG source) ──┬── K (HMM/DyNeMo) ──┘"
+echo "                                        └── L (FOOOF)"
 echo "   C (DWI preproc) ┬── D (bedpostx) ──┬── E"
 echo "                   │                   └── F"
 echo "                   └── H (microstructure)"
+echo ""
+echo "   N (features) ← waits for ALL above"
