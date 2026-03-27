@@ -214,6 +214,53 @@ WAND provides ground truth for validating tissue boundaries: QMT (WM/GM contrast
 
 **Tools:** MCMRSimulator.jl (spatial/Bloch), fsl_mrs_sim (spectral basis), KomaMRI.jl (GPU-accelerated alternative), FID-A/Spinach (J-coupling if needed).
 
+**Acquisition-side reality:** Even with sLASER (best SVS slice profiles via adiabatic refocusing), fat suppression quality varies per scan due to coil loading, B0 shim quality, voxel placement distance from scalp, VAPOR water suppression interaction with short-T1 lipids, and operator-dependent OVS band placement. WAND's 4 VOIs (sensorimotor, auditory near skull; occipital deeper; ACC midline) will show different contamination profiles. The simulation predicts which VOIs to trust and quantifies repositioning-driven artifacts between ses-04 and ses-05.
+
+#### Architecture: "POSSUM for MRS"
+
+No existing tool does the full pipeline. The architecture combines three layers:
+
+```
+Layer 1: Spatial Response Engine (MCMRSimulator.jl or KomaMRI.jl)
+  Input: sLASER RF pulse waveforms + gradient timings
+  Physics: 3D Bloch equations
+  Output: S(x,y,z,Δf) — spatial response per chemical shift offset
+  → Captures: slice profiles, CSDE, OVS band effects
+
+Layer 2: Spectral Basis Engine (fsl_mrs_sim or FID-A or VESPA)
+  Input: metabolite spin systems + pulse sequence
+  Physics: density matrix with J-coupling
+  Output: B_m(t) — basis spectrum per metabolite per spatial position
+  → Captures: J-evolution, sequence-specific phase/amplitude
+
+Layer 3: Phantom + Integration Engine (THE MISSING PIECE)
+  Input: segmented head (charm/betsurf) + qMRI tissue properties
+  Integration:
+    Signal(t) = Σ_xyz [ S(x,y,z) · ρ(x,y,z) ·
+                  Σ_m C_m(x,y,z) · B_m(t,x,y,z) ·
+                  exp(-t/T2*(x,y,z)) · exp(i·Δω(x,y,z)·t) ]
+  Output: NIfTI-MRS format realistic spectrum
+  → Captures: lipid contamination, partial volume, B0 inhomogeneity
+```
+
+#### MRS Simulation Tool Landscape
+
+| Tool | Language | Spatial | J-coupling | Multi-tissue phantom | Role |
+|---|---|---|---|---|---|
+| **FID-A** | MATLAB | 1D-3D | Yes | No | Basis spectra (gold standard) |
+| **fsl_mrs_sim** | Python | Limited | Yes | No | Basis spectra (in our pipeline) |
+| **Spinach** | MATLAB | Yes | Yes (best) | Partial | Complex spin systems (GABA) |
+| **VESPA/MARSS** | Python | Yes | Yes | No | Python basis spectra |
+| **MCMRSimulator.jl** | Julia | Yes (3D MC) | No | Yes (mesh) | Spatial engine (at ~/dev/mcmrsimulator.jl) |
+| **KomaMRI.jl** | Julia | Yes (3D GPU) | No | Yes | Spatial engine (GPU-accelerated) |
+| **FSL-MRS** | Python | Fitting only | N/A | Yes (fitting) | Fitting / validation |
+| **OSPREY** | MATLAB | Fitting only | N/A | Yes (fitting) | Fitting / validation |
+| **POSSUM** | C++ (FSL) | Yes (imaging) | No | Yes | Architectural model (fMRI, not MRS) |
+
+**Primary gap:** The integration layer (Layer 3) that loads a segmented head, assigns tissue-specific metabolite concentrations + lipid resonances (0.9, 1.3 ppm) at anatomically correct locations, and performs spatially-weighted spectral integration. This is novel work — a JAX implementation would enable GPU acceleration and differentiability (backpropagate through simulation for fitting).
+
+**Connection to MIDAS:** The whole-brain MRSI approach (Rivera et al. 2024, PMC11614968) processed 118,922 voxels through MIDAS. The lipid ring contamination in EPSI is even more severe than in SVS. A simulation-based correction calibrated on WAND's qMRI ground truth could improve metabolite quantification across the entire MRSI volume.
+
 ### 11. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
