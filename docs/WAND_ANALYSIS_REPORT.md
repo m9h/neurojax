@@ -168,7 +168,30 @@ WAND provides ground truth for validating tissue boundaries: QMT (WM/GM contrast
 
 **Note on iso2mesh**: The Python package (`pip install iso2mesh`, `NeuroJSON/pyiso2mesh`) is a native Python reimplementation (not MATLAB wrapper) but still auto-downloads external CGAL and TetGen binaries. CGAL also available via `brew install cgal`. The `brain2mesh()` function expects 5 tissue probability maps (CSF, GM, WM, bone, scalp) — FreeSurfer `aparc+aseg` needs conversion to these, with approximate skull/scalp from morphological dilation.
 
-### 9. FOOOF/specparam Aperiodic + Periodic Decomposition
+### 9. Pseudo-CT Validation Against Quantitative MRI
+**Question:** Can WAND's quantitative structural data validate (or replace) pseudo-CT inference for skull conductivity modeling?
+
+**The pseudo-CT problem:** TMS/tDCS E-field accuracy depends on skull conductivity, which requires CT-like bone density estimates. The Plymouth tool (`sitiny/mr-to-pct`, Yaakub et al. 2023, Brain Stimulation) uses a MONAI U-Net to predict pseudo-CT from T1w MRI. SimNIBS charm uses DL tissue segmentation to distinguish compact/spongy bone without generating CT. BabelBrain uses atlas-based pseudo-CT. sbi4dwi already has a `PseudoCTMapper` module implementing the Plymouth and BabelBrain approaches with Archie's Law for conductivity estimation.
+
+**What WAND provides as ground truth:**
+
+| qMRI acquisition | Measures | Pseudo-CT proxy for |
+|---|---|---|
+| QMT bound pool fraction (ses-02) | Macromolecular content in bone | Bone mineral density → HU |
+| VFA quantitative T1 (ses-02) | T1 relaxation in skull | Bone density (shorter T1 = denser) |
+| Multi-echo GRE R2* (ses-06) | Susceptibility/mineral content | Cortical bone density |
+| MP2RAGE quantitative T1 (ses-06) | Independent T1 estimate | Cross-validates VFA in bone |
+
+**Analyses:**
+1. Generate pseudo-CT from T1w using Plymouth DL model → compare predicted HU against QMT/VFA-derived bone density
+2. Compare charm's compact/spongy bone segmentation boundaries against QMT-derived density gradient
+3. Calibrate sbi4dwi `PseudoCTMapper` Archie's Law parameters (porosity exponent, brine conductivity) using QMT porosity estimates
+4. Test: **Can qMRI replace pseudo-CT entirely?** If QMT gives bone density directly, the DL prediction step is unnecessary
+5. Compare E-field simulations using each skull model: charm segmentation vs Plymouth pseudo-CT vs qMRI-derived conductivity
+
+**Potential finding:** qMRI-based skull conductivity may be more accurate than pseudo-CT because it measures the actual physical property rather than predicting it from T1 contrast. This would establish WAND-type acquisitions as the gold standard for TMS planning.
+
+### 10. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
 - **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
