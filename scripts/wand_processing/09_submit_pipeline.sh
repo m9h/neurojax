@@ -242,6 +242,18 @@ JOB_FEATURES=$(fsl_sub \
     bash "${SCRIPT_DIR}/15_extract_features.sh" "${SUBJECT}")
 echo "Stage N (feature extraction): job ${JOB_FEATURES} (after all)"
 
+# ---------------------------------------------------------------
+# Stage P: SimNIBS charm (depends on nothing — uses raw T1w/T2w)
+# ---------------------------------------------------------------
+
+JOB_SIMNIBS=$(fsl_sub \
+    -l "${LOG_DIR}" \
+    -N "simnibs_${SUBJECT}" \
+    -R 8 \
+    -T 60 \
+    bash "${SCRIPT_DIR}/16_simnibs_charm.sh" "${SUBJECT}")
+echo "Stage P (SimNIBS charm): job ${JOB_SIMNIBS}"
+
 echo ""
 echo "=============================================="
 echo " All jobs submitted"
@@ -259,5 +271,6 @@ echo "                                        └── L (FOOOF)"
 echo "   C (DWI preproc) ┬── D (bedpostx) ──┬── E"
 echo "                   │                   └── F"
 echo "                   └── H (microstructure)"
+echo "   P (SimNIBS charm) ── E-field at M1 ── M (TMS fitting)"
 echo ""
 echo "   N (features) ← waits for ALL above"
