@@ -1,0 +1,7 @@
+WARNING:2026-03-26 15:11:58,299:jax._src.xla_bridge:969: An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+INFO Loaded 1 dataset(s): [(30005, 68)]
+INFO Applying 'tde_pca' with {'n_embeddings': 15, 'n_pca_components': 80}
+INFO Applying 'standardize' with {}
+INFO Preparation complete. Shapes: [(29991, 80)]
+/var/spool/slurmd/job00227/slurm_script: line 23: 3519940 Killed                  python examples/compare_sysid_wand.py --subject sub-08033 --wand-root /data/raw/wand --n-states 8 --skip-source-recon --save-dir data/wand_parcellated
+slurmstepd-gx10-dgx-spark: error: Detected 1 oom_kill event in StepId=227.batch. Some of the step tasks have been OOM Killed.

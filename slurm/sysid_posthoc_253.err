@@ -1,0 +1,87 @@
+WARNING:2026-03-26 18:20:22,368:jax._src.xla_bridge:969: An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+INFO Cropping parcellated data from 30005 to 7500 samples (30s)
+INFO Loaded 1 dataset(s): [(7500, 68)]
+INFO Applying 'tde_pca' with {'n_embeddings': 15, 'n_pca_components': 80}
+INFO Applying 'standardize' with {}
+INFO Preparation complete. Shapes: [(7486, 80)]
+INFO Parameters initialised (n_states=6, n_channels=80)
+INFO Epoch 1  LL=-851258.00
+INFO Epoch 2  LL=-819579.81
+INFO Epoch 3  LL=-812806.81
+INFO Epoch 4  LL=-810828.31
+INFO Epoch 5  LL=-809634.81
+INFO Init 1/3  LL after 5 warmup epochs: -809634.81
+INFO Parameters initialised (n_states=6, n_channels=80)
+INFO Epoch 1  LL=-850736.44
+INFO Epoch 2  LL=-821320.56
+INFO Epoch 3  LL=-814788.50
+INFO Epoch 4  LL=-812937.69
+INFO Epoch 5  LL=-811766.25
+INFO Init 2/3  LL after 5 warmup epochs: -811766.25
+INFO Parameters initialised (n_states=6, n_channels=80)
+INFO Epoch 1  LL=-851342.00
+INFO Epoch 2  LL=-819152.88
+INFO Epoch 3  LL=-813175.69
+INFO Epoch 4  LL=-811412.56
+INFO Epoch 5  LL=-810367.25
+INFO Init 3/3  LL after 5 warmup epochs: -810367.25
+INFO Epoch 6  LL=-808840.25
+INFO Epoch 7  LL=-808310.50
+INFO Epoch 8  LL=-807872.38
+INFO Epoch 9  LL=-807529.00
+INFO Epoch 10  LL=-807248.25
+INFO Epoch 11  LL=-806985.31
+INFO Epoch 12  LL=-806724.12
+INFO Epoch 13  LL=-806540.38
+INFO Epoch 14  LL=-806372.81
+INFO Epoch 15  LL=-806223.94
+INFO Epoch 16  LL=-806123.94
+INFO Epoch 17  LL=-806003.88
+INFO Epoch 18  LL=-805888.56
+INFO Epoch 19  LL=-805781.25
+INFO Epoch 20  LL=-805702.00
+INFO Epoch 21  LL=-805613.50
+INFO Epoch 22  LL=-805562.88
+INFO Epoch 23  LL=-805513.94
+INFO Epoch 24  LL=-805457.62
+INFO Epoch 25  LL=-805403.31
+INFO Epoch 26  LL=-805356.00
+INFO Epoch 27  LL=-805290.75
+INFO Epoch 28  LL=-805249.00
+INFO Epoch 29  LL=-805216.12
+INFO Epoch 30  LL=-805187.75
+INFO DyNeMo initialised: n_modes=6, n_channels=80
+INFO Training data: 37 segments of length 200, batch_size=32
+INFO Epoch 1/20  loss=114.0865  nll=114.0865  kl=1.2556  kl_w=0.000
+INFO Epoch 2/20  loss=113.4534  nll=113.3291  kl=1.2432  kl_w=0.100
+INFO Epoch 3/20  loss=113.7869  nll=113.5433  kl=1.2180  kl_w=0.200
+INFO Epoch 4/20  loss=114.1876  nll=113.8356  kl=1.1734  kl_w=0.300
+INFO Epoch 5/20  loss=114.2785  nll=113.8277  kl=1.1271  kl_w=0.400
+INFO Epoch 6/20  loss=113.8822  nll=113.3448  kl=1.0749  kl_w=0.500
+INFO Epoch 7/20  loss=113.9428  nll=113.3292  kl=1.0226  kl_w=0.600
+INFO Epoch 8/20  loss=114.2043  nll=113.5129  kl=0.9877  kl_w=0.700
+INFO Epoch 9/20  loss=113.5048  nll=112.7595  kl=0.9316  kl_w=0.800
+INFO Epoch 10/20  loss=113.4872  nll=112.6854  kl=0.8909  kl_w=0.900
+INFO Epoch 11/20  loss=114.3948  nll=113.5367  kl=0.8581  kl_w=1.000
+INFO Epoch 12/20  loss=114.6074  nll=113.7856  kl=0.8218  kl_w=1.000
+INFO Epoch 13/20  loss=114.6911  nll=113.9174  kl=0.7737  kl_w=1.000
+INFO Epoch 14/20  loss=114.6367  nll=113.8934  kl=0.7433  kl_w=1.000
+INFO Epoch 15/20  loss=114.4169  nll=113.7202  kl=0.6967  kl_w=1.000
+INFO Epoch 16/20  loss=113.3043  nll=112.6418  kl=0.6625  kl_w=1.000
+INFO Epoch 17/20  loss=114.5337  nll=113.8974  kl=0.6362  kl_w=1.000
+INFO Epoch 18/20  loss=114.2655  nll=113.6645  kl=0.6010  kl_w=1.000
+INFO Epoch 19/20  loss=113.2117  nll=112.6423  kl=0.5694  kl_w=1.000
+INFO Epoch 20/20  loss=114.4561  nll=113.9055  kl=0.5507  kl_w=1.000
+Traceback (most recent call last):
+  File "/home/mhough/dev/neurojax/examples/compare_sysid_wand.py", line 470, in <module>
+    main()
+  File "/home/mhough/dev/neurojax/examples/compare_sysid_wand.py", line 279, in main
+    sig_result = windowed_signatures(
+                 ^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhough/dev/neurojax/src/neurojax/dynamics/windowed.py", line 291, in windowed_signatures
+    diffs = np.linalg.norm(np.diff(sigs, axis=0), axis=1)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhough/dev/neurojax/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py", line 2804, in norm
+    return sqrt(add.reduce(s, axis=axis, keepdims=keepdims))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+numpy.exceptions.AxisError: axis 1 is out of bounds for array of dimension 1

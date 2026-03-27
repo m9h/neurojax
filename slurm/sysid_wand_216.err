@@ -1,0 +1,96 @@
+WARNING:2026-03-26 13:57:27,843:jax._src.xla_bridge:969: An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+INFO Loading sub-08033 task-resting from /data/raw/wand/sub-08033/ses-01/meg/sub-08033_ses-01_task-resting.ds
+INFO Preprocessed: 274 channels, 250.0 Hz, 600.0 s
+INFO Cropping from 600s to 120s for source reconstruction
+INFO   chunk 0-30s done
+INFO   chunk 30-60s done
+INFO   chunk 60-90s done
+INFO   chunk 90-120s done
+INFO   chunk 120-120s done
+INFO Parcellated: (30005, 68) (68 parcels from aparc)
+INFO Saved data/wand_parcellated/sub-08033_task-resting_parc.npy
+INFO Loaded 1 dataset(s): [(30005, 68)]
+INFO Applying 'tde_pca' with {'n_embeddings': 15, 'n_pca_components': 80}
+INFO Applying 'standardize' with {}
+INFO Preparation complete. Shapes: [(29991, 80)]
+INFO Parameters initialised (n_states=8, n_channels=80)
+INFO Epoch 1  LL=-3404900.25
+INFO Epoch 2  LL=-3295953.50
+INFO Epoch 3  LL=-3262681.50
+INFO Epoch 4  LL=-3250427.75
+INFO Epoch 5  LL=-3243300.50
+INFO Init 1/3  LL after 5 warmup epochs: -3243300.50
+INFO Parameters initialised (n_states=8, n_channels=80)
+INFO Epoch 1  LL=-3405866.25
+INFO Epoch 2  LL=-3297157.50
+INFO Epoch 3  LL=-3267751.00
+INFO Epoch 4  LL=-3256031.50
+INFO Epoch 5  LL=-3249111.00
+INFO Init 2/3  LL after 5 warmup epochs: -3249111.00
+INFO Parameters initialised (n_states=8, n_channels=80)
+INFO Epoch 1  LL=-3401816.25
+INFO Epoch 2  LL=-3297425.25
+INFO Epoch 3  LL=-3264882.50
+INFO Epoch 4  LL=-3252367.75
+INFO Epoch 5  LL=-3245176.25
+INFO Init 3/3  LL after 5 warmup epochs: -3245176.25
+INFO Epoch 6  LL=-3237969.00
+INFO Epoch 7  LL=-3234605.75
+INFO Epoch 8  LL=-3232121.50
+INFO Epoch 9  LL=-3229894.75
+INFO Epoch 10  LL=-3228372.50
+INFO Epoch 11  LL=-3226790.00
+INFO Epoch 12  LL=-3225834.25
+INFO Epoch 13  LL=-3224914.50
+INFO Epoch 14  LL=-3224109.25
+INFO Epoch 15  LL=-3223240.50
+INFO Epoch 16  LL=-3222732.25
+INFO Epoch 17  LL=-3222248.50
+INFO Epoch 18  LL=-3221867.50
+INFO Epoch 19  LL=-3221535.75
+INFO Epoch 20  LL=-3221256.00
+INFO Epoch 21  LL=-3221029.75
+INFO Epoch 22  LL=-3220761.75
+INFO Epoch 23  LL=-3220483.50
+INFO Epoch 24  LL=-3220289.25
+INFO Epoch 25  LL=-3220127.00
+INFO Epoch 26  LL=-3219991.00
+INFO Epoch 27  LL=-3219833.00
+INFO Epoch 28  LL=-3219673.00
+INFO Epoch 29  LL=-3219517.50
+INFO Epoch 30  LL=-3219371.75
+INFO DyNeMo initialised: n_modes=8, n_channels=80
+INFO Training data: 149 segments of length 200, batch_size=32
+INFO Epoch 1/20  loss=113.3928  nll=113.3928  kl=1.2885  kl_w=0.000
+INFO Epoch 2/20  loss=113.3388  nll=113.2136  kl=1.2513  kl_w=0.100
+INFO Epoch 3/20  loss=114.1130  nll=113.8860  kl=1.1350  kl_w=0.200
+INFO Epoch 4/20  loss=113.9706  nll=113.6719  kl=0.9956  kl_w=0.300
+INFO Epoch 5/20  loss=113.8810  nll=113.5383  kl=0.8568  kl_w=0.400
+INFO Epoch 6/20  loss=114.1262  nll=113.7550  kl=0.7424  kl_w=0.500
+INFO Epoch 7/20  loss=113.5858  nll=113.2026  kl=0.6387  kl_w=0.600
+INFO Epoch 8/20  loss=113.3921  nll=113.0085  kl=0.5481  kl_w=0.700
+INFO Epoch 9/20  loss=113.8784  nll=113.4980  kl=0.4754  kl_w=0.800
+INFO Epoch 10/20  loss=113.7369  nll=113.3698  kl=0.4079  kl_w=0.900
+INFO Epoch 11/20  loss=113.7701  nll=113.4208  kl=0.3493  kl_w=1.000
+INFO Epoch 12/20  loss=113.3220  nll=113.0255  kl=0.2965  kl_w=1.000
+INFO Epoch 13/20  loss=113.1734  nll=112.9177  kl=0.2557  kl_w=1.000
+INFO Epoch 14/20  loss=114.1512  nll=113.9291  kl=0.2221  kl_w=1.000
+INFO Epoch 15/20  loss=113.4541  nll=113.2637  kl=0.1904  kl_w=1.000
+INFO Epoch 16/20  loss=114.1837  nll=114.0133  kl=0.1705  kl_w=1.000
+INFO Epoch 17/20  loss=114.2017  nll=114.0502  kl=0.1515  kl_w=1.000
+INFO Epoch 18/20  loss=113.6306  nll=113.4959  kl=0.1347  kl_w=1.000
+INFO Epoch 19/20  loss=113.7307  nll=113.6061  kl=0.1245  kl_w=1.000
+INFO Epoch 20/20  loss=113.8510  nll=113.7362  kl=0.1149  kl_w=1.000
+Traceback (most recent call last):
+  File "/home/mhough/dev/neurojax/examples/compare_sysid_wand.py", line 459, in <module>
+    main()
+  File "/home/mhough/dev/neurojax/examples/compare_sysid_wand.py", line 295, in main
+    hmm_lt = mean_lifetime(jnp.array(hmm_gamma), fs=sfreq)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhough/dev/neurojax/src/neurojax/analysis/summary_stats.py", line 179, in mean_lifetime
+    runs = _run_lengths(states_np, n_states)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/mhough/dev/neurojax/src/neurojax/analysis/summary_stats.py", line 97, in _run_lengths
+    current_state = int(states[0])
+                    ^^^^^^^^^^^^^^
+TypeError: only 0-dimensional arrays can be converted to Python scalars

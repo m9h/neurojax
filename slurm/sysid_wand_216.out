@@ -1,0 +1,48 @@
+=== Job 216 on gx10-dgx-spark ===
+Started: Thu Mar 26 01:57:27 PM PDT 2026
+GPU: NVIDIA GB10
+======================================================================
+  WAND MEG Systems Identification Comparison
+  Subject: sub-08033
+======================================================================
+
+WANDMEGLoader(root=/data/raw/wand, n_subjects=169)
+Tasks: ['auditorymotor', 'mmn', 'resting', 'simon', 'visual']
+
+Running pipeline: load → preprocess → source recon → parcellate
+NOTE: pick_types() is a legacy function. New code should use inst.pick(...).
+Removing 5 compensators from info because not all compensation channels were picked.
+Pipeline: 73.5s
+
+Parcellated: (30005, 68) (120s at 250.0Hz, 68 parcels)
+
+Preparing: TDE(15) → PCA(80) → standardize
+Prepared: (29991, 80)
+
+Also preparing: TuckerTDE (tensor decomposition)
+TuckerTDE: (29991, 80)
+
+--- Static Baseline ---
+  Static power shape: (15003, 68)
+  Static connectivity shape: (68, 68)
+
+--- [1/5] HMM (n_states=8) ---
+  Time: 12.1s
+
+--- [2/5] DyNeMo (n_modes=8) ---
+  Time: 247.5s
+
+--- [3/5] Windowed SINDy ---
+  18 windows | Time: 0.7s
+
+--- [4/5] Windowed Log-Signatures ---
+  0 change points | Time: 0.4s
+
+--- [5/5] Windowed DMD/Koopman ---
+  Time: 0.7s
+
+======================================================================
+  POST-HOC ANALYSIS
+======================================================================
+
+--- HMM Summary Statistics ---

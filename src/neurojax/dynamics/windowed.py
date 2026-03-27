@@ -287,6 +287,14 @@ def windowed_signatures(
     sigs = np.array(all_sigs)
     times = np.array(all_times)
 
+    if len(sigs) < 2:
+        return WindowedSignatureResult(
+            times=times,
+            signatures=sigs,
+            distances=np.array([]),
+            change_points=np.array([], dtype=int),
+        )
+
     # Consecutive distances
     diffs = np.linalg.norm(np.diff(sigs, axis=0), axis=1)
     mean_d = diffs.mean()

@@ -1,0 +1,67 @@
+WARNING:2026-03-26 18:27:35,599:jax._src.xla_bridge:969: An NVIDIA GPU may be present on this machine, but a CUDA-enabled jaxlib is not installed. Falling back to cpu.
+INFO Cropping parcellated data from 30005 to 15000 samples (60s)
+INFO Loaded 1 dataset(s): [(15000, 68)]
+INFO Applying 'tde_pca' with {'n_embeddings': 15, 'n_pca_components': 80}
+INFO Applying 'standardize' with {}
+INFO Preparation complete. Shapes: [(14986, 80)]
+INFO Parameters initialised (n_states=6, n_channels=80)
+INFO Epoch 1  LL=-1703950.12
+INFO Epoch 2  LL=-1659905.88
+INFO Epoch 3  LL=-1649214.88
+INFO Epoch 4  LL=-1645200.62
+INFO Epoch 5  LL=-1642554.00
+INFO Init 1/3  LL after 5 warmup epochs: -1642554.00
+INFO Parameters initialised (n_states=6, n_channels=80)
+INFO Epoch 1  LL=-1702467.62
+INFO Epoch 2  LL=-1656623.50
+INFO Epoch 3  LL=-1645190.12
+INFO Epoch 4  LL=-1640488.00
+INFO Epoch 5  LL=-1638079.25
+INFO Init 2/3  LL after 5 warmup epochs: -1638079.25
+INFO Parameters initialised (n_states=6, n_channels=80)
+INFO Epoch 1  LL=-1704106.88
+INFO Epoch 2  LL=-1653640.50
+INFO Epoch 3  LL=-1642096.88
+INFO Epoch 4  LL=-1637999.88
+INFO Epoch 5  LL=-1635281.50
+INFO Init 3/3  LL after 5 warmup epochs: -1635281.50
+INFO Epoch 6  LL=-1633527.12
+INFO Epoch 7  LL=-1632136.25
+INFO Epoch 8  LL=-1631123.50
+INFO Epoch 9  LL=-1630340.75
+INFO Epoch 10  LL=-1629673.25
+INFO Epoch 11  LL=-1629064.62
+INFO Epoch 12  LL=-1628519.38
+INFO Epoch 13  LL=-1627957.75
+INFO Epoch 14  LL=-1627585.25
+INFO Epoch 15  LL=-1627150.50
+INFO Epoch 16  LL=-1626882.12
+INFO Epoch 17  LL=-1626596.50
+INFO Epoch 18  LL=-1626378.00
+INFO Epoch 19  LL=-1626166.62
+INFO Epoch 20  LL=-1625987.50
+INFO Epoch 21  LL=-1625843.12
+INFO Epoch 22  LL=-1625714.88
+INFO Epoch 23  LL=-1625592.50
+INFO Epoch 24  LL=-1625438.12
+INFO Epoch 25  LL=-1625177.00
+INFO Epoch 26  LL=-1625028.25
+INFO Epoch 27  LL=-1624897.38
+INFO Epoch 28  LL=-1624770.88
+INFO Epoch 29  LL=-1624639.62
+INFO Epoch 30  LL=-1624544.62
+INFO DyNeMo initialised: n_modes=6, n_channels=80
+INFO Training data: 74 segments of length 200, batch_size=32
+INFO Epoch 1/20  loss=113.4481  nll=113.4481  kl=1.1621  kl_w=0.000
+INFO Epoch 2/20  loss=113.2464  nll=113.1317  kl=1.1477  kl_w=0.100
+INFO Epoch 3/20  loss=114.0225  nll=113.8066  kl=1.0795  kl_w=0.200
+INFO Epoch 4/20  loss=113.4064  nll=113.1032  kl=1.0107  kl_w=0.300
+INFO Epoch 5/20  loss=113.1900  nll=112.8206  kl=0.9234  kl_w=0.400
+INFO Epoch 6/20  loss=114.0493  nll=113.6196  kl=0.8595  kl_w=0.500
+INFO Epoch 7/20  loss=113.4339  nll=112.9695  kl=0.7741  kl_w=0.600
+INFO Epoch 8/20  loss=113.9367  nll=113.4401  kl=0.7094  kl_w=0.700
+INFO Epoch 9/20  loss=114.0166  nll=113.4994  kl=0.6465  kl_w=0.800
+INFO Epoch 10/20  loss=114.0677  nll=113.5358  kl=0.5911  kl_w=0.900
+INFO Epoch 11/20  loss=113.0256  nll=112.4968  kl=0.5288  kl_w=1.000
+INFO Epoch 12/20  loss=113.8591  nll=113.3724  kl=0.4867  kl_w=1.000
+INFO Epoch 13/20  loss=113.6898  nll=113.2511  kl=0.4387  kl_w=1.000

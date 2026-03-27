@@ -1,0 +1,33 @@
+=== Job 253 — Thu Mar 26 06:20:21 PM PDT 2026 ===
+======================================================================
+  WAND MEG Systems Identification Comparison
+  Subject: sub-08033
+======================================================================
+
+WANDMEGLoader(root=/data/raw/wand, n_subjects=169)
+Tasks: ['auditorymotor', 'mmn', 'resting', 'simon', 'visual']
+
+Loading pre-saved: data/wand_parcellated/sub-08033_task-resting_parc.npy
+
+Parcellated: (7500, 68) (30s at 250.0Hz, 68 parcels)
+
+Preparing: TDE(15) → PCA(80) → standardize
+Prepared: (7486, 80)
+
+Also preparing: TuckerTDE (tensor decomposition)
+TuckerTDE: (7486, 80)
+
+--- Static Baseline ---
+  Static power shape: (3751, 68)
+  Static connectivity shape: (68, 68)
+
+--- [1/5] HMM (n_states=6) ---
+  Time: 8.9s
+
+--- [2/5] DyNeMo (n_modes=6) ---
+  Time: 103.2s
+
+--- [3/5] Windowed SINDy ---
+  0 windows | Time: 0.0s
+
+--- [4/5] Windowed Log-Signatures ---
