@@ -156,6 +156,7 @@ Additional brain-tissue segmentation tools for comparison:
 | **SimNIBS charm** | DL atlas | 10 tissues incl. compact/spongy bone | ~30 min | Local or DGX | `pip install simnibs` |
 | **brain2mesh** | iso2mesh/TetGen | 5 tissues (approx skull) | ~10 min | Local (CPU) | `pip install iso2mesh` |
 | **MNE BEM** | FreeSurfer watershed | 3 shells | ~5 min | Local (CPU) | MNE-Python |
+| **FSL BET+betsurf** | BET mesh + betsurf | 4 surfaces (brain, inner/outer skull, scalp) | ~5 min | Local (CPU) | FSL 6.0.7 (`bet2 -e -A`) |
 
 **DGX Spark workload** (batch 170 subjects): T1Prep, GRACE, FastSurfer, deepmriprep, bedpostx_gpu, DyNeMo training, TMS fitting.
 **Local workload** (single subject validation): FSL FAST, SynthSeg, charm, brain2mesh, MNE BEM, recon-all.
