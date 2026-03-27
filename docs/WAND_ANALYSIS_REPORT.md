@@ -311,17 +311,23 @@ All processing stays in native (subject) space as long as possible. Standard spa
 
 **FSL MMORF** (MultiModal Registration Framework, FSL 6.0.7+) is the new nonlinear registration tool that **simultaneously aligns multiple modalities** — critically, it handles **DTI tensor registration** alongside scalar images. Uses SPRED regularization (log Jacobian singular values) and bias field estimation. This is the right tool for registering AxCaliber DWI to T1w while preserving tensor orientation — neither FNIRT nor SynthMorph can do this.
 
-**Four-way registration comparison:**
-```
-SynthMorph  (FreeSurfer 8.2.0, DL, contrast-agnostic, fast)
-MMORF       (FSL 6.0.7, multimodal+tensor, SPRED regularization)
-FLIRT+FNIRT (FSL 6.0.7, classic, intensity-based)
-FSL DL Reg + OM-1 template (when available)
-```
-All transforms stored in `fsl-reg/`. Each tool has a strength:
-- **SynthMorph**: cross-contrast (QMT↔T1w, MP2RAGE↔T1w) — fast, no preprocessing
-- **MMORF**: DWI tensor → T1w — multimodal simultaneous alignment, preserves tensor orientation
-- **FLIRT+FNIRT**: standard baseline, widely validated, reproducible
+**Five-way registration comparison:**
+
+| Tool | Method | Best for | Install |
+|---|---|---|---|
+| **ANTs SyN** | Diffeomorphic (CC/MI metric) | Gold standard accuracy, cortical alignment | `brew install ants` or `pip install antspyx` |
+| **SynthMorph** | DL inference (contrast-agnostic) | Cross-contrast (QMT↔T1w, MP2RAGE↔T1w), fast | FreeSurfer 8.2.0 |
+| **MMORF** | Iterative multimodal (SPRED) | DWI tensor → T1w simultaneous alignment | FSL 6.0.7 |
+| **FLIRT+FNIRT** | Iterative (bending energy) | Standard baseline, widely validated | FSL 6.0.7 |
+| **FSL DL Reg + OM-1** | DL (planned) | Standard space with new template | When available |
+
+Each tool has a distinct strength for WAND:
+- **ANTs SyN**: best cortical registration accuracy (proven in many benchmarks). MI metric handles cross-contrast. Diffeomorphic guarantees topology preservation. ANTsPy for Python integration.
+- **SynthMorph**: fastest (~seconds), no preprocessing, any contrast pair. Best for quick cross-session alignment.
+- **MMORF**: unique tensor registration capability for DWI AxCaliber → T1w. Simultaneous multimodal alignment preserves tensor orientation.
+- **FLIRT+FNIRT**: reproducible baseline. Widely used, easy to compare against published results.
+
+All transforms stored in `fsl-reg/` for comparison. The registration comparison across 170 subjects (which tool gives best cortical alignment? best subcortical? best white matter tract overlap?) is itself a methods contribution.
 
 ### 4. MRS Quantification via fsl_mrs
 WAND MRS is sLASER acquisitions (`.dat` format) with water references in 4 brain regions per session:
