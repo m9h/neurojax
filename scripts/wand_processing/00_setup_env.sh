@@ -14,6 +14,7 @@ export PATH="${FSLDIR}/bin:${PATH}"
 
 # FreeSurfer
 export FREESURFER_HOME="${FREESURFER_HOME:-/Applications/freesurfer/8.2.0}"
+# Note: 8.1.0 also available at /Applications/freesurfer/8.1.0
 source "${FREESURFER_HOME}/SetUpFreeSurfer.sh"
 
 # Subjects directory (FreeSurfer output)
