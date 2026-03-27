@@ -143,6 +143,21 @@ WAND provides ground truth from QMT (bound pool fraction), multi-echo GRE T2*, a
 | SimNIBS charm | SimNIBS 4.x | 5 | T1w + T2w (raw) | DL-based, TMS-optimized, no FreeSurfer needed |
 | MNE BEM | MNE-Python | 3 | FreeSurfer watershed surfaces | Standard for MEG/EEG, fast, well-validated |
 
+Additional brain-tissue segmentation tools for comparison:
+
+| Tool | Method | Tissues | Speed | Install |
+|---|---|---|---|---|
+| **T1Prep** (Gaser) | AMAP + DeepMriPrep | GM/WM/CSF + cortical thickness + lesion maps | Fast (DL) | GitHub, Python+C, Apache 2.0 |
+| **GRACE** | MONAI U-Net | 11 tissues incl. cortical/cancellous bone | Fast (DL) | GitHub, MONAI |
+| **FastSurfer** | FastSurferCNN | 95 brain classes | < 1 min | GitHub, PyTorch |
+| **SynthSeg** | Contrast-agnostic CNN | 40 brain structures | 6s GPU | FreeSurfer 8.2.0 |
+| **deepmriprep** | Neural networks | GM/WM/CSF | 37x faster than CAT12 | `pip install deepmriprep` |
+| **FSL FAST** | Hidden Markov RF + EM | GM/WM/CSF | Minutes | FSL 6.0.7 |
+
+**T1Prep** (github.com/ChristianGaser/T1Prep) is particularly notable: it's CAT12 rewritten in Python by the same author (Christian Gaser), using DeepMriPrep for DL-accelerated processing with AMAP tissue segmentation. BIDS-native output, Apache 2.0 license. Provides cortical thickness maps and lesion detection alongside standard tissue probability maps.
+
+**GRACE** is the only alternative to SimNIBS charm that segments cortical + cancellous bone separately — critical for accurate TMS E-field modeling through the skull.
+
 WAND provides ground truth for validating tissue boundaries: QMT (WM/GM contrast), T2* (CSF boundaries), T1w+T2w (skull). Script: `17_brain2mesh_comparison.sh`.
 
 **Note on iso2mesh**: The Python package (`pip install iso2mesh`, `NeuroJSON/pyiso2mesh`) is a native Python reimplementation (not MATLAB wrapper) but still auto-downloads external CGAL and TetGen binaries. CGAL also available via `brew install cgal`. The `brain2mesh()` function expects 5 tissue probability maps (CSF, GM, WM, bone, scalp) — FreeSurfer `aparc+aseg` needs conversion to these, with approximate skull/scalp from morphological dilation.
