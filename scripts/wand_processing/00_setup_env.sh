@@ -15,7 +15,10 @@ export PATH="${FSLDIR}/bin:${PATH}"
 # FreeSurfer
 export FREESURFER_HOME="${FREESURFER_HOME:-/Applications/freesurfer/8.2.0}"
 # Note: 8.1.0 also available at /Applications/freesurfer/8.1.0
-source "${FREESURFER_HOME}/SetUpFreeSurfer.sh"
+# FS 8.2.0 SetUpFreeSurfer.sh has unbound variable bug — temporarily disable strict mode
+set +u
+source "${FREESURFER_HOME}/SetUpFreeSurfer.sh" 2>/dev/null
+set -u
 
 # Subjects directory (FreeSurfer output)
 export SUBJECTS_DIR="${SUBJECTS_DIR:-/Users/mhough/dev/wand/derivatives/freesurfer}"
