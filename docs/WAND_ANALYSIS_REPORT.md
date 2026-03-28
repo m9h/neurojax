@@ -395,7 +395,25 @@ Key containers for WAND processing:
 
 Processing scripts call containers with data mounted from BIDS directories. The container version is the single source of truth — no local installs needed except neurojax/sbi4dwi (JAX ecosystem, developed locally).
 
-### 10. BIDS Derivatives Compliance
+### 10. QSIPrep + fMRIPrep for Structure-Function Coupling
+**QSIPrep** and **fMRIPrep** (both via Neurodesk) provide BIDS-structured parcellated outputs across multiple atlases, enabling systematic structure-function coupling analysis:
+
+| Tool | Produces | Atlases |
+|---|---|---|
+| **QSIPrep** | Preprocessed DWI + structural connectivity matrices | Schaefer (100-1000), Glasser, Gordon, Brainnetome, AAL, DK, Destrieux |
+| **fMRIPrep** | Preprocessed BOLD + parcellated timeseries + confounds | Same atlases via TemplateFlow |
+
+**Analysis:** For each atlas, compute structural connectivity (QSIPrep Cmat) and functional connectivity (fMRIPrep parcellated BOLD → correlation/partial correlation/tangent), then:
+1. Edge-wise structure-function correlation: where does anatomy predict function?
+2. Regions where SC-FC coupling is weak → dynamics (HMM state-switching) explains the gap
+3. Multiple parcellation resolutions (100→1000) reveal scale-dependence of coupling
+4. Seed-based connectivity from fMRI compared against tractography-based connectivity from DWI
+
+Both tools standardize the parcellation step — same atlas, same registration — so the comparison is clean. This is more systematic than running MELODIC + probtrackx2 separately with different parcellations.
+
+**WAND advantage:** ses-03 resting fMRI (3T) + ses-06 resting fMRI (7T) enables test-retest of FC, while ses-02 DWI (300 mT/m AxCaliber) provides the highest-quality structural connectivity available.
+
+### 11. BIDS Derivatives Compliance
 Each processing stage produces its own derivatives directory with `dataset_description.json` recording tool versions and provenance. Outputs follow BIDS naming conventions so neurojax loaders (BIDSConnectomeLoader, WANDMEGLoader) can discover them automatically. Full specification in `docs/BIDS_DERIVATIVES_STRUCTURE.md`.
 
 ### 10. Parallel Processing Strategy
