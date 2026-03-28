@@ -280,6 +280,20 @@ WAND ses-03 includes a complete cerebrovascular imaging battery:
 
 **Processing:** FSL `oxford_asl` / BASIL: pCASL + M0 + structural T1 → absolute CBF map. InvRec data provides blood T1 for calibration. TRUST gives global OEF. All via Neurodesk containers.
 
+**CMRO₂ hierarchy (vpjax):**
+
+| Level | OEF source | Spatial resolution | Method |
+|---|---|---|---|
+| Global | TRUST (sagittal sinus T2) | Whole-brain average | Lu 2008 |
+| **Regional** | **qBOLD (7-echo GRE, ses-06)** | **Per-voxel** | **He & Yablonskiy 2007, Bulte (Oxford)** |
+| Dynamic | Riera neurovascular model | Time-varying | Riera 2006/2007 |
+
+The critical upgrade: WAND's 7-echo GRE enables **quantitative BOLD (qBOLD)** — fitting a biophysical model to separate R2' (reversible, from deoxygenated blood) from R2 (irreversible, from tissue), giving per-voxel OEF and deoxygenated blood volume (DBV). Combined with pCASL CBF:
+
+`CMRO₂(regional) = CBF(regional) × OEF(regional) × CaO₂`
+
+This replaces the uniform global OEF from TRUST with spatially resolved oxygen extraction — a significant accuracy improvement, especially for cortical regions near large veins where OEF varies substantially. Implementation in vpjax (`vpjax/qbold/`).
+
 ### 12. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
