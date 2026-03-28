@@ -294,7 +294,26 @@ The critical upgrade: WAND's 7-echo GRE enables **quantitative BOLD (qBOLD)** �
 
 This replaces the uniform global OEF from TRUST with spatially resolved oxygen extraction — a significant accuracy improvement, especially for cortical regions near large veins where OEF varies substantially. Implementation in vpjax (`vpjax/qbold/`).
 
-### 12. FOOOF/specparam Aperiodic + Periodic Decomposition
+### 12. Cortical Layer Analysis + QSM (sub-mm WAND data)
+**Discovery:** WAND ses-06 structural data is **sub-millimeter** — MEGRE at 0.67mm, MP2RAGE at 0.7mm, T2w at 0.21mm in-plane. This enables cortical depth-dependent analysis via LAYNII or Nighres (~2-3 depth bins across the cortical ribbon).
+
+**Untapped resource:** The 7-echo GRE **phase data** (`*_part-phase_MEGRE.nii.gz`) is currently unused. Processing with QSMxT (BIDS-aware, Neurodesk) gives **Quantitative Susceptibility Mapping (QSM)** — separating paramagnetic iron from diamagnetic myelin at each voxel.
+
+**Layer-resolved analyses enabled:**
+
+| Map | Acquisition | Per-layer measurement |
+|---|---|---|
+| T1 | MP2RAGE (0.7mm) | Myelination gradient (short T1 = more myelin) |
+| R2* | MEGRE magnitude (0.67mm) | Combined iron + myelin |
+| **QSM** | **MEGRE phase (0.67mm)** | **Iron (+) vs myelin (−) SEPARATED** |
+| BPF | QMT (ses-02) | Direct myelin content |
+| T1w/T2w | ses-03 | Proxy — validate per layer vs QMT |
+
+**Iron-myelin decomposition per cortical layer** from R2* + QSM + BPF — no single contrast can achieve this. This connects to the feedforward (deep layers) / feedback (superficial layers) hierarchy in Valdes-Sosa's ξ-αNET and the geodesic cortical flow (Liu et al. 2026).
+
+**Tools:** LAYNII (Huber et al. 2021, volume-based layers), Nighres (Python, level-set layers), QSMxT (BIDS QSM pipeline). All via Neurodesk. Implementation in vpjax (`vpjax/layers/`, `vpjax/qsm/`).
+
+### 13. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
 - **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
