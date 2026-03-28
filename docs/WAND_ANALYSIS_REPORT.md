@@ -1,4 +1,4 @@
-# WAND Multi-Modal Analysis Report
+# Every Variable in the Model Has an Independent Measurement: Validating and Constraining Neurovascular Coupling with the WAND Multi-Modal Dataset
 
 ## Dataset
 
