@@ -313,7 +313,26 @@ This replaces the uniform global OEF from TRUST with spatially resolved oxygen e
 
 **Tools:** LAYNII (Huber et al. 2021, volume-based layers), Nighres (Python, level-set layers), QSMxT (BIDS QSM pipeline). All via Neurodesk. Implementation in vpjax (`vpjax/layers/`, `vpjax/qsm/`).
 
-### 13. FOOOF/specparam Aperiodic + Periodic Decomposition
+### 13. MEG Preprocessing via osl-ephys (Oxford Pipeline)
+
+**osl-ephys** (`github.com/OHBA-analysis/osl-ephys`) is the preprocessing and source reconstruction tool that feeds into osl-dynamics (HMM/DyNeMo). It provides the full MEG pipeline from raw data to parcellated source timeseries:
+
+```
+WAND CTF .ds → osl-ephys
+  ├── preprocessing: ICA artifact rejection (ica_label), filtering, downsampling
+  ├── source_recon: RHINO coregistration → beamformer or minimum_norm
+  ├── parcellation: project to atlas + sign_flipping across subjects
+  └── report: HTML QC per subject
+→ parcellated .npy → neurojax Data() → TDE+PCA → HMM/DyNeMo
+```
+
+Key modules: `rhino/` (Registration of Head Images to mNe Objects), `beamforming.py`, `minimum_norm.py`, `parcellation.py`, `sign_flipping.py`, `ica_label.py`, `batch.py` (multi-subject pipeline), `report/` (HTML QC).
+
+For WAND: MaxFilter not needed (CTF system, not Elekta). Install via `pip install osl-ephys` or from source. Needs FreeSurfer SUBJECTS_DIR (done: sub-08033 recon-all complete) + MNE-Python.
+
+osl-ephys provides the validated Oxford defaults for the same analysis neurojax reimplements in JAX — use as reference/oracle pipeline for comparison, like qMRLab for qMRI fitting.
+
+### 14. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
 - **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
