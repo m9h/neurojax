@@ -330,6 +330,24 @@ Key modules: `rhino/` (Registration of Head Images to mNe Objects), `beamforming
 
 For WAND: MaxFilter not needed (CTF system, not Elekta). Install via `pip install osl-ephys` or from source. Needs FreeSurfer SUBJECTS_DIR (done: sub-08033 recon-all complete) + MNE-Python.
 
+**Key findings from the osl-ephys paper (van Es, Gohil, Quinn, Woolrich — Frontiers in Neuroscience 2025):**
+
+- **Volumetric source reconstruction** (FSL-based): Unique to osl-ephys, not available in standard MNE-Python. Uses FSL's volumetric parcellation rather than FreeSurfer surfaces. Since we have FSL installed, this is a low-friction option alongside our neurojax surface-based beamformers.
+- **Config-based pipeline API**: Processing workflows specified as Python dictionaries rather than custom scripts. Standardizes parameter documentation and enables pipeline sharing. Model for our WAND scripts.
+- **Dask parallelization**: 175 min → 21 min on 16 cores for batch processing. Critical for scaling to 170 WAND subjects on DGX.
+- **Sign ambiguity resolution**: `sign_flipping.py` resolves the arbitrary sign of beamformer/MNE source amplitudes across subjects — prerequisite for group-level HMM/DyNeMo.
+- **Parcel time-course orthogonalization**: Colclough et al. method to remove zero-lag correlations from spatial leakage, ensuring connectivity estimates reflect genuine coupling rather than source reconstruction artifacts.
+- **Generalized ESD test**: Automated statistical outlier detection for bad channels/segments, more principled than fixed-threshold approaches.
+
+| Feature | osl-ephys | MNE-Python | neurojax |
+|---------|-----------|-----------|----------|
+| Config-based pipeline | Yes | No | Scripts |
+| Volumetric source recon | FSL-based | No | No |
+| Surface source recon | FreeSurfer | FreeSurfer | JAX native |
+| Parallel processing | Dask | Not built-in | jax.vmap |
+| Sign flipping | Yes | No | Needed |
+| HTML reports | Automatic | Manual | fsreport |
+
 osl-ephys provides the validated Oxford defaults for the same analysis neurojax reimplements in JAX — use as reference/oracle pipeline for comparison, like qMRLab for qMRI fitting.
 
 ### 14. FOOOF/specparam Aperiodic + Periodic Decomposition
@@ -356,6 +374,37 @@ Resting MEG → source reconstruction → parcellated (68 or 148 regions)
 - Peak power vs. QMT myelin (more myelin → faster oscillations → different peak structure)
 
 **Implementation:** `specparam` (formerly `fooof`) Python package, or native JAX reimplementation for differentiability. Per-region, per-state, per-subject → feature matrix for prediction.
+
+**Alternative: ξ-π nonparametric spectral decomposition** (Hu et al., IEEE TBME 2024): A nonparametric alternative to FOOOF that uses penalized Whittle likelihood + shape language modeling in an EM framework. Avoids FOOOF's parametric assumptions about 1/f shape. Validated on sleep EEG and large-sample iEEG with significantly lower MSE and more accurate peak detection than FOOOF/IRASA/BOSC. Open-source: `github.com/ShiangHu/Xi-Pi`. Should run both FOOOF and ξ-π on WAND data and compare — particularly interesting for state-specific spectra where the aperiodic shape may deviate from power-law.
+
+### 15. HIGGS: One-Step Source + Connectivity Estimation
+
+**Hidden Gaussian Graphical Spectral (HIGGS) model** (Valdes-Sosa et al., Sci. Reports 2023): A one-step Bayesian approach that simultaneously estimates source activity and functional connectivity from M/EEG, avoiding the circularity of traditional two-step methods (source recon → connectivity).
+
+**Why this matters:** Standard pipelines run source imaging (MNE/beamformer) then estimate connectivity from the source timeseries. HIGGS shows this two-step approach introduces systematic errors because the source reconstruction is uninformed about the actual connectivity structure. HIGGS jointly estimates both, achieving <2% error vs ~20% for state-of-the-art two-step methods.
+
+**Technical approach:**
+- Models brain oscillations as complex-valued Gaussian graphical model with Hermitian precision matrix Θ(ιι,f)
+- Integrates electromagnetic forward model (leadfield L) directly into the estimation
+- EM algorithm alternates between updating source estimates and connectivity
+- Hermitian graphical LASSO (hgLASSO) for sparse connectivity with statistical guarantees
+- Unbiased estimation via debiasing procedure with Rayleigh-distributed test statistics
+
+**Validation:** Macaque simultaneous EEG/ECoG recordings provide experimental confirmation with 1/3 times larger congruence (Riemannian distance) than multistep methods.
+
+**Connection to neurojax:** HIGGS is the natural evolution of VARETA (already implemented in `source/vareta.py`). Both are from Valdes-Sosa's group. HIGGS adds the Hermitian GGS connectivity model on top of the source localization. Implementation target for neurojax — would use our existing leadfield module + JAX sparse solvers.
+
+### 16. Dynamic Mode Time-Frequency Representation (DTFR)
+
+(Hu et al., IEEE TBME 2025): Treats multivariate signals as a dynamical system, identifies fundamental dynamic modes with mutual orthogonality, then projects data onto modes for time-frequency representation. Outperforms traditional TF approaches (wavelets, STFT, Hilbert) for EEG disease discrimination.
+
+**Connection to neurojax:** Complements our TDE (time-delay embedding) approach. Where TDE captures temporal structure via delay-embedded covariance, DTFR captures it via dynamic mode decomposition — related to Koopman operator theory (which we already have in jaxctrl). The dynamic modes could serve as a basis for state identification, complementing HMM/DyNeMo.
+
+### 17. Automatic Lead Field QC (LF-AQI)
+
+(Valdes-Sosa et al., NeuroImage 2023): Automated quality control index for EEG lead fields computed from individual MRIs. Compares realistic head model lead fields against reference models (homogeneous/spherical) via correlation-based similarity. Validated on 1,251 subjects (Child Mind Institute). Cohen's d = 1.3.
+
+**Connection to neurojax:** Our `monitors/leadfield.py` and `source/` modules compute forward models — LF-AQI provides automatic validation. Should implement as a QC step before source reconstruction. Threshold: 90th percentile cutoff (-0.9755) for flagging problematic lead fields.
 
 ---
 
