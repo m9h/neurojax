@@ -261,7 +261,26 @@ Layer 3: Phantom + Integration Engine (THE MISSING PIECE)
 
 **Connection to MIDAS:** The whole-brain MRSI approach (Rivera et al. 2024, PMC11614968) processed 118,922 voxels through MIDAS. The lipid ring contamination in EPSI is even more severe than in SVS. A simulation-based correction calibrated on WAND's qMRI ground truth could improve metabolite quantification across the entire MRSI volume.
 
-### 11. FOOOF/specparam Aperiodic + Periodic Decomposition
+### 11. Perfusion Imaging Suite (pCASL, TRUST, Angiography)
+WAND ses-03 includes a complete cerebrovascular imaging battery:
+
+| Acquisition | Measures | Data | Processing |
+|---|---|---|---|
+| **pCASL** | Cerebral blood flow (CBF, ml/100g/min) | 64×64×22, 110 vols, PLD=2.0s | FSL `oxford_asl` / BASIL |
+| **TRUST** | Venous oxygen saturation (SvO₂) via sagittal sinus blood T2 | 64×64×1, 24 vols, TI=1.02s | Custom T2 fitting (Lu et al. 2008) |
+| **Inversion Recovery** | Blood T1 for absolute CBF calibration | 128×128×1, 960 TIs | Multi-TI T1 fitting |
+| **Phase-contrast angiography** | Vascular anatomy + flow velocities | 384×512×60, 3D high-res | Vessel segmentation |
+| **M0 scan** (AP direction) | Equilibrium magnetization for ASL quantification | 64×64×22, 3 vols | Part of oxford_asl pipeline |
+
+**Relevance to TMS study:**
+- **CBF at M1** as predictor of TMS excitability (higher perfusion → more metabolically active cortex)
+- **SvO₂ → OEF → CMRO₂** (metabolic rate = CBF × OEF × CaO₂) connects to MRS metabolites
+- **Vascular anatomy** informs neurovascular coupling model (Riera et al. 2006/2007)
+- **CBF + MRS + fMRI BOLD** provides three independent hemodynamic/metabolic measures of the same tissue
+
+**Processing:** FSL `oxford_asl` / BASIL: pCASL + M0 + structural T1 → absolute CBF map. InvRec data provides blood T1 for calibration. TRUST gives global OEF. All via Neurodesk containers.
+
+### 12. FOOOF/specparam Aperiodic + Periodic Decomposition
 **Per-subject spectral parameterization** using FOOOF (Fitting Oscillations & One Over F) on MEG power spectra:
 
 - **Aperiodic component** (1/f slope + offset): reflects excitation-inhibition balance. Steeper slope → more inhibition-dominated. Connects directly to MRS GABA/glutamate concentrations (ses-04/05).
