@@ -71,61 +71,53 @@ FS_DIR="${SUBJECTS_DIR}/${SUBJECT}"
 if [ -f "${FS_DIR}/scripts/recon-all.done" ]; then
     echo "recon-all completed. Running QC..."
 
-    # 2a. Euler number (topological defects)
+    # 2a. qatools.py — FreeSurfer's official QC tool
+    # Computes: WM/GM SNR, holes, defects, CC size, Talairach rotation,
+    #           contrast SNR. Generates screenshots and fornix QC.
+    echo "  Running qatools.py (screenshots + fornix + metrics)..."
+    qatools.py \
+        --subjects_dir "${SUBJECTS_DIR}" \
+        --output_dir "${QC_DIR}/freesurfer" \
+        --subjects "${SUBJECT}" \
+        --screenshots \
+        --fornix 2>&1 | tail -5
+    echo "  qatools output: ${QC_DIR}/freesurfer/"
+    echo "  Screenshots: ${QC_DIR}/freesurfer/screenshots/"
+    echo "  Fornix QC: ${QC_DIR}/freesurfer/fornix/"
+    echo "  Metrics CSV: ${QC_DIR}/freesurfer/qatools_*.csv"
+
+    # 2b. Euler number (topological defects — key quality indicator)
     echo "  Euler number (lower magnitude = better surface quality):"
     for HEMI in lh rh; do
-        EULER=$(mris_euler_number "${FS_DIR}/surf/${HEMI}.orig.nofix" 2>&1 | grep -oP 'euler.*?=\s*\K-?\d+' || echo "?")
+        EULER=$(mris_euler_number "${FS_DIR}/surf/${HEMI}.orig.nofix" 2>&1 | grep "euler" | tail -1 || echo "?")
         echo "    ${HEMI}: ${EULER}"
         echo "${HEMI}_euler=${EULER}" >> "${QC_DIR}/freesurfer/euler.txt"
     done
 
-    # 2b. Talairach QC
+    # 2c. Talairach QC
     echo "  Talairach registration QC..."
     talairach_afd -T 0.005 -xfm "${FS_DIR}/mri/transforms/talairach.xfm" 2>&1 | tail -1 | tee "${QC_DIR}/freesurfer/talairach_qc.txt"
 
-    # 2c. Volume statistics (aseg)
-    echo "  Extracting volume statistics..."
+    # 2d. Volume and surface statistics tables
+    echo "  Extracting volume and surface statistics..."
     asegstats2table \
         --subjects "${SUBJECT}" \
         --meas volume \
         --tablefile "${QC_DIR}/freesurfer/aseg_volumes.csv" \
         --sd "${SUBJECTS_DIR}" 2>&1 | tail -1
 
-    # 2d. Cortical statistics (aparc)
     for HEMI in lh rh; do
-        aparcstats2table \
-            --subjects "${SUBJECT}" \
-            --hemi ${HEMI} \
-            --meas thickness \
-            --tablefile "${QC_DIR}/freesurfer/${HEMI}_thickness.csv" \
-            --sd "${SUBJECTS_DIR}" 2>&1 | tail -1
-
-        aparcstats2table \
-            --subjects "${SUBJECT}" \
-            --hemi ${HEMI} \
-            --meas area \
-            --tablefile "${QC_DIR}/freesurfer/${HEMI}_area.csv" \
-            --sd "${SUBJECTS_DIR}" 2>&1 | tail -1
+        for MEAS in thickness area volume; do
+            aparcstats2table \
+                --subjects "${SUBJECT}" \
+                --hemi ${HEMI} \
+                --meas ${MEAS} \
+                --tablefile "${QC_DIR}/freesurfer/${HEMI}_aparc_${MEAS}.csv" \
+                --sd "${SUBJECTS_DIR}" 2>&1 | tail -1
+        done
     done
 
-    # 2e. Surface screenshots (if freeview available)
-    if command -v freeview 2>/dev/null; then
-        echo "  Generating surface screenshots..."
-        for VIEW in lateral medial; do
-            freeview -cmd \
-                -v "${FS_DIR}/mri/brain.mgz" \
-                -f "${FS_DIR}/surf/lh.pial:edgecolor=red" \
-                -f "${FS_DIR}/surf/rh.pial:edgecolor=red" \
-                -f "${FS_DIR}/surf/lh.white:edgecolor=blue" \
-                -f "${FS_DIR}/surf/rh.white:edgecolor=blue" \
-                -viewport sagittal \
-                -ss "${QC_DIR}/freesurfer/${VIEW}_surfaces.png" 2>/dev/null || true
-        done
-    else
-        echo "  freeview not available for screenshots (headless server)"
-    fi
-
-    # 2f. Brain volume summary
+    # 2e. Brain volume summary
     python3 << 'PYEOF'
 import os, json
 import numpy as np
