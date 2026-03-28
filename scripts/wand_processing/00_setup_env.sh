@@ -35,6 +35,8 @@ mkdir -p "${WAND_DERIVATIVES}/connectome"
 # Number of parallel threads (adjust for your machine)
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 export NSLOTS="${NSLOTS:-4}"
+# FSL eddy uses --nthr, FreeSurfer uses -openmp, both respect OMP_NUM_THREADS
+export FSL_EDDY_THREADS="${OMP_NUM_THREADS}"
 
 echo "=== WAND Processing Environment ==="
 echo "FSL:         $(cat ${FSLDIR}/etc/fslversion)"
