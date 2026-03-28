@@ -38,6 +38,9 @@ dependencies = [
     "jraph >= 0.0.6.dev0",
     "jinns>=1.5.1",
     "anthropic>=0.86.0",
+    "nibabel>=5.4.2",
+    "surfplot>=0.2.0",
+    "brainspace>=0.1.22",
 ]
 
 [project.scripts]

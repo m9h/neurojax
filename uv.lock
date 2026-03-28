@@ -340,6 +340,25 @@ wheels = [
 ]
 
 [[package]]
+name = "brainspace"
+version = "0.1.22"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+    { name = "nibabel" },
+    { name = "numpy" },
+    { name = "pandas" },
+    { name = "pillow" },
+    { name = "scikit-learn" },
+    { name = "scipy" },
+    { name = "vtk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/e6/72/f578fce00224f958754c2bac10064b9ea9858cc06366c34a0fa5029c23b1/brainspace-0.1.22.tar.gz", hash = "sha256:b7f70c5957b27e8b6e8487de89314476ffd61e1855f3695978988e48d8352157", size = 60433284, upload-time = "2025-12-03T18:01:26.784Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3c/c5/9abbb03d95b45f24e8377cf5e612bd8d381ffa74e9f7fb89c251ce8b416d/brainspace-0.1.22-py3-none-any.whl", hash = "sha256:4a91a3cbf5de9d8bfd5b2e8989caaef058a52e5635636e4bca05e2feca9582d4", size = 60691780, upload-time = "2025-12-03T18:01:22.272Z" },
+]
+
+[[package]]
 name = "certifi"
 version = "2026.1.4"
 source = { registry = "https://pypi.org/simple" }
@@ -739,7 +758,7 @@ wheels = [
 
 [[package]]
 name = "diffrax"
-version = "0.7.0"
+version = "0.7.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "equinox" },
@@ -750,9 +769,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "wadler-lindig" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/c9/9e/d6081a1daf7a7b70f53ddac637bd2e6cd6fa91042ffd7b204741c0ce6d44/diffrax-0.7.0.tar.gz", hash = "sha256:f3bcc578cd92a9ca86fc6f5a54c1de76c1ba62f74de69b56002624bf205316f1", size = 151595, upload-time = "2025-03-14T03:52:22.422Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5a/ea/a22853377a840d70d1d174d43183f12990c66eecf34ba7e76eec781249d0/diffrax-0.7.2.tar.gz", hash = "sha256:9adc70fe90dba83f7dd839845839b2531a3dd736a3944fe1aa26598507cfb48e", size = 155159, upload-time = "2026-02-18T01:14:04.964Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/aa/1d/236424e689f62d7fe58f8b10f08c63a49c68efba087eabdd09198a9bbf38/diffrax-0.7.0-py3-none-any.whl", hash = "sha256:aa9645c40552f11a2d32042ef6b9fcd53c1f0f6bdbe32d37cb788669ca9910be", size = 193163, upload-time = "2025-03-14T03:52:20.943Z" },
+    { url = "https://files.pythonhosted.org/packages/6c/48/c42f657f3d6b4d9d9674c9bc48e763d024511ea4cc1d6e0c68c7b4380c43/diffrax-0.7.2-py3-none-any.whl", hash = "sha256:1beee2f991cd049962fe3c89da28f933753aa66d80bef857533276c9f23301ed", size = 199673, upload-time = "2026-02-18T01:14:03.38Z" },
 ]
 
 [[package]]
@@ -1387,6 +1406,7 @@ name = "jaxctrl"
 version = "0.1.0"
 source = { editable = "../jaxctrl" }
 dependencies = [
+    { name = "diffrax" },
     { name = "equinox" },
     { name = "jax" },
     { name = "jaxlib" },
@@ -1395,8 +1415,11 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "beartype", marker = "extra == 'tests'" },
+    { name = "diffrax", specifier = ">=0.7.2" },
     { name = "diffrax", marker = "extra == 'diffrax'", specifier = ">=0.6.0" },
+    { name = "dysts", marker = "extra == 'benchmarks'", specifier = ">=0.95" },
     { name = "equinox", specifier = ">=0.11.0" },
+    { name = "gymnax", marker = "extra == 'benchmarks'", specifier = ">=0.0.9" },
     { name = "hgx", marker = "extra == 'hypergraph'", specifier = ">=0.1.0" },
     { name = "jax", specifier = ">=0.4.20,<0.5" },
     { name = "jaxlib", specifier = ">=0.4.20,<0.5" },
@@ -1406,7 +1429,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'tests'" },
     { name = "ruff", marker = "extra == 'dev'" },
 ]
-provides-extras = ["solvers", "hypergraph", "diffrax", "dev", "tests"]
+provides-extras = ["solvers", "hypergraph", "diffrax", "dev", "tests", "benchmarks"]
 
 [[package]]
 name = "jaxlib"
@@ -2043,6 +2066,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
+    { name = "brainspace" },
     { name = "chex" },
     { name = "click" },
     { name = "dandi" },
@@ -2058,6 +2082,7 @@ dependencies = [
     { name = "jraph" },
     { name = "lineax" },
     { name = "mne" },
+    { name = "nibabel" },
     { name = "numpy" },
     { name = "optax" },
     { name = "optimistix" },
@@ -2068,6 +2093,7 @@ dependencies = [
     { name = "scico" },
     { name = "scipy" },
     { name = "signax" },
+    { name = "surfplot" },
     { name = "tensorstore" },
     { name = "tqdm" },
     { name = "vbjax" },
@@ -2101,6 +2127,7 @@ test = [
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.86.0" },
+    { name = "brainspace", specifier = ">=0.1.22" },
     { name = "chex" },
     { name = "click", specifier = ">=8.1.0" },
     { name = "cma", marker = "extra == 'bench'", specifier = ">=3.3.0" },
@@ -2121,6 +2148,7 @@ requires-dist = [
     { name = "matplotlib", marker = "extra == 'test'" },
     { name = "mne", specifier = ">=1.6.0" },
     { name = "myst-parser", marker = "extra == 'doc'" },
+    { name = "nibabel", specifier = ">=5.4.2" },
     { name = "numpy", specifier = ">=1.26.0" },
     { name = "openneuro-py", marker = "extra == 'test'" },
     { name = "optax", specifier = ">=0.1.9" },
@@ -2140,6 +2168,7 @@ requires-dist = [
     { name = "sphinx", marker = "extra == 'doc'" },
     { name = "sphinx-copybutton", marker = "extra == 'doc'" },
     { name = "sphinxcontrib-bibtex", marker = "extra == 'doc'" },
+    { name = "surfplot", specifier = ">=0.2.0" },
     { name = "sybil", marker = "extra == 'test'" },
     { name = "tensorstore" },
     { name = "tqdm" },
@@ -2147,6 +2176,21 @@ requires-dist = [
     { name = "vbjax", git = "https://github.com/ins-amu/vbjax" },
 ]
 provides-extras = ["bench", "test", "doc"]
+
+[[package]]
+name = "nibabel"
+version = "5.4.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "importlib-resources", marker = "python_full_version < '3.12'" },
+    { name = "numpy" },
+    { name = "packaging" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/01/3d2cc510c616bc8e27be17a063070d9126f69407961594a9ae734ea51121/nibabel-5.4.2.tar.gz", hash = "sha256:d5f4b9076a13178ae7f7acf18c8dbd503ee1c4d5c0c23b85df7be87efcbb49da", size = 4663132, upload-time = "2026-03-11T13:31:52.42Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/3b/d7/601b6396b33536811668935faa790112266c70661be94555999be431f86f/nibabel-5.4.2-py3-none-any.whl", hash = "sha256:553482c5f1e1034fc312edf6fb7f32236c0056439845d1c29293b7e8c98d4854", size = 3300985, upload-time = "2026-03-11T13:31:50.028Z" },
+]
 
 [[package]]
 name = "numcodecs"
@@ -2314,7 +2358,7 @@ wheels = [
 
 [[package]]
 name = "optimistix"
-version = "0.0.11"
+version = "0.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "equinox" },
@@ -2323,9 +2367,9 @@ dependencies = [
     { name = "lineax" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/35/10/0d2318a80016a42e2dbcae0be1bea3f51fce0ff5bd919afe532e1e03f0ed/optimistix-0.0.11.tar.gz", hash = "sha256:cfce0de98e7e9fdbcc2ce6d49a9f82cd3166fd0eee29c0c7a1983f8aefd37757", size = 66648, upload-time = "2025-10-17T20:53:28.148Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/5c/0b/3bdc0e698cb0d264e5dca0b5bb171342a950a43fa6e046d8c57189298422/optimistix-0.1.0.tar.gz", hash = "sha256:f05c9104748e87e1dc10a0b4a2be94e427f98c3eab0b1d41ea24a593d76be03d", size = 70164, upload-time = "2026-02-16T13:35:43.991Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ac/08/085ca409275952524e907156d9091a76b97d2c81a1099b2cb48a08c5ca3c/optimistix-0.0.11-py3-none-any.whl", hash = "sha256:acb4fb23b598db03e376900fcb61aee8dd511de41411e849661c0ffe9e4cd1c6", size = 97384, upload-time = "2025-10-17T20:53:26.798Z" },
+    { url = "https://files.pythonhosted.org/packages/63/53/6a81a6ebb1739f19c32002139719d4ee021a349d5bdbe066910feed327a1/optimistix-0.1.0-py3-none-any.whl", hash = "sha256:c8edda7bf7fe48839c93fcd72bce750c950ed9f7033158303150b7ab395add81", size = 101740, upload-time = "2026-02-16T13:35:42.971Z" },
 ]
 
 [[package]]
@@ -3416,6 +3460,23 @@ wheels = [
 ]
 
 [[package]]
+name = "surfplot"
+version = "0.2.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "brainspace" },
+    { name = "matplotlib" },
+    { name = "nibabel" },
+    { name = "numpy" },
+    { name = "scipy" },
+    { name = "vtk" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/d4/f8/1b74ddcb05764db182b1f468bcb8efb5548b8efe5f6e29be86c07d25cd8e/surfplot-0.2.0.tar.gz", hash = "sha256:1dd4ae3943860b1756f97e6acb10decc6e0411637a9d3ab4d365c4df99bb7bad", size = 72066, upload-time = "2022-12-20T18:51:23.229Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b1/17/440347ae24a38c78a9b116e0b80d91ee980ab88936a474546b7d2b5238c9/surfplot-0.2.0-py3-none-any.whl", hash = "sha256:cec0cc4283406898ef0c92e7c952dddc0f77993a8c05a6ceb9974a556a228ab8", size = 69762, upload-time = "2022-12-20T18:51:21.26Z" },
+]
+
+[[package]]
 name = "svmbir"
 version = "0.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3635,6 +3696,26 @@ dependencies = [
     { name = "jaxlib" },
     { name = "numpy" },
     { name = "scipy" },
+]
+
+[[package]]
+name = "vtk"
+version = "9.6.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "matplotlib" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/cf/70/8a68245293652aeba3448230ef30b90ab7aaa199fc158e7af8c4de66edf3/vtk-9.6.1-cp311-cp311-macosx_10_10_x86_64.whl", hash = "sha256:a2945c0320b5df8f697d49f7d759b2c230ac293188158574526c20bbcaf10241", size = 114551474, upload-time = "2026-03-26T23:34:29.585Z" },
+    { url = "https://files.pythonhosted.org/packages/b4/4d/cdc2b1eb0ea3e322dc707a08e3d145ed556d897eb10385a923cbc932edc0/vtk-9.6.1-cp311-cp311-macosx_11_0_arm64.whl", hash = "sha256:b49b3c36e599f652077e60ead865957a65b557a1b53bcd60b26bdaabb81d170d", size = 106761418, upload-time = "2026-03-26T23:34:34.064Z" },
+    { url = "https://files.pythonhosted.org/packages/72/92/5c9b9cdfe2738cc7b0dd51adacae67456ef53fcedae16b21a2cf9fbbd767/vtk-9.6.1-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:3b3537cae99226f3082d3aeef2350b7329ee3cef7e7bd88d4ecacfcbfdadfaeb", size = 145873720, upload-time = "2026-03-26T23:34:39.925Z" },
+    { url = "https://files.pythonhosted.org/packages/82/04/029bbc011f2346719e770e0ac961ff419948817a16fcda1249fe17a13525/vtk-9.6.1-cp311-cp311-manylinux_2_28_aarch64.whl", hash = "sha256:30a21c6810d2465dc34dd5987f9fb566dcb8d4e65e06367d10a018c24eea6747", size = 135625426, upload-time = "2026-03-27T13:48:20.901Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/4f/bb831b2c46d63db2e6bfa11dcd8b405d526ed376390af66a27f6949749cf/vtk-9.6.1-cp311-cp311-win_amd64.whl", hash = "sha256:dde3627b9d33b75efebe2465183cbc682a9f9a7c1529cf027a8871e60e11b3b2", size = 81247644, upload-time = "2026-03-27T13:49:52.1Z" },
+    { url = "https://files.pythonhosted.org/packages/95/89/c274101ec7b9bf7356333fdacf5e634803fe6b40f776e82c6ce9d941e0ad/vtk-9.6.1-cp312-cp312-macosx_10_10_x86_64.whl", hash = "sha256:b8125e3e3bc3160e18853a15be98101d0efe662c16036179ab15ddf1669b32af", size = 114729308, upload-time = "2026-03-27T13:50:37.547Z" },
+    { url = "https://files.pythonhosted.org/packages/9d/1a/ecbebaf31724a00f85fc4dbf95992b507328f615362ee8fa5ea1a38cf9d6/vtk-9.6.1-cp312-cp312-macosx_11_0_arm64.whl", hash = "sha256:956d05b8c53c6a9eba569de244e9c8229815bbb3e024bb9954fafe163407e66d", size = 106814956, upload-time = "2026-03-27T13:51:24.324Z" },
+    { url = "https://files.pythonhosted.org/packages/46/66/ba3c8b277cfa8058e982bfbd47875d9c6b4c06e65f98d577c69a2628f8d4/vtk-9.6.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:9728e8d41889a0f105b5d20a73a4da80f398b2cfe6057fa7a94cd61128c3ceb4", size = 145920093, upload-time = "2026-03-27T13:53:12.49Z" },
+    { url = "https://files.pythonhosted.org/packages/f5/cb/0bbf91cd45a8d8f5453fe01cddf44c913db6316b3a2b15f41893ae0ca9ad/vtk-9.6.1-cp312-cp312-manylinux_2_28_aarch64.whl", hash = "sha256:3b5ec2e56bd6165189aa2e6e896edda29460e63040f897e1a123a1592810266d", size = 135683842, upload-time = "2026-03-27T13:52:15.218Z" },
+    { url = "https://files.pythonhosted.org/packages/08/c0/653c94939498a3976157f054b830ade5c1da48ae288a23547f55fc25a262/vtk-9.6.1-cp312-cp312-win_amd64.whl", hash = "sha256:4022fda8af46636f74c3c1932c2365da13a1dc8779a6b1ea4b13dc5bbcdb729f", size = 81262921, upload-time = "2026-03-27T13:53:50.192Z" },
 ]
 
 [[package]]
