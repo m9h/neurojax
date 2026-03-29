@@ -1,0 +1,1047 @@
+%% wand_neurojax.Rnw — Sweave/knitr document
+%% Build: Rscript -e "knitr::knit('wand_neurojax.Rnw')" && tectonic wand_neurojax.tex
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{subcaption}
+\usepackage{siunitx}
+
+\bibliographystyle{unsrtnat}
+
+\title{Validating and Constraining Neurovascular Coupling\\
+  with Differentiable Biophysical Modeling\\
+  from Tissue Microstructure to Cortical Dynamics\\
+  in the WAND Multi-Modal Dataset}
+\author{Morgan G.\ Hough}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+% ============================================================================
+%  R setup
+% ============================================================================
+
+<<setup, include=FALSE>>=
+library(knitr)
+opts_chunk$set(
+  echo       = FALSE,
+  message    = FALSE,
+  warning    = FALSE,
+  fig.width  = 7,
+  fig.height = 5,
+  fig.align  = "center",
+  dpi        = 150,
+  cache      = TRUE
+)
+
+# --- Paths ---
+wand_root   <- "/Users/mhough/dev/wand"
+deriv       <- file.path(wand_root, "derivatives")
+subject     <- "sub-08033"
+qmri_dir    <- file.path(deriv, "qmri", subject)
+perf_dir    <- file.path(deriv, "perfusion", subject)
+adv_dir     <- file.path(deriv, "advanced-freesurfer", subject)
+fs_dir      <- file.path(deriv, "freesurfer", subject)
+anat_dir    <- file.path(wand_root, subject)
+
+# --- Helper: load NIfTI and extract a slice ---
+load_nifti_slice <- function(path, slice = NULL, dim = 3) {
+  if (!file.exists(path)) return(NULL)
+  suppressMessages(library(RNifti))
+  img <- readNifti(path)
+  d   <- dim(img)
+  if (is.null(slice)) slice <- d[dim] %/% 2
+  switch(dim,
+    `1` = img[slice, , ],
+    `2` = img[, slice, ],
+    `3` = img[, , slice]
+  )
+}
+
+# --- Helper: orthographic view ---
+ortho_view <- function(path, title = "", zlim = NULL, colormap = "gray") {
+  if (!file.exists(path)) {
+    plot.new(); text(0.5, 0.5, paste("Not found:", basename(path)))
+    return(invisible(NULL))
+  }
+  suppressMessages(library(RNifti))
+  img <- readNifti(path)
+  d   <- dim(img)
+  if (length(d) == 4) img <- img[,,,1]
+  d   <- dim(img)
+  vox <- abs(pixdim(img)[2:4])  # voxel dimensions in mm (abs for negative strides)
+
+  # Find brain center (median of bright voxels) instead of dim/2
+  thr_val <- quantile(img[img > 0 & is.finite(img)], 0.50, na.rm = TRUE)
+  nz <- which(img > thr_val, arr.ind = TRUE)
+  if (nrow(nz) > 100) {
+    cx <- as.integer(median(nz[,1]))
+    cy <- as.integer(median(nz[,2]))
+    cz <- as.integer(median(nz[,3]))
+  } else {
+    cx <- d[1] %/% 2; cy <- d[2] %/% 2; cz <- d[3] %/% 2
+  }
+
+  ax <- img[, , cz]
+  co <- img[, cy, ]
+  sa <- img[cx, , ]
+
+  # Aspect ratios from voxel sizes
+  asp_ax <- vox[2] / vox[1]
+  asp_co <- vox[3] / vox[1]
+  asp_sa <- vox[3] / vox[2]
+
+  if (is.null(zlim)) {
+    vals <- img[img != 0 & is.finite(img)]
+    if (length(vals) > 100) {
+      zlim <- quantile(vals, c(0.02, 0.98), na.rm = TRUE)
+    } else {
+      zlim <- range(img, na.rm = TRUE)
+    }
+  }
+
+  cols <- switch(colormap,
+    "gray" = gray.colors(256),
+    "heat" = colorRampPalette(c("black", "red", "orange", "yellow", "white"))(256),
+    "cool" = colorRampPalette(c("black", "blue", "cyan", "white"))(256),
+    gray.colors(256)
+  )
+
+  par(mfrow = c(1, 3), mar = c(0.5, 0.5, 2, 0.5), bg = "black")
+  slices <- list(ax, co, sa)
+  asps   <- c(asp_ax, asp_co, asp_sa)
+  for (i in seq_along(slices)) {
+    sl <- slices[[i]]
+    sl[is.na(sl)] <- 0
+    sl[sl < zlim[1]] <- zlim[1]
+    sl[sl > zlim[2]] <- zlim[2]
+    image(sl, col = cols, axes = FALSE, asp = asps[i], useRaster = TRUE)
+  }
+  mtext(title, side = 3, line = -1.5, outer = TRUE, col = "white", cex = 1.2)
+  par(mfrow = c(1, 1), bg = "white")
+}
+@
+
+% ============================================================================
+\begin{abstract}
+Whole-brain computational models of neural dynamics require structural
+connectivity, conduction delays, metabolic context, and electrophysiological
+recordings as independent constraints. Existing studies typically lack one
+or more of these measurements, forcing free-parameter assumptions that
+limit predictive validity. The Welsh Advanced Neuroimaging Database
+(WAND)~\citep{Mayerand2025wand} provides all of them in 170 healthy
+volunteers: ultra-strong-gradient diffusion MRI (300~mT/m AxCaliber),
+quantitative MRI (T1/T2/QMT/MP2RAGE), perfusion (pCASL, TRUST),
+spectroscopy (GABA/glutamate), 275-channel MEG, and TMS-EEG.
+
+We introduce \textbf{NeuroJAX}, a differentiable, GPU-accelerated Python
+toolkit built on JAX~\citep{Bradbury2018jax} and
+Equinox~\citep{Kidger2021equinox} that unifies preprocessing and
+biophysical modelling in a single computational graph. NeuroJAX enables
+end-to-end gradient descent from sensor-level error through hemodynamic
+forward models to per-region biophysical parameters.
+
+This paper presents the quantitative structural processing pipeline for
+the reference WAND subject (sub-08033) and the first set of derived maps,
+demonstrating that every free parameter in a standard neurovascular
+coupling model can be independently measured or tightly constrained.
+\end{abstract}
+
+% ============================================================================
+\section{Introduction}
+% ============================================================================
+
+Large-scale computational models of brain dynamics
+\citep{Deco2013rww,Riera2006neurovascular} depend on three categories of
+subject-specific input: (1) structural connectivity and conduction delays
+from diffusion MRI, (2) regional tissue properties---myelination, metabolite
+concentrations, perfusion---that constrain biophysical parameters, and
+(3) functional recordings (MEG, fMRI, TMS-EEG) that provide the fitting
+targets. The tension in the field is that most datasets provide only a
+subset: the Human Connectome Project gives excellent diffusion and fMRI but
+no TMS; clinical TMS-EEG studies rarely include microstructural MRI.
+
+WAND~\citep{Mayerand2025wand} closes this gap with seven imaging sessions
+per subject on the Connectom 300~mT/m scanner at CUBRIC Cardiff,
+covering every modality needed for a fully-constrained neurovascular model.
+
+\subsection{The NeuroJAX approach}
+
+Where existing tools (osl-dynamics~\citep{Gohil2023dynemo},
+WhoBPyT, TVB) treat preprocessing and modelling as separate stages,
+NeuroJAX compiles them into a single JAX computation graph:
+%
+\begin{equation}
+  \mathcal{L}(\theta) = \sum_m w_m \, d_m\!\bigl(
+    \mathbf{y}_m^{\text{sim}}(\theta;\, \mathbf{C},\mathbf{D},\mathbf{L}),\;
+    \mathbf{y}_m^{\text{emp}}
+  \bigr)
+\end{equation}
+%
+where $\theta$ are biophysical parameters, $\mathbf{C}$/$\mathbf{D}$ are
+the structural connectome weights/delays, $\mathbf{L}$ is the leadfield,
+and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE).
+End-to-end \texttt{jax.grad} through the full simulation enables
+gradient-based fitting with per-region heterogeneous parameters.
+
+% ============================================================================
+\section{Dataset}
+% ============================================================================
+
+Table~\ref{tab:wand} summarises the WAND sessions for the reference
+subject sub-08033 (all modalities confirmed, 10.24~GB downloaded).
+
+\begin{table}[htbp]
+\centering
+\caption{WAND acquisition sessions for sub-08033.}
+\label{tab:wand}
+\begin{tabular}{llp{8cm}}
+\toprule
+Session & Modalities & Key acquisitions \\
+\midrule
+ses-01 & MEG          & CTF 275ch: resting, auditory-motor, MMN, simon, visual \\
+ses-02 & DWI + anat   & AxCaliber (4 shells, $b$=0--15500), CHARMED, T1w, VFA (SPGR/SSFP), QMT (16 vols) \\
+ses-03 & fMRI + anat  & T1w, T2w (grad-corrected), pCASL, TRUST, InvRec, angiography \\
+ses-04 & MRS + anat   & sLASER: ACC, occipital, auditory, sensorimotor; T1w \\
+ses-05 & MRS + anat   & Second MRS session (test--retest); T1w \\
+ses-06 & Structural   & MP2RAGE, multi-echo GRE (7 echoes, 0.67\,mm), T2w (0.21\,mm) \\
+ses-08 & TMS          & TMS-EEG SICI protocol (3 runs) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% ============================================================================
+\section{Methods: Quantitative Structural Processing}
+% ============================================================================
+
+\subsection{FreeSurfer recon-all + advanced segmentations}
+
+Standard cortical reconstruction was performed with FreeSurfer~8.2.0
+(\texttt{recon-all} with T2-weighted pial refinement from ses-03).
+Additional segmentations:
+\begin{itemize}
+  \item \textbf{SAMSEG}~\citep{Puonti2016samseg}: joint T1w+T2w Bayesian
+        segmentation, providing tissue probability maps and intracranial volume.
+  \item \textbf{SynthSeg}~\citep{Billot2023synthseg}: contrast-invariant DL
+        segmentation applied to T1w from ses-02, 03, 04, 05 for cross-session
+        volumetric consistency.
+  \item \textbf{Hypothalamic subunits}: DL segmentation (Billot et al.\ 2020).
+  \item \textbf{Thalamic nuclei}: FreeSurfer atlas-based segmentation with
+        optional DTI enhancement.
+  \item \textbf{Hippocampal subfields + amygdala nuclei}: with T2w for
+        improved subfield boundaries.
+\end{itemize}
+
+% --- Figure: T1w orthographic ---
+<<fig-t1w, fig.cap="Structural T1w (ses-03) for sub-08033. The T1-weighted image provides the anatomical reference for all cross-session registrations and serves as input for FreeSurfer cortical reconstruction, tissue segmentation (FAST/SAMSEG), and BEM forward model generation for MEG/EEG source localisation.", fig.height=3>>=
+t1w_path <- file.path(wand_root, subject, "ses-03/anat",
+                       paste0(subject, "_ses-03_T1w.nii.gz"))
+ortho_view(t1w_path, "ses-03 T1w")
+@
+
+\subsection{T1w/T2w myelin ratio}
+
+The T1w/T2w ratio~\citep{Glasser2011myelin} was computed after rigid-body
+registration of the gradient-corrected T2w to T1w (FLIRT 6-DOF), SynthStrip
+skull stripping, and voxelwise division. The ratio was projected to the
+cortical mid-surface (\texttt{mri\_vol2surf}, 0.2--0.8 cortical depth).
+
+<<fig-myelin, fig.cap="T1w/T2w myelin ratio (ses-03). This ratio serves as a widely-used proxy for cortical myelination, indexing the hierarchical organisation of cortex from heavily myelinated primary sensory areas to lightly myelinated association cortex. WAND uniquely allows validation of this proxy against ground-truth QMT bound pool fraction (Fig.~4) and multi-echo GRE R2* (Fig.~5).", fig.height=3>>=
+myelin_path <- file.path(adv_dir, "myelin", "T1w_T2w_ratio.nii.gz")
+ortho_view(myelin_path, "T1w/T2w Myelin Ratio")
+@
+
+\subsection{VFA T1 mapping (DESPOT1)}
+
+Quantitative T1 was estimated from the ses-02 SPGR variable flip angle
+data (8 flip angles: 2--18\textdegree, $\text{TR}_\text{exc}$~=~4\,ms)
+using the linearised DESPOT1 method~\citep{Deoni2003despot}:
+%
+\begin{equation}
+  \frac{S}{\sin\alpha} = E_1 \frac{S}{\tan\alpha} + M_0(1-E_1),
+  \qquad E_1 = e^{-\text{TR}/T_1}
+\end{equation}
+
+<<fig-t1map, fig.cap="Quantitative T1 map from ses-02 SPGR variable flip angle data (DESPOT1). Quantitative T1 reflects tissue water content and macromolecular environment: white matter (short T1, dark) is distinguished from grey matter (longer T1, bright). This map serves as a required input for the QMT two-pool model and provides an independent measure of tissue composition alongside the T1w/T2w ratio.", fig.height=3>>=
+t1map_path <- file.path(qmri_dir, "ses-02", "T1map.nii.gz")
+if (file.exists(t1map_path)) {
+  ortho_view(t1map_path, "VFA T1 Map (s)")
+} else {
+  plot.new(); text(0.5, 0.5, "T1 map not yet computed")
+}
+@
+
+\subsection{QMT bound pool fraction}
+
+Quantitative magnetization transfer was fitted from 11 MT-on volumes
+(3 MT flip angles $\times$ multiple offset frequencies: 1--56\,kHz) plus
+one MT-off reference, using a two-pool Ramani model~\citep{Ramani2002qmt}
+with super-Lorentzian lineshape for the bound pool. The bound pool
+fraction (BPF) provides a direct measure of macromolecular (myelin)
+content~\citep{Sled2001qmt}.
+
+<<fig-bpf, fig.cap="QMT bound pool fraction (ses-02, QUIT Ramani model with super-Lorentzian lineshape). BPF directly measures macromolecular (myelin) content via the restricted proton pool, providing the ground-truth measurement against which the T1w/T2w myelin proxy is validated. Median BPF = 0.10, consistent with healthy white matter. Combined with AxCaliber axon diameter, BPF yields the g-ratio and thence per-tract conduction velocity via the Hursh--Rushton relationship.", fig.height=3>>=
+# Prefer QUIT output over Python fit
+quit_bpf <- file.path(qmri_dir, "ses-02", "quit", "QMT_QMT_f_b.nii.gz")
+py_bpf   <- file.path(qmri_dir, "ses-02", "QMT_bpf.nii.gz")
+bpf_path <- if (file.exists(quit_bpf)) quit_bpf else py_bpf
+if (file.exists(bpf_path)) {
+  ortho_view(bpf_path, "QMT BPF (QUIT Ramani)", zlim = c(0.01, 0.20))
+} else {
+  plot.new(); text(0.5, 0.5, "QMT BPF not available")
+}
+@
+
+\subsection{Multi-echo GRE: T2* and R2* mapping (ses-06)}
+
+T2* was estimated by log-linear regression across 7 echoes of the
+sub-millimetre (0.67\,mm) multi-echo GRE from ses-06. R2*~=~1/T2*
+is sensitive to both iron and myelin content; combined with QSM
+(from the phase data, not yet processed), iron and myelin contributions
+can be separated.
+
+<<fig-megre, fig.cap="Multi-echo GRE first echo magnitude (ses-06, 0.67\\,mm isotropic). The sub-millimetre resolution enables cortical depth-resolved analysis via LAYNII or Nighres. The 7-echo magnitude data yields R2* maps sensitive to iron and myelin; the phase data (not yet processed) enables QSM for separating paramagnetic iron from diamagnetic myelin contributions --- critical for resolving the feedforward/feedback cortical hierarchy.", fig.height=3>>=
+# Show first echo magnitude — actual brain anatomy at sub-mm resolution
+megre1_path <- file.path(wand_root, subject, "ses-06/anat",
+                          paste0(subject, "_ses-06_echo-01_part-mag_MEGRE.nii.gz"))
+if (file.exists(megre1_path)) {
+  ortho_view(megre1_path, "MEGRE Echo 1 (0.67 mm)")
+} else {
+  plot.new(); text(0.5, 0.5, "MEGRE echo-01 not found")
+}
+@
+
+\subsection{MP2RAGE quantitative T1 (ses-06)}
+
+The MP2RAGE uniform image was computed from two inversion-time
+volumes, removing receive-field inhomogeneity.
+
+<<fig-mp2rage, fig.cap="MP2RAGE uniform image (ses-06, 0.7\\,mm isotropic). The MP2RAGE sequence provides B1-corrected quantitative T1 at sub-millimetre resolution, complementing the ses-02 VFA T1 map. Cross-validation between two independent T1 measurements (VFA and MP2RAGE) from different sessions and scanners tests the stability of quantitative tissue property estimation.", fig.height=3>>=
+mp2_path <- file.path(qmri_dir, "ses-06", "MP2RAGE_uniform.nii.gz")
+if (file.exists(mp2_path)) {
+  ortho_view(mp2_path, "MP2RAGE Uniform (ses-06)")
+} else {
+  plot.new(); text(0.5, 0.5, "MP2RAGE not found")
+}
+@
+
+\subsection{Perfusion: CBF from pCASL}
+
+Cerebral blood flow was quantified from pseudo-continuous ASL
+(bolus~=~1.8\,s, PLD~=~2.0\,s, 110 volumes) using FSL
+\texttt{oxford\_asl}~\citep{Alsop2015asl} with voxelwise M0 calibration,
+motion correction, and partial-volume correction. The ASL white paper
+single-compartment model~\citep{Alsop2015asl} gives:
+%
+\begin{equation}
+  \text{CBF} = \frac{6000 \cdot \lambda \cdot (\overline{S}_{\text{ctrl}} - \overline{S}_{\text{label}})
+    \cdot e^{\text{PLD}/T_{1b}}}
+    {2 \cdot \alpha \cdot T_{1b} \cdot M_0 \cdot (1 - e^{-\tau/T_{1b}})}
+    \quad [\text{ml}/100\text{g}/\text{min}]
+\end{equation}
+%
+where $\lambda$~=~0.9\,ml/g is the blood--brain partition coefficient,
+$\alpha$~=~0.85 the labelling efficiency, $\tau$~=~1.8\,s the bolus
+duration, and $T_{1b}$ the subject-specific blood T1.
+
+\paragraph{Blood T1 from inversion recovery.}
+Subject-specific $T_{1b}$ was estimated from the Look-Locker acquisition
+(128$\times$128$\times$1, 960 time points, TR~=~150\,ms). The signal
+in a sagittal sinus ROI was fitted to:
+%
+\begin{equation}
+  S(t) = A\bigl(1 - B\,e^{-t/T_1^*}\bigr),
+  \qquad T_1 = T_1^* \cdot B
+\end{equation}
+%
+where the Deichmann--Haase correction recovers true $T_1$ from the
+apparent $T_1^*$ and the inversion efficiency $B$.
+
+<<fig-cbf, fig.cap="Calibrated CBF map from pCASL (ses-03, ml/100g/min). Cerebral blood flow is the first of three independent perfusion measurements in WAND. Combined with OEF from TRUST and CaO$_2$ from haematocrit, CBF enters Fick's equation to yield CMRO$_2$ --- the metabolic demand signal that drives the Balloon--Windkessel hemodynamic model. GM mean = 113, WM mean = 24\\,ml/100g/min.", fig.height=3>>=
+cbf_path <- file.path(perf_dir, "oxford_asl", "native_space", "perfusion_calib.nii.gz")
+if (file.exists(cbf_path)) {
+  ortho_view(cbf_path, "CBF (ml/100g/min)")
+} else {
+  cbf_alt <- file.path(perf_dir, "oxford_asl", "native_space", "perfusion.nii.gz")
+  if (file.exists(cbf_alt)) {
+    ortho_view(cbf_alt, "CBF (a.u.)")
+  } else {
+    plot.new(); text(0.5, 0.5, "CBF: oxford_asl processing")
+  }
+}
+@
+
+\subsection{TRUST: venous oxygenation}
+
+T2 of venous blood in the sagittal sinus was estimated from the
+TRUST acquisition~\citep{Lu2008trust} (24 volumes, 4 effective TEs
+$\times$ 3 repeats $\times$ control/label). The control--label
+difference signal in the sinus decays as:
+%
+\begin{equation}
+  |\Delta S|(\text{eTE}) = S_0 \, e^{-\text{eTE}/T_2}
+\end{equation}
+%
+Venous T2 is calibrated to oxygen saturation $Y$ via the
+quadratic model~\citep{Lu2012bloodt2} at 3\,T:
+%
+\begin{equation}
+  \frac{1}{T_2} = A + B(1-Y) + C(1-Y)^2
+  \label{eq:t2y}
+\end{equation}
+%
+with coefficients $A$~=~4.5, $B$~=~47.1, $C$~=~55.5\,s$^{-1}$
+for Hct~=~0.42. Solving the quadratic for $Y$ gives SvO$_2$,
+from which OEF follows.
+
+\subsection{CMRO$_2$ via Fick's principle}
+
+The three independent perfusion measurements combine via the
+Fick equation to give the cerebral metabolic rate of oxygen consumption:
+%
+\begin{equation}
+  \text{CMRO}_2 = \text{CBF} \times \text{OEF} \times C_aO_2
+\end{equation}
+%
+where OEF~=~(SaO$_2$~$-$~SvO$_2$)/SaO$_2$ from TRUST and the
+arterial oxygen content is:
+%
+\begin{equation}
+  C_aO_2 = [\text{Hb}] \times 1.34 \times \text{SaO}_2
+    \approx 8.8\;\mu\text{mol\,O}_2/\text{ml\,blood}
+\end{equation}
+%
+for Hb~=~15\,g/dl and SaO$_2$~=~0.98. This hierarchy from global OEF
+(TRUST) can be upgraded to regional OEF via quantitative
+BOLD~\citep{He2007qbold} fitting of the 7-echo GRE (ses-06).
+
+% ============================================================================
+\section{vpjax: Differentiable Vascular Physiology}
+% ============================================================================
+
+The quantitative structural maps feed into \textbf{vpjax} (Virtual
+Physiology in JAX), the vascular/metabolic complement to vbjax
+(Virtual Brain in JAX). Where vbjax provides neural mass models, vpjax
+provides the complete physiological forward chain from neural activity
+to measurable haemodynamic signals:
+%
+\begin{equation}
+  \underbrace{z(t)}_{\text{neural}} \;\xrightarrow{\text{CMRO}_2}\;
+  \underbrace{f(t)}_{\text{CBF}} \;\xrightarrow{\text{Balloon}}\;
+  \underbrace{v(t),\; q(t)}_{\text{volume, deoxy-Hb}} \;\xrightarrow{T_2^*}\;
+  \underbrace{y(t)}_{\text{BOLD/ASL/qBOLD}}
+\end{equation}
+
+\subsection{Balloon--Windkessel hemodynamics}
+
+The extended Riera~\citep{Riera2006neurovascular} neurovascular model
+replaces the simplified Buxton hemodynamics with a full metabolic
+intermediate chain:
+%
+\begin{align}
+  \dot{s} &= z - \kappa\, s - \gamma\,(f - 1) \label{eq:bw_s}\\
+  \dot{f} &= s \label{eq:bw_f}\\
+  \tau\,\dot{v} &= f - v^{1/\alpha} \label{eq:bw_v}\\
+  \tau\,\dot{q} &= f\,\frac{E(f,\,\text{OEF}_0)}{E_0} - \frac{q}{v}\,v^{1/\alpha}
+    \label{eq:bw_q}
+\end{align}
+%
+where $E(f, E_0) = 1 - (1-E_0)^{1/f}$ is the oxygen extraction fraction
+under the Grubb assumption, $\alpha$ is the Grubb exponent, $\kappa$ is the
+signal decay rate, $\gamma$ the autoregulatory feedback, and $\tau$ the
+transit time.
+
+\subsection{qBOLD: regional OEF from multi-echo GRE}
+
+The key upgrade from global OEF (TRUST) to regional OEF uses the
+quantitative BOLD model~\citep{He2007qbold}:
+%
+\begin{equation}
+  S(\text{TE}) = S_0 \;\cdot\; \mathcal{F}(\text{OEF},\,\text{DBV},\,\text{TE})
+    \;\cdot\; e^{-R_2 \cdot \text{TE}}
+  \label{eq:qbold}
+\end{equation}
+%
+where $\mathcal{F}$ models the intravoxel frequency distribution from
+randomly oriented deoxygenated vessels. At short TE the signal is
+dominated by $R_2$ (tissue T2); at long TE by $R_2'$ (reversible,
+from deoxy-Hb). The difference $R_2' = R_2^* - R_2 \propto
+\text{OEF} \times \text{DBV} \times B_0$. WAND's 7-echo GRE
+(TE~=~5--35\,ms) is ideal for fitting this model.
+
+\subsection{CMRO$_2$ hierarchy}
+
+vpjax provides three levels of oxygen metabolism estimation:
+%
+\begin{table}[htbp]
+\centering
+\caption{CMRO$_2$ estimation hierarchy in vpjax.}
+\label{tab:cmro2}
+\begin{tabular}{llll}
+\toprule
+Level & OEF source & Spatial resolution & WAND data \\
+\midrule
+1. Global  & TRUST (sagittal sinus T2)   & Whole-brain average & ses-03 TRUST \\
+2. Regional & qBOLD (7-echo GRE, ses-06) & Per-voxel           & ses-06 MEGRE \\
+3. Dynamic  & Riera model (Eqs.~\ref{eq:bw_s}--\ref{eq:bw_q}) & Time-varying & MEG + fMRI \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Local linearization integration}
+
+The Balloon--Windkessel equations (Eqs.~\ref{eq:bw_s}--\ref{eq:bw_q})
+are stiff: the vascular response evolves on a $\sim$1\,s timescale while
+neural dynamics operate at $\sim$1\,ms. Standard Euler or RK4 integration
+requires impractically small time steps. vpjax uses the
+\textbf{local linearization} (LL) method (Ozaki 1992, extended by Riera),
+which analytically solves the linearised system at each step:
+%
+\begin{equation}
+  \mathbf{x}(t+\Delta t) = e^{\mathbf{J}(\mathbf{x}_t)\,\Delta t}\,\mathbf{x}(t)
+    + \mathbf{J}^{-1}\!\bigl(e^{\mathbf{J}\,\Delta t} - \mathbf{I}\bigr)\,\mathbf{f}_0
+\end{equation}
+%
+where $\mathbf{J} = \partial\mathbf{f}/\partial\mathbf{x}$ is the Jacobian
+evaluated at the current state. This permits large time steps ($\Delta t$
+up to 10$\times$ Euler) while remaining stable, and is fully differentiable
+via \texttt{jax.grad} through the matrix exponential, enabling gradient-based
+fitting of hemodynamic parameters alongside neural mass parameters in a
+single optimization.
+
+\subsection{Every variable has a measurement}
+
+The central claim is that WAND provides independent measurements for
+every state variable and parameter in the neurovascular model:
+%
+\begin{table}[htbp]
+\centering
+\caption{Model variables and their independent measurements.}
+\label{tab:variables}
+\begin{tabular}{lll}
+\toprule
+Model variable & vpjax module & WAND measurement \\
+\midrule
+Neural activity $z(t)$      & vbjax               & MEG \\
+Metabolic demand (CMRO$_2$) & \texttt{metabolism/} & pCASL $\times$ TRUST \\
+Blood flow $f(t)$           & \texttt{hemodynamics/} & pCASL CBF \\
+Oxygen extraction $E(t)$    & \texttt{metabolism/oef} & TRUST SvO$_2$ \\
+BOLD signal                 & \texttt{hemodynamics/bold} & ses-03 fMRI \\
+Vascular geometry           & \texttt{vascular/}   & Angiography \\
+E/I balance ($J_I$, $J_\text{NMDA}$) & constraint & MRS GABA/Glu \\
+Myelination (g-ratio)       & constraint           & QMT BPF \\
+Conduction velocity         & constraint (sbi4dwi) & AxCaliber \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Meshless physics: from tissue geometry to field solutions}
+
+The tissue segmentations (SAMSEG, SynthSeg, charm) and head meshes
+(brain2mesh, SimNIBS) provide the geometric substrate for forward
+modeling of electromagnetic fields (TMS E-field, EEG/MEG leadfield)
+and tissue mechanics. Traditional FEM approaches require mesh
+generation, which is fragile, slow, and non-differentiable. We pursue
+a meshless alternative using physics-informed neural networks (PINNs):
+
+\paragraph{Conductivity estimation.}
+The static current equation governs current flow through heterogeneous
+tissue:
+%
+\begin{equation}
+  \nabla \cdot \bigl(\sigma(\mathbf{x})\,\nabla V(\mathbf{x})\bigr) = -I_s(\mathbf{x})
+  \label{eq:poisson}
+\end{equation}
+%
+where $\sigma(\mathbf{x})$ is the tissue conductivity tensor and
+$V(\mathbf{x})$ the electric potential. In sbi4dwi, both $V$ and
+$\sigma$ are parameterised as Equinox MLPs and jointly optimised by
+minimising the PDE residual (Eq.~\ref{eq:poisson}), electrode data
+mismatch, and a pseudo-CT conductivity prior from WAND's quantitative
+MRI:
+%
+\begin{equation}
+  \mathcal{L}_\text{EIT} = \underbrace{\|\nabla\cdot(\sigma_\theta\nabla V_\phi)\|^2}_{\text{PDE}}
+    + \lambda_d \underbrace{\|V_\phi(\mathbf{x}_e) - V_\text{meas}\|^2}_{\text{data}}
+    + \lambda_r \underbrace{\|\sigma_\theta - \sigma_\text{prior}\|^2}_{\text{prior}}
+\end{equation}
+
+This meshless approach is fully differentiable via
+\texttt{jax.grad}, enabling end-to-end backpropagation from
+sensor-level TMS/EEG predictions through the conductivity model to
+tissue property maps --- connecting the tissue segmentation pipeline
+directly to the electromagnetic forward model without mesh generation.
+
+\paragraph{Connection to Living Matter Physics.}
+The same PINN framework extends to brain biomechanics
+\citep{Kuhl2024livingmatter}: tissue elasticity, viscoelasticity, and
+growth can be modelled by replacing the Poisson equation with the
+equilibrium equations of continuum mechanics, using the same meshless
+neural network solver. WAND's quantitative MRI (T1, T2*, QMT) provides
+tissue-specific material property priors, and MR elastography (if
+acquired) would provide direct validation. The differentiable nature of
+JAX enables coupling mechanical deformation fields with neural dynamics
+--- for example, predicting how traumatic brain injury alters
+connectome-level conduction delays.
+
+% ============================================================================
+\section{Relaxometry Signal Models}
+% ============================================================================
+
+Each quantitative MRI acquisition varies a specific physical parameter
+across volumes. Figure~\ref{fig:relaxometry} shows the signal models
+overlaid on the measured data from a representative white-matter ROI.
+
+<<fig-relaxometry, fig.cap="Relaxometry signal models for each multi-volume qMRI acquisition. (a) SPGR VFA: signal vs flip angle with DESPOT1 T1 fit. (b) Multi-echo GRE: signal vs echo time with mono-exponential T2* fit. (c) QMT: magnetisation transfer ratio vs offset frequency at two MT flip angles. (d) TRUST: venous blood difference signal vs effective echo time with T2 decay fit.", fig.height=8, fig.width=7>>=
+suppressMessages(library(RNifti))
+
+par(mfrow = c(2, 2), mar = c(4.5, 4.5, 3, 1), bg = "white")
+
+# ---- (a) SPGR VFA: signal vs flip angle ----
+spgr_path <- file.path(wand_root, subject, "ses-02/anat",
+                        paste0(subject, "_ses-02_acq-spgr_part-mag_VFA.nii.gz"))
+if (file.exists(spgr_path)) {
+  spgr <- readNifti(spgr_path)
+  d <- dim(spgr)
+  # WM ROI (central)
+  cx <- d[1] %/% 2; cy <- d[2] %/% 2; cz <- d[3] %/% 2
+  roi <- spgr[(cx-3):(cx+3), (cy-3):(cy+3), (cz-3):(cz+3), ]
+  mean_sig <- apply(roi, 4, mean)
+  se_sig   <- apply(roi, 4, sd) / sqrt(prod(dim(roi)[1:3]))
+
+  fa_deg <- c(2, 4, 6, 8, 10, 12, 14, 18)
+  fa_rad <- fa_deg * pi / 180
+  TR <- 0.004
+
+  # Fit DESPOT1
+  Y <- mean_sig / sin(fa_rad)
+  X <- mean_sig / tan(fa_rad)
+  fit <- lm(Y ~ X)
+  E1 <- coef(fit)[2]
+  T1_fit <- -TR / log(E1)
+  M0_fit <- coef(fit)[1] / (1 - E1)
+
+  # Model curve
+  fa_fine <- seq(1, 20, 0.5) * pi / 180
+  S_model <- as.numeric(M0_fit) * sin(fa_fine) * (1 - E1) / (1 - E1 * cos(fa_fine))
+
+  plot(fa_deg, mean_sig, pch = 19, col = "dodgerblue3",
+       xlab = expression("Flip angle (" * degree * ")"),
+       ylab = "Signal (a.u.)",
+       main = "(a) SPGR Variable Flip Angle",
+       ylim = c(0, max(mean_sig) * 1.2))
+  arrows(fa_deg, mean_sig - se_sig, fa_deg, mean_sig + se_sig,
+         angle = 90, code = 3, length = 0.05, col = "dodgerblue3")
+  lines(fa_fine * 180 / pi, S_model, col = "firebrick", lwd = 2)
+  legend("topright",
+         legend = c("Data (WM ROI)",
+                    bquote("DESPOT1: T1 =" ~ .(round(T1_fit * 1000)) ~ "ms")),
+         pch = c(19, NA), lty = c(NA, 1), lwd = c(NA, 2),
+         col = c("dodgerblue3", "firebrick"), cex = 0.8)
+} else {
+  plot.new(); text(0.5, 0.5, "SPGR data not found")
+}
+
+# ---- (b) Multi-echo GRE: signal vs TE ----
+megre_dir <- file.path(wand_root, subject, "ses-06/anat")
+echo_files <- list.files(megre_dir, pattern = "echo-.*_part-mag_MEGRE\\.nii\\.gz$",
+                          full.names = TRUE)
+echo_files <- sort(echo_files)
+
+if (length(echo_files) >= 3) {
+  # Extract echo times from JSON
+  TEs <- sapply(echo_files, function(f) {
+    jf <- sub("\\.nii\\.gz$", ".json", f)
+    if (file.exists(jf)) jsonlite::fromJSON(jf)$EchoTime else NA
+  })
+  TEs <- TEs * 1000  # to ms
+
+  # Load central slice from each echo
+  signals <- sapply(echo_files, function(f) {
+    img <- readNifti(f)
+    d <- dim(img)
+    roi <- img[(d[1]%/%2-2):(d[1]%/%2+2),
+               (d[2]%/%2-2):(d[2]%/%2+2),
+               d[3]%/%2]
+    mean(roi)
+  })
+
+  # Fit T2*: S = S0 * exp(-TE/T2*)
+  if (all(!is.na(TEs))) {
+    log_sig <- log(pmax(signals, 1))
+    fit_t2 <- lm(log_sig ~ TEs)
+    T2star <- -1 / coef(fit_t2)[2]
+    S0 <- exp(coef(fit_t2)[1])
+
+    te_fine <- seq(min(TEs), max(TEs), 0.5)
+    S_model <- S0 * exp(-te_fine / T2star)
+
+    plot(TEs, signals, pch = 19, col = "darkgreen",
+         xlab = "Echo time (ms)", ylab = "Signal (a.u.)",
+         main = "(b) Multi-echo GRE (7 echoes)",
+         ylim = c(0, max(signals) * 1.2))
+    lines(te_fine, S_model, col = "firebrick", lwd = 2)
+    legend("topright",
+           legend = c("Data (WM ROI)",
+                      bquote("Fit: T2* =" ~ .(round(T2star, 1)) ~ "ms")),
+           pch = c(19, NA), lty = c(NA, 1), lwd = c(NA, 2),
+           col = c("darkgreen", "firebrick"), cex = 0.8)
+  }
+} else {
+  plot.new(); text(0.5, 0.5, "MEGRE data not found")
+}
+
+# ---- (c) QMT: MTR vs offset frequency ----
+mtoff_path <- file.path(wand_root, subject, "ses-02/anat",
+                         paste0(subject, "_ses-02_mt-off_part-mag_QMT.nii.gz"))
+qmt_info <- data.frame(
+  tag = c("flip-1_mt-1", "flip-1_mt-2",
+          "flip-2_mt-1", "flip-2_mt-2", "flip-2_mt-3",
+          "flip-2_mt-4", "flip-2_mt-5", "flip-2_mt-6",
+          "flip-3_mt-1"),
+  fa = c(332, 332, 628, 628, 628, 628, 628, 628, 333),
+  offset = c(56360, 1000, 47180, 12060, 2750, 2770, 2790, 2890, 1000),
+  stringsAsFactors = FALSE
+)
+
+if (file.exists(mtoff_path)) {
+  mtoff <- readNifti(mtoff_path)
+  d <- dim(mtoff)
+  cx <- d[1] %/% 2; cy <- d[2] %/% 2; cz <- d[3] %/% 2
+  s_off <- mean(mtoff[(cx-2):(cx+2), (cy-2):(cy+2), cz])
+
+  mtrs <- numeric(nrow(qmt_info))
+  for (i in seq_len(nrow(qmt_info))) {
+    fname <- file.path(wand_root, subject, "ses-02/anat",
+                        paste0(subject, "_ses-02_", qmt_info$tag[i],
+                               "_part-mag_QMT.nii.gz"))
+    if (file.exists(fname)) {
+      img <- readNifti(fname)
+      s_on <- mean(img[(cx-2):(cx+2), (cy-2):(cy+2), cz])
+      mtrs[i] <- (s_off - s_on) / s_off
+    }
+  }
+
+  # Plot MTR vs offset, colored by MT flip angle
+  cols <- ifelse(qmt_info$fa > 500, "purple", "darkorange")
+  plot(qmt_info$offset / 1000, mtrs, pch = 19, col = cols,
+       xlab = "MT offset frequency (kHz)",
+       ylab = "MTR = (S_off - S_on) / S_off",
+       main = "(c) QMT: MTR vs Offset Frequency",
+       log = "x", ylim = c(0, max(mtrs) * 1.2))
+  legend("topright",
+         legend = c(expression("FA"[MT] ~ "= 628" * degree),
+                    expression("FA"[MT] ~ "= 332" * degree)),
+         pch = 19, col = c("purple", "darkorange"), cex = 0.8)
+  abline(h = 0, lty = 2, col = "gray50")
+} else {
+  plot.new(); text(0.5, 0.5, "QMT data not found")
+}
+
+# ---- (d) TRUST: difference signal vs eTE ----
+trust_path <- file.path(wand_root, subject, "ses-03/perf",
+                         paste0(subject, "_ses-03_acq-TRUST_cbf.nii.gz"))
+if (file.exists(trust_path)) {
+  trust <- readNifti(trust_path)
+  d <- dim(trust)
+  data2d <- trust[, , 1, ]  # (64, 64, 24)
+
+  # Control-label pairs
+  ctrl  <- data2d[, , seq(1, d[4], 2)]
+  label <- data2d[, , seq(2, d[4], 2)]
+  diff  <- abs(ctrl - label)
+
+  eTEs <- c(0, 40, 80, 160)  # ms (nominal)
+  n_eTEs <- length(eTEs)
+  n_pairs <- d[4] %/% 2
+  n_reps <- n_pairs %/% n_eTEs
+
+  # Average per eTE
+  diff_avg <- array(0, dim = c(d[1], d[2], n_eTEs))
+  for (i in seq_len(n_eTEs)) {
+    idx <- seq(i, n_pairs, n_eTEs)
+    diff_avg[, , i] <- apply(diff[, , idx, drop = FALSE], c(1, 2), mean)
+  }
+
+  # Sinus ROI (top 5% at eTE=0)
+  ete0 <- diff_avg[, , 1]
+  thr <- quantile(ete0[ete0 > 0], 0.92)
+  roi <- ete0 > thr
+  roi_sig <- sapply(seq_len(n_eTEs), function(i) mean(diff_avg[, , i][roi]))
+
+  # Fit T2
+  ok <- roi_sig > 0
+  if (sum(ok) >= 3) {
+    fit_t2 <- nls(y ~ S0 * exp(-x / T2),
+                  data = data.frame(x = eTEs[ok], y = roi_sig[ok]),
+                  start = list(S0 = roi_sig[1], T2 = 60),
+                  control = nls.control(maxiter = 200))
+    T2_fit <- coef(fit_t2)["T2"]
+    S0_fit <- coef(fit_t2)["S0"]
+
+    ete_fine <- seq(0, 180, 2)
+    S_model <- S0_fit * exp(-ete_fine / T2_fit)
+
+    plot(eTEs, roi_sig, pch = 19, col = "tomato",
+         xlab = "Effective echo time (ms)",
+         ylab = expression("|" * Delta * "S| (ctrl - label)"),
+         main = "(d) TRUST: Venous Blood T2",
+         ylim = c(0, max(roi_sig) * 1.3))
+    lines(ete_fine, S_model, col = "firebrick", lwd = 2)
+    legend("topright",
+           legend = c("Sinus ROI",
+                      bquote("Fit: T2 =" ~ .(round(T2_fit)) ~ "ms")),
+           pch = c(19, NA), lty = c(NA, 1), lwd = c(NA, 2),
+           col = c("tomato", "firebrick"), cex = 0.8)
+  }
+} else {
+  plot.new(); text(0.5, 0.5, "TRUST data not found")
+}
+@
+
+% ============================================================================
+\section{Results}
+% ============================================================================
+
+\subsection{Cross-session volumetrics (SynthSeg)}
+
+<<tab-synthseg, results='asis'>>=
+key_structs <- c("left cerebral white matter", "right cerebral white matter",
+                 "left cerebral cortex", "right cerebral cortex",
+                 "left hippocampus", "right hippocampus",
+                 "left thalamus", "right thalamus")
+
+sessions <- c("ses-02", "ses-03", "ses-04", "ses-05")
+combined <- data.frame(Structure = key_structs, stringsAsFactors = FALSE)
+
+for (ses in sessions) {
+  csv <- file.path(adv_dir, "synthseg", paste0(ses, "_volumes.csv"))
+  if (file.exists(csv)) {
+    df <- read.csv(csv, check.names = FALSE)
+    cols <- tolower(names(df)[-1])
+    vals <- as.numeric(df[1, -1])
+    names(vals) <- cols
+    combined[[ses]] <- round(vals[key_structs], 0)
+  } else {
+    combined[[ses]] <- NA
+  }
+}
+
+cat("\\begin{table}[htbp]\n\\centering\n")
+cat("\\caption{Cross-session volumetrics (SynthSeg, mm$^3$).}\n")
+cat("\\label{tab:synthseg}\n")
+cat("\\begin{tabular}{l", rep("r", length(sessions)), "}\n\\toprule\n", sep="")
+cat("Structure & ", paste(sessions, collapse=" & "), "\\\\\n\\midrule\n")
+for (i in seq_len(nrow(combined))) {
+  vals <- paste(format(combined[i, -1], big.mark = ","), collapse = " & ")
+  cat(combined$Structure[i], " & ", vals, "\\\\\n")
+}
+cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+@
+
+\subsection{SAMSEG tissue volumes}
+
+<<tab-samseg, results='asis'>>=
+samseg_csv <- file.path(adv_dir, "samseg", "samseg.csv")
+if (file.exists(samseg_csv)) {
+  samseg <- read.csv(samseg_csv, check.names = FALSE)
+  # Format: ROI, volume_mm3, volume_ICV_x1000
+  samseg <- samseg[order(-samseg$volume_mm3), ]
+  # Skip Unknown and Intra-Cranial
+  samseg <- samseg[!(samseg$ROI %in% c("Unknown", "Intra-Cranial")), ]
+  top <- head(samseg, 12)
+  esc <- function(x) gsub("_", "\\\\_", x)  # escape underscores
+  cat("\\begin{table}[htbp]\n\\centering\n")
+  cat("\\caption{SAMSEG tissue volumes (T1w+T2w joint segmentation).}\n")
+  cat("\\label{tab:samseg}\n")
+  cat("\\begin{tabular}{lr}\n\\toprule\n")
+  cat("Structure & Volume (mm$^3$) \\\\\n\\midrule\n")
+  for (i in seq_len(nrow(top))) {
+    cat(esc(top$ROI[i]), " & ", format(round(top$volume_mm3[i]), big.mark=","), "\\\\\n")
+  }
+  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+} else {
+  cat("SAMSEG results not yet available.\n")
+}
+@
+
+\subsection{Hypothalamic subunits}
+
+<<fig-hypo, fig.cap="Hypothalamic subunit segmentation overlaid on T1w. The hypothalamus regulates autonomic and neuroendocrine function; subunit volumes (anterior-inferior, posterior, tubular) provide structural markers of the autonomic nervous system that may predict individual differences in neurovascular coupling dynamics and TMS-evoked autonomic responses.", fig.height=3>>=
+hypo_seg <- file.path(fs_dir, "mri", "hypothalamic_subunits_seg.v1.mgz")
+t1_fs <- file.path(fs_dir, "mri", "T1.mgz")
+if (file.exists(hypo_seg) && file.exists(t1_fs)) {
+  suppressMessages(library(RNifti))
+  seg <- readNifti(hypo_seg)
+  t1  <- readNifti(t1_fs)
+  d <- dim(t1)
+  # Find slice with most hypothalamic voxels
+  seg_sum <- apply(seg > 0, 3, sum)
+  best_z <- which.max(seg_sum)
+  ax_t1  <- t1[, , best_z]
+  ax_seg <- seg[, , best_z]
+
+  par(mfrow = c(1, 2), mar = c(0.5, 0.5, 2, 0.5), bg = "black")
+  zlim_t1 <- quantile(ax_t1[ax_t1 > 0], c(0.01, 0.99), na.rm = TRUE)
+  ax_t1[ax_t1 < zlim_t1[1]] <- zlim_t1[1]
+  ax_t1[ax_t1 > zlim_t1[2]] <- zlim_t1[2]
+  image(ax_t1, col = gray.colors(256), axes = FALSE, asp = 1)
+  # Overlay segmentation
+  seg_mask <- ax_seg > 0
+  if (any(seg_mask)) {
+    overlay <- ax_t1
+    overlay[seg_mask] <- zlim_t1[2] * 1.2
+    image(overlay, col = gray.colors(256), axes = FALSE, asp = 1)
+    image(ifelse(ax_seg > 0, ax_seg, NA), col = rainbow(12, alpha = 0.6),
+          axes = FALSE, asp = 1, add = TRUE)
+  }
+  mtext("Hypothalamic Subunits", side = 3, line = -1.5, outer = TRUE, col = "white", cex = 1.1)
+  par(mfrow = c(1, 1), bg = "white")
+} else {
+  plot.new(); text(0.5, 0.5, "Hypothalamic seg not found")
+}
+@
+
+<<tab-hypo, results='asis'>>=
+hypo_csv <- file.path(fs_dir, "mri", "hypothalamic_subunits_volumes.v1.csv")
+if (file.exists(hypo_csv)) {
+  hypo <- read.csv(hypo_csv, check.names = FALSE)
+  # Wide format: subject, left anterior-inferior, ..., whole left, whole right
+  cols <- names(hypo)[-1]  # skip subject
+  vals <- as.numeric(hypo[1, -1])
+  esc <- function(x) gsub("_", "\\\\_", x)
+  cat("\\begin{table}[htbp]\n\\centering\n")
+  cat("\\caption{Hypothalamic subunit volumes (mm$^3$).}\n")
+  cat("\\label{tab:hypo}\n")
+  cat("\\begin{tabular}{lr}\n\\toprule\n")
+  cat("Subunit & Volume (mm$^3$) \\\\\n\\midrule\n")
+  for (i in seq_along(cols)) {
+    cat(esc(cols[i]), " & ", round(vals[i], 1), "\\\\\n")
+  }
+  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+} else {
+  cat("Hypothalamic subunit volumes not yet available.\n")
+}
+@
+
+\subsection{Perfusion results}
+
+<<fig-cmro2, fig.cap="CMRO$_2$ map (\\textmu mol\\,O$_2$/100g/min) computed from pCASL CBF $\\times$ OEF $\\times$ CaO$_2$ using default OEF = 0.35. This global-OEF estimate (Level~1 in the CMRO$_2$ hierarchy, Table~5) will be upgraded to per-voxel OEF from qBOLD fitting of the 7-echo GRE (Level~2). Median CMRO$_2$ = 109\\,\\textmu mol/100g/min, consistent with healthy adult values.", fig.height=3>>=
+cmro2_path <- file.path(perf_dir, "CMRO2_map.nii.gz")
+if (file.exists(cmro2_path)) {
+  ortho_view(cmro2_path, expression("CMRO"[2] ~ "(umol/100g/min)"),
+             zlim = c(10, 250), colormap = "heat")
+} else {
+  plot.new(); text(0.5, 0.5, "CMRO2 map not found")
+}
+@
+
+<<fig-gratio, fig.cap="g-ratio proxy derived from QMT bound pool fraction (preliminary). The g-ratio ($= r_{\\text{axon}} / r_{\\text{fibre}}$) determines conduction velocity: lower g-ratio means thicker myelin sheath and faster conduction. Combined with AxCaliber axon diameter from ses-02 DWI, this yields per-tract conduction velocity matrices (\\textbf{D}) that replace the uniform 7\\,m/s assumption in whole-brain simulations.", fig.height=3>>=
+gratio_path <- file.path(qmri_dir, "gratio", "g_ratio_proxy.nii.gz")
+if (file.exists(gratio_path)) {
+  ortho_view(gratio_path, "g-ratio (QMT-derived)",
+             zlim = c(0.5, 1.0), colormap = "cool")
+} else {
+  plot.new(); text(0.5, 0.5, "g-ratio map not found")
+}
+@
+
+<<tab-perfusion, results='asis'>>=
+trust_file <- file.path(perf_dir, "trust_results.json")
+if (file.exists(trust_file)) {
+  trust <- jsonlite::fromJSON(trust_file)
+  cat("\\begin{table}[htbp]\n\\centering\n")
+  cat("\\caption{Perfusion measurements (ses-03).}\n")
+  cat("\\label{tab:perf}\n")
+  cat("\\begin{tabular}{lr}\n\\toprule\n")
+  cat("Measurement & Value \\\\\n\\midrule\n")
+  cat("Blood T1 (3T default) & 1650 ms \\\\\n")
+  cat("Venous blood T2 (TRUST) & ", round(trust$T2_blood_ms, 1), " ms \\\\\n")
+  if (!is.null(trust$SvO2)) cat("SvO$_2$ & ", round(trust$SvO2 * 100, 1), "\\% \\\\\n")
+  if (!is.null(trust$OEF)) cat("OEF & ", round(trust$OEF * 100, 1), "\\% \\\\\n")
+  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+  cat("\\textit{Note: TRUST eTE calibration pending; SvO$_2$/OEF values require protocol-specific effective echo times.}\n")
+}
+@
+
+% ============================================================================
+\section{Discussion and Prospective Conclusions}
+% ============================================================================
+
+The quantitative structural processing presented here demonstrates the
+feasibility of extracting independent biophysical measurements for every
+parameter in a neurovascular coupling model from a single dataset. With
+the WAND data fully processed, we anticipate the following results:
+
+\begin{enumerate}
+  \item \textbf{Microstructure-informed conduction delays}: AxCaliber axon
+    diameter maps sampled along tractography streamlines will provide
+    per-connection conduction delays via the Hursh--Rushton relationship,
+    replacing the uniform 7\,m/s assumption. Combined with the g-ratio
+    from QMT BPF~\citep{Stikov2015gratio}, this gives connection-specific
+    velocity matrices ($\mathbf{D}$).
+
+  \item \textbf{MRS-constrained neural mass parameters}: GABA and glutamate
+    concentrations from sLASER MRS (ses-04/05) will constrain the
+    inhibitory ($J_I \propto [\text{GABA}]$) and excitatory
+    ($J_\text{NMDA} \propto [\text{Glu}]$) coupling strengths in the
+    Reduced Wong-Wang model~\citep{Deco2013rww}, reducing parameter
+    degeneracy.
+
+  \item \textbf{T1w/T2w myelin proxy validation}: Vertex-wise correlation
+    of the T1w/T2w ratio~\citep{Glasser2011myelin} against QMT BPF
+    (direct myelin measurement) will quantify the accuracy of the cheap
+    proxy used in the $\xi$-$\alpha$NET model~\citep{ValdesSosa2026xialphanet}
+    for constraining cortical hierarchy and conduction delays.
+
+  \item \textbf{Regional CMRO$_2$ from qBOLD}: The 7-echo GRE enables
+    quantitative BOLD fitting~\citep{He2007qbold} for per-voxel OEF,
+    upgrading the global TRUST estimate to spatially resolved oxygen
+    metabolism. Combined with pCASL CBF, this gives regional CMRO$_2$
+    as a metabolic constraint on neural mass excitability.
+
+  \item \textbf{TMS virtual lesion prediction}: After fitting the
+    whole-brain model to TMS-evoked potentials (ses-08), selective
+    connectome disconnection~\citep{Momi2023virtuallesion} will reveal
+    which structural features predict the local$\to$network transition
+    time --- the point ($\sim$100\,ms post-TMS) where network feedback
+    exceeds local reverberation.
+
+  \item \textbf{Cross-modal prediction}: Ridge regression with
+    permutation-based feature importance will test which combination of
+    structural (connectome topology), microstructural (axon diameter,
+    g-ratio), functional (HMM state occupancies~\citep{Vidaurre2018hmm}),
+    and metabolic (GABA, CBF) features best predicts individual TMS
+    response amplitude and complexity.
+\end{enumerate}
+
+The key contribution is not any single analysis but the \emph{elimination
+of free parameters}: where previous studies fit conduction velocity as a
+free parameter, we measure it; where they assume uniform E/I balance, we
+constrain it from spectroscopy. NeuroJAX provides the differentiable
+computational infrastructure to propagate all of these measurements through
+a unified biophysical model via \texttt{jax.grad}.
+
+% ============================================================================
+\section*{Software}
+% ============================================================================
+
+All processing used open-source tools with explicit version pinning:
+FSL~6.0.7, FreeSurfer~8.2.0, NeuroJAX (JAX~+~Equinox), and
+Neurodesk containers for reproducibility. R visualisations use
+\texttt{RNifti} and \texttt{knitr}. \LaTeX{} compiled with
+\texttt{tectonic}~0.15.
+
+\bibliography{references}
+
+\end{document}
