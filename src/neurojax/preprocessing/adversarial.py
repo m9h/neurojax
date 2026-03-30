@@ -171,17 +171,21 @@ def inject_signal(
         locs = np.array([raw.info["chs"][p]["loc"][:3] for p in picks])
         center = locs.mean(axis=0)
         dists = np.linalg.norm(locs - center, axis=1)
-        spatial_pattern = np.cos(np.pi * dists / (2 * dists.max() + 1e-10))
+        if dists.max() > 1e-10:
+            spatial_pattern = np.cos(np.pi * dists / (2 * dists.max()))
+        else:
+            # Fallback for synthetic data without real sensor positions
+            spatial_pattern = np.ones(n_channels)
 
     spatial_pattern = spatial_pattern / (np.max(np.abs(spatial_pattern)) + 1e-20)
 
     # Build the injected data matrix
     injected = np.outer(spatial_pattern, signal[:n_times])  # (n_ch, n_times)
 
-    # Add to raw data in-place
-    data = raw_out.get_data()
+    # Build new RawArray with injected signal
+    data = raw.get_data().copy()
     data[picks, :n_times] += injected
-    raw_out._data = data
+    raw_out = mne.io.RawArray(data, raw.info.copy(), verbose=False)
 
     return raw_out, injected
 

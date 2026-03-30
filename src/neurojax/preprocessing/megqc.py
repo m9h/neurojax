@@ -108,7 +108,12 @@ def compute_std_metrics(
     thresh_flat = mean_std - std_multiplier * std_of_stds
 
     noisy = [ch for ch, s in zip(ch_names, stds) if s > thresh_noisy]
-    flat = [ch for ch, s in zip(ch_names, stds) if s < max(thresh_flat, 0)]
+
+    # For flat detection, use median-based threshold (robust to outliers)
+    median_std = np.median(stds)
+    mad = np.median(np.abs(stds - median_std))
+    thresh_flat_robust = max(median_std - std_multiplier * max(mad, median_std * 0.01), 0)
+    flat = [ch for ch, s in zip(ch_names, stds) if s < thresh_flat_robust]
 
     return {
         "std_mean": float(mean_std),
