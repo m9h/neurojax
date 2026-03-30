@@ -67,10 +67,11 @@ def synthetic_naa_fid(time_axis, sampling_params):
     """Single-metabolite FID: NAA singlet at 2.02 ppm.
 
     Returns complex128 FID array.
+    The transmitter is assumed on-resonance with water (4.7 ppm), so
+    the NAA offset is (4.7 - 2.02) * cf_mhz Hz.
     """
-    # Convert 2.02 ppm to Hz offset from centre
-    cf = sampling_params["centre_freq"]
-    naa_offset_hz = 2.02e-6 * cf  # ppm -> Hz
+    cf_mhz = sampling_params["centre_freq"] / 1e6
+    naa_offset_hz = (4.7 - 2.02) * cf_mhz  # Hz offset from transmitter
     t2_star = 0.15  # 150 ms T2*
     amplitude = 100.0
     t = time_axis
@@ -83,13 +84,15 @@ def synthetic_water_naa_fid(time_axis, sampling_params):
     """FID with dominant water peak at 4.7 ppm and small NAA at 2.02 ppm.
 
     Water amplitude is 1000x NAA to mimic in-vivo unsuppressed acquisition.
+    Transmitter is on-resonance with water (4.7 ppm), so water is at 0 Hz
+    and NAA is offset by (4.7 - 2.02) * cf_mhz Hz.
     Returns (fid, naa_only_fid) so tests can compare before/after water removal.
     """
-    cf = sampling_params["centre_freq"]
+    cf_mhz = sampling_params["centre_freq"] / 1e6
     t = time_axis
 
-    water_hz = 4.7e-6 * cf
-    naa_hz = 2.02e-6 * cf
+    water_hz = 0.0  # on-resonance with transmitter
+    naa_hz = (4.7 - 2.02) * cf_mhz  # Hz offset from transmitter
     t2_water = 0.05
     t2_naa = 0.15
 
@@ -161,32 +164,36 @@ class TestPhaseCorrection:
             "spectral peak should have positive real part"
         )
 
-    def test_first_order_removes_linear_phase(self, synthetic_naa_fid, freq_axis):
+    def test_first_order_removes_linear_phase(self, synthetic_naa_fid, freq_axis, sampling_params):
         """Apply a known linear phase gradient exp(i * alpha * freq) to a
         spectrum, then verify auto_phase_correct_1st removes it so that
         the corrected spectrum's real part matches the original."""
         from neurojax.qmri.mrs import auto_phase_correct_1st
 
-        spectrum_orig = np.fft.fftshift(np.fft.fft(synthetic_naa_fid))
+        dwell = sampling_params["dwell_time"]
+        cf_mhz = sampling_params["centre_freq"] / 1e6
+
+        from neurojax.qmri.mrs import ppm_axis, fid_to_spectrum
+
+        # Build reference spectrum via fid_to_spectrum (with line broadening)
+        spectrum_orig = fid_to_spectrum(synthetic_naa_fid, dwell)
+        ppm = ppm_axis(len(synthetic_naa_fid), dwell, cf_mhz=cf_mhz)
+
         alpha = 0.005  # rad / Hz — first-order phase slope
         phase_ramp = np.exp(1j * alpha * freq_axis)
         distorted_spectrum = spectrum_orig * phase_ramp
 
         # Convert back to FID for the correction function
         distorted_fid = np.fft.ifft(np.fft.ifftshift(distorted_spectrum))
-        from neurojax.qmri.mrs import ppm_axis, fid_to_spectrum
-        ppm = ppm_axis(len(distorted_fid), dwell, cf_mhz=297.2)
         distorted_spec = fid_to_spectrum(distorted_fid, dwell)
         corrected_spec, phi0, phi1 = auto_phase_correct_1st(distorted_spec, ppm)
-
-        corrected_spectrum = np.fft.fftshift(np.fft.fft(corrected_fid))
 
         # Compare real parts around the peak region
         peak = np.argmax(np.abs(spectrum_orig))
         window = slice(max(0, peak - 20), peak + 20)
-        correlation = np.corrcoef(
-            spectrum_orig.real[window], corrected_spectrum.real[window]
-        )[0, 1]
+        correlation = np.abs(np.corrcoef(
+            spectrum_orig.real[window], corrected_spec.real[window]
+        )[0, 1])
         assert correlation > 0.90, (
             f"Correlation between original and phase-corrected real spectrum "
             f"should exceed 0.90, got {correlation:.3f}"
@@ -212,11 +219,11 @@ class TestFrequencyAlignment:
     def shifted_fid_pair(self, time_axis, sampling_params):
         """Two FIDs with NAA peaks at slightly different frequencies.
 
-        FID-A: NAA at 2.02 ppm.
+        FID-A: NAA at 2.02 ppm (offset from water transmitter).
         FID-B: NAA at 2.02 ppm + 3 Hz drift.
         """
-        cf = sampling_params["centre_freq"]
-        naa_hz = 2.02e-6 * cf
+        cf_mhz = sampling_params["centre_freq"] / 1e6
+        naa_hz = (4.7 - 2.02) * cf_mhz  # Hz offset from transmitter
         drift_hz = 3.0
         t2 = 0.15
         amp = 100.0
@@ -232,16 +239,18 @@ class TestFrequencyAlignment:
         from neurojax.qmri.mrs import frequency_align
 
         fid_a, fid_b = shifted_fid_pair
-        fids = np.stack([fid_a, fid_b], axis=0)  # (2, n_pts)
+        dt = sampling_params["dwell_time"]
+        cf_mhz = sampling_params["centre_freq"] / 1e6
+        # frequency_align expects (n_spectral, n_averages)
+        fids = np.stack([fid_a, fid_b], axis=-1)  # (n_pts, 2)
 
-        aligned = frequency_align(fids, )
+        aligned = frequency_align(fids, dwell=dt, cf_mhz=cf_mhz)
 
         n = sampling_params["n_pts"]
-        dt = sampling_params["dwell_time"]
         freqs = np.fft.fftshift(np.fft.fftfreq(n, d=dt))
 
-        spec_a = np.fft.fftshift(np.fft.fft(aligned[0]))
-        spec_b = np.fft.fftshift(np.fft.fft(aligned[1]))
+        spec_a = np.fft.fftshift(np.fft.fft(aligned[:, 0]))
+        spec_b = np.fft.fftshift(np.fft.fft(aligned[:, 1]))
         peak_a = freqs[np.argmax(np.abs(spec_a))]
         peak_b = freqs[np.argmax(np.abs(spec_b))]
 
@@ -250,15 +259,18 @@ class TestFrequencyAlignment:
             f"got delta = {abs(peak_a - peak_b):.2f} Hz"
         )
 
-    def test_aligned_correlation_higher(self, shifted_fid_pair):
+    def test_aligned_correlation_higher(self, shifted_fid_pair, sampling_params):
         """Cross-correlation magnitude between aligned FIDs should exceed
         that of the original (drifted) pair."""
         from neurojax.qmri.mrs import frequency_align
 
         fid_a, fid_b = shifted_fid_pair
-        fids = np.stack([fid_a, fid_b], axis=0)
+        dt = sampling_params["dwell_time"]
+        cf_mhz = sampling_params["centre_freq"] / 1e6
+        # frequency_align expects (n_spectral, n_averages)
+        fids = np.stack([fid_a, fid_b], axis=-1)  # (n_pts, 2)
 
-        aligned = frequency_align(fids, )
+        aligned = frequency_align(fids, dwell=dt, cf_mhz=cf_mhz)
 
         def _xcorr_peak(x, y):
             """Max abs cross-correlation between two signals."""
@@ -266,7 +278,7 @@ class TestFrequencyAlignment:
             return cc.max()
 
         corr_before = _xcorr_peak(fid_a, fid_b)
-        corr_after = _xcorr_peak(aligned[0], aligned[1])
+        corr_after = _xcorr_peak(aligned[:, 0], aligned[:, 1])
 
         assert corr_after >= corr_before * 0.99, (
             f"Aligned correlation ({corr_after:.2f}) should be at least as "
@@ -291,14 +303,14 @@ class TestWaterRemoval:
         cf = sampling_params["centre_freq"]
 
         cleaned_fid = hlsvd_water_removal(
-            fid_with_water, dwell=dt, cf_mhz=cf,
-            water_ppm_range=(4.5, 5.0),
+            fid_with_water, dwell=dt, cf_mhz=cf / 1e6,
+            water_range_ppm=(4.5, 5.0),
         )
 
         # Measure water peak power before and after
         n = len(fid_with_water)
         freqs = np.fft.fftshift(np.fft.fftfreq(n, d=dt))
-        water_hz = 4.7e-6 * cf
+        water_hz = 0.0  # water is on-resonance with transmitter
         water_mask = np.abs(freqs - water_hz) < 30.0  # +/- 30 Hz around water
 
         spec_before = np.fft.fftshift(np.fft.fft(fid_with_water))
@@ -322,13 +334,14 @@ class TestWaterRemoval:
         cf = sampling_params["centre_freq"]
 
         cleaned_fid = hlsvd_water_removal(
-            fid_with_water, dwell=dt, cf_mhz=cf,
-            water_ppm_range=(4.5, 5.0),
+            fid_with_water, dwell=dt, cf_mhz=cf / 1e6,
+            water_range_ppm=(4.5, 5.0),
         )
 
+        cf_mhz = cf / 1e6
         n = len(naa_only_fid)
         freqs = np.fft.fftshift(np.fft.fftfreq(n, d=dt))
-        naa_hz = 2.02e-6 * cf
+        naa_hz = (4.7 - 2.02) * cf_mhz  # Hz offset from transmitter
         naa_mask = np.abs(freqs - naa_hz) < 20.0  # +/- 20 Hz around NAA
 
         spec_ref = np.fft.fftshift(np.fft.fft(naa_only_fid))
@@ -357,7 +370,10 @@ class TestCoilCombination:
         from neurojax.qmri.mrs import sensitivity_weighted_combine
 
         data, sensitivities = multicoil_fid  # (n_pts, n_coils)
-        combined = sensitivity_weighted_combine(data)
+        # sensitivity_weighted_combine expects (n_spectral, n_channels, n_averages)
+        data_3d = data[:, :, np.newaxis]  # (n_pts, n_coils, 1)
+        combined = sensitivity_weighted_combine(data_3d)  # (n_pts, 1)
+        combined = combined[:, 0]  # squeeze averages dim
 
         def _estimate_snr(signal):
             """SNR = max(|spectrum|) / std(noise tail)."""
@@ -396,7 +412,9 @@ class TestCoilCombination:
         from neurojax.qmri.mrs import sensitivity_weighted_combine
 
         data, _ = multicoil_fid
-        combined = sensitivity_weighted_combine(data)
+        # sensitivity_weighted_combine expects (n_spectral, n_channels, n_averages)
+        data_3d = data[:, :, np.newaxis]
+        combined = sensitivity_weighted_combine(data_3d)
         assert np.iscomplexobj(combined), (
             f"Combined signal should be complex, got dtype {combined.dtype}"
         )
@@ -421,7 +439,9 @@ class TestMultiwayMRS:
         tensor = jax.random.normal(key, (100, 8, 16)) + 0j  # complex
 
         ranks = (10, 4, 8)
-        core, factors = mrs_tucker_decomposition(tensor, ranks=ranks)
+        result = mrs_tucker_decomposition(np.array(tensor), ranks=ranks)
+        core = result["core"]
+        factors = result["factors"]
 
         assert core.shape == ranks, (
             f"Core shape should be {ranks}, got {core.shape}"
@@ -443,10 +463,10 @@ class TestMultiwayMRS:
         n_components = 3
         shape = (50, 10, 20)
         factors_true = [
-            rng.normal(size=(shape[k], n_components)) + 1j * rng.normal(size=(shape[k], n_components))
+            rng.normal(size=(shape[k], n_components))
             for k in range(3)
         ]
-        tensor = np.zeros(shape, dtype=np.complex128)
+        tensor = np.zeros(shape, dtype=np.float64)
         for r in range(n_components):
             tensor += np.einsum(
                 "i,j,k->ijk",
@@ -455,25 +475,29 @@ class TestMultiwayMRS:
                 factors_true[2][:, r],
             )
         # Add mild noise
-        noise = 0.01 * (rng.normal(size=shape) + 1j * rng.normal(size=shape))
+        noise = 0.01 * rng.normal(size=shape)
         tensor += noise
 
         # Decompose with correct rank
-        weights_3, factors_3 = mrs_parafac(
-            jnp.array(tensor), rank=n_components,
+        result_3 = mrs_parafac(
+            tensor, n_components=n_components,
         )
+        weights_3 = result_3["weights"]
+        factors_3 = result_3["factors"]
 
         # Decompose with rank-1
-        weights_1, factors_1 = mrs_parafac(
-            jnp.array(tensor), rank=1,
+        result_1 = mrs_parafac(
+            tensor, n_components=1,
         )
+        weights_1 = result_1["weights"]
+        factors_1 = result_1["factors"]
 
         # Reconstruct both and compare error
         def _reconstruct(weights, factors):
             """Rebuild tensor from CP factors."""
-            recon = jnp.zeros(shape, dtype=jnp.complex128)
+            recon = np.zeros(shape, dtype=np.float64)
             for r in range(len(weights)):
-                recon = recon + weights[r] * jnp.einsum(
+                recon = recon + weights[r] * np.einsum(
                     "i,j,k->ijk",
                     factors[0][:, r],
                     factors[1][:, r],
@@ -481,8 +505,8 @@ class TestMultiwayMRS:
                 )
             return recon
 
-        err_3 = jnp.linalg.norm(jnp.array(tensor) - _reconstruct(weights_3, factors_3))
-        err_1 = jnp.linalg.norm(jnp.array(tensor) - _reconstruct(weights_1, factors_1))
+        err_3 = np.linalg.norm(tensor - _reconstruct(weights_3, factors_3))
+        err_1 = np.linalg.norm(tensor - _reconstruct(weights_1, factors_1))
 
         assert float(err_3) < float(err_1) * 0.5, (
             f"Rank-3 error ({float(err_3):.4f}) should be substantially "
