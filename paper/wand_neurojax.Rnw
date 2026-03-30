@@ -386,12 +386,18 @@ processing toolkit. Two complementary open-source projects ---
 FreeSurfer and FSL --- form the backbone of our pipeline, together
 covering every modality in the dataset.
 
-\textbf{FreeSurfer}~\citep{Fischl2012freesurfer} originated from
-the cortical surface reconstruction work of Dale, Fischl, and Sereno
-in the late 1990s~\citep{Dale1999cortical,Fischl1999cortical} at the
-Martinos Center, Massachusetts General Hospital. Over two decades it
-has grown into the standard tool for cortical parcellation, subcortical
-segmentation, and surface-based analysis. Recent versions (8.x) add
+\textbf{FreeSurfer}~\citep{Fischl2012freesurfer} grew out of the
+cortical surface reconstruction work of Anders Dale and Martin Sereno
+at UC San Diego in the early
+1990s~\citep{Dale1999cortical,Fischl1999cortical}. Bruce Fischl,
+joining as a postdoctoral fellow, replaced the manual steps of the
+surface pipeline with automated algorithms; the collaboration
+continued as Fischl and Douglas Greve built FreeSurfer into a
+production tool at the Athinoula A.\ Martinos Center for Biomedical
+Imaging, Massachusetts General Hospital, where it has been developed
+and maintained ever since. Over two decades it has grown into the
+standard tool for cortical parcellation, subcortical segmentation,
+and surface-based analysis. Recent versions (8.x) add
 deep-learning modules --- SynthSeg for contrast-invariant
 segmentation~\citep{Billot2023synthseg}, SynthMorph for
 contrast-agnostic registration~\citep{Hoffmann2022synthmorph}, and
