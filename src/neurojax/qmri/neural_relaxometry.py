@@ -181,21 +181,37 @@ class MultiCompartmentNODE(eqx.Module):
 class RelaxometryPINN(eqx.Module):
     """Physics-Informed Neural Network for spatial relaxometry.
 
-    Maps spatial coordinates (x, y, z) → tissue parameters [M0, T1, ...]
+    Maps spatial coordinates (x, y, z) → tissue parameters [M0, T1, B1, ...]
     while enforcing signal model consistency as a physics loss.
 
-    Advantages:
-    - Fits entire volume at once (not voxelwise)
-    - Learns spatial correlations (smooth parameter maps)
-    - Can learn B1 field as auxiliary output
-    - Single network forward pass at inference
+    When learn_b1=True (n_params=3), the network outputs [M0, T1, B1_ratio]
+    and applies B1 correction to flip angles before computing the physics
+    loss. The B1 field is spatially smooth by construction (shared MLP).
+
+    Advantages over voxelwise DESPOT1-HIFI:
+    - Spatial coherence: B1 is inherently smooth (one network for all voxels)
+    - No per-voxel convergence issues: single global optimisation
+    - Joint regularisation of T1 and B1 fields
     """
     param_net: eqx.nn.MLP
     n_params: int
+    learn_b1: bool
+    coord_scale: jnp.ndarray  # normalisation factors for coordinates
 
-    def __init__(self, n_params: int = 2, hidden_size: int = 64,
-                 depth: int = 4, key=None):
+    def __init__(self, n_params: int = 3, hidden_size: int = 128,
+                 depth: int = 5, coord_scale=None, key=None):
+        """
+        Args:
+            n_params: 2 = [M0, T1], 3 = [M0, T1, B1]
+            hidden_size: MLP hidden layer width
+            depth: MLP depth (number of hidden layers)
+            coord_scale: (3,) array for coordinate normalisation
+            key: PRNG key
+        """
         self.n_params = n_params
+        self.learn_b1 = (n_params >= 3)
+        self.coord_scale = jnp.array(coord_scale if coord_scale is not None
+                                      else [128.0, 128.0, 128.0])
         self.param_net = eqx.nn.MLP(
             in_size=3,        # (x, y, z)
             out_size=n_params,
@@ -209,50 +225,100 @@ class RelaxometryPINN(eqx.Module):
         """Map spatial coordinates to tissue parameters.
 
         Args:
-            coords: (3,) array [x, y, z] in voxel coordinates
+            coords: (3,) array [i, j, k] in voxel coordinates
 
         Returns:
-            (n_params,) array of tissue parameters
+            (n_params,) array: [M0, T1] or [M0, T1, B1_ratio]
         """
-        # Normalise coordinates to [-1, 1]
-        coords_norm = coords / 128.0 - 1.0
+        coords_norm = coords / self.coord_scale * 2.0 - 1.0
         raw = self.param_net(coords_norm)
 
-        # Apply physical constraints via softplus/sigmoid
-        # For [M0, T1]: M0 > 0, 0.05 < T1 < 8.0
-        M0 = jax.nn.softplus(raw[0]) * 1000  # scale to reasonable M0
-        T1 = jax.nn.sigmoid(raw[1]) * 7.95 + 0.05  # [0.05, 8.0]
+        M0 = jax.nn.softplus(raw[0]) * 1000
+        # T1 parameterized around 1.0s (brain tissue prior) with log-scale
+        # sigmoid → [0, 1] → log-scale → [0.1, 5.0]
+        T1 = jnp.exp(raw[1] * 0.5) * 1.0  # centered at 1.0s, ×0.5 dampens range
+        T1 = jnp.clip(T1, 0.05, 8.0)
 
-        if self.n_params == 2:
-            return jnp.array([M0, T1])
+        if self.learn_b1:
+            # B1 ratio constrained to [0.5, 1.5]
+            B1 = jax.nn.sigmoid(raw[2]) * 1.0 + 0.5
+            if self.n_params == 3:
+                return jnp.array([M0, T1, B1])
+            else:
+                extras = jax.nn.sigmoid(raw[3:])
+                return jnp.concatenate([jnp.array([M0, T1, B1]), extras])
         else:
-            # Additional params with appropriate constraints
-            extras = jax.nn.sigmoid(raw[2:])  # [0, 1] for fractions etc.
-            return jnp.concatenate([jnp.array([M0, T1]), extras])
+            if self.n_params == 2:
+                return jnp.array([M0, T1])
+            else:
+                extras = jax.nn.sigmoid(raw[2:])
+                return jnp.concatenate([jnp.array([M0, T1]), extras])
 
-    def loss(self, coords: jnp.ndarray, data: jnp.ndarray,
-             sequence, lambda_smooth: float = 0.01) -> float:
-        """Combined data fidelity + physics loss.
+    def predict_signal(self, coords, sequence):
+        """Predict MRI signal at a spatial location.
 
         Args:
-            coords: (3,) spatial coordinates
-            data: (n_readouts,) observed signal
-            sequence: Pulse sequence description
-            lambda_smooth: Smoothness regularisation weight
+            coords: (3,) voxel coordinates
+            sequence: SPGRSequence (has .flip_angles_rad, .TR)
+
+        Returns:
+            (n_readouts,) predicted signal
         """
         from neurojax.qmri.steady_state import spgr_signal_multi
 
         params = self.predict_params(coords)
         M0, T1 = params[0], params[1]
+        fa = sequence.flip_angles_rad
 
-        # Physics-based prediction
-        predicted = spgr_signal_multi(M0, T1, sequence.flip_angles_rad, sequence.TR)
+        if self.learn_b1:
+            B1 = params[2]
+            fa = fa * B1  # B1-corrected flip angles
 
-        # Data fidelity
-        data_loss = jnp.mean((predicted - data) ** 2)
+        return spgr_signal_multi(M0, T1, fa, sequence.TR)
 
-        # Parameter regularisation (smoothness via gradient penalty)
-        # Would use spatial neighbours in full implementation
+    def loss(self, coords, data, sequence,
+             ir_data=None, ir_fa_rad=None, TR_ir=None, TI=None,
+             lambda_smooth=0.01) -> float:
+        """Combined data fidelity + physics + smoothness loss.
+
+        Args:
+            coords: (3,) spatial coordinates
+            data: (n_readouts,) observed SPGR signal
+            sequence: SPGRSequence
+            ir_data: optional scalar IR-SPGR signal (for HIFI constraint)
+            ir_fa_rad: IR readout flip angle (radians)
+            TR_ir: IR repetition time
+            TI: inversion time
+            lambda_smooth: smoothness weight
+        """
+        from neurojax.qmri.steady_state import spgr_signal_multi, ir_spgr_signal
+
+        params = self.predict_params(coords)
+        M0, T1 = params[0], params[1]
+        fa = sequence.flip_angles_rad
+
+        if self.learn_b1:
+            B1 = params[2]
+            fa = fa * B1
+
+        # SPGR data fidelity
+        pred_spgr = spgr_signal_multi(M0, T1, fa, sequence.TR)
+        spgr_loss = jnp.mean((pred_spgr - data) ** 2)
+
+        # IR-SPGR fidelity — upweighted to break M0/B1 degeneracy.
+        # With small FAs, SPGR signal ∝ M0*B1 to first order, so the
+        # IR data (different TI sensitivity) is the primary B1 constraint.
+        ir_loss = 0.0
+        if ir_data is not None and self.learn_b1:
+            ir_fa = ir_fa_rad * B1
+            pred_ir = ir_spgr_signal(M0, T1, ir_fa, TR_ir, TI)
+            # Weight IR loss by n_spgr to balance per-point contribution,
+            # then additionally upweight by 5x for B1 sensitivity
+            n_spgr = data.shape[0]
+            ir_loss = (pred_ir - ir_data) ** 2 * n_spgr * 5.0
+
+        # Smoothness: penalise large parameter values (acts as weak prior)
+        # The spatial smoothness is implicitly enforced by the MLP architecture
         param_reg = jnp.sum(params ** 2) * 1e-6
 
-        return data_loss + lambda_smooth * param_reg
+        return spgr_loss + ir_loss + lambda_smooth * param_reg
