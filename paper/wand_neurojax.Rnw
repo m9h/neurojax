@@ -81,6 +81,23 @@ ortho_view <- function(path, title = "", zlim = NULL, colormap = "gray") {
   d   <- dim(img)
   vox <- abs(pixdim(img)[2:4])  # voxel dimensions in mm (abs for negative strides)
 
+  # Reorient to standard orientation so array dims = anatomical planes
+  # Use the sform/qform to determine axis permutation
+  aff <- xform(img)
+  abs_aff <- abs(aff[1:3, 1:3])
+  # Which array axis maps to which anatomical axis (R/A/S)?
+  axis_map <- apply(abs_aff, 2, which.max)  # for each array dim, which anat dim dominates
+  # If not identity mapping, permute
+  if (!identical(axis_map, 1:3)) {
+    img <- aperm(img, order(axis_map))
+    d <- dim(img)
+    vox <- vox[order(axis_map)]
+    # Recompute aspects
+    asp_ax <- vox[2] / vox[1]
+    asp_co <- vox[3] / vox[1]
+    asp_sa <- vox[3] / vox[2]
+  }
+
   # Find brain center (median of bright voxels) instead of dim/2
   thr_val <- quantile(img[img > 0 & is.finite(img)], 0.50, na.rm = TRUE)
   nz <- which(img > thr_val, arr.ind = TRUE)
@@ -454,6 +471,80 @@ Additional segmentations:
 t1w_path <- file.path(wand_root, subject, "ses-03/anat",
                        paste0(subject, "_ses-03_T1w.nii.gz"))
 ortho_view(t1w_path, "ses-03 T1w")
+@
+
+\subsubsection{SAMSEG tissue volumes}
+
+<<tab-samseg, results='asis'>>=
+samseg_csv <- file.path(adv_dir, "samseg", "samseg.csv")
+if (file.exists(samseg_csv)) {
+  samseg <- read.csv(samseg_csv, check.names = FALSE)
+  samseg <- samseg[order(-samseg$volume_mm3), ]
+  samseg <- samseg[!(samseg$ROI %in% c("Unknown", "Intra-Cranial")), ]
+  top <- head(samseg, 12)
+  esc <- function(x) gsub("_", "\\\\_", x)
+  cat("\\begin{table}[htbp]\n\\centering\n")
+  cat("\\caption{SAMSEG tissue volumes (T1w+T2w joint segmentation).}\n")
+  cat("\\label{tab:samseg}\n")
+  cat("\\begin{tabular}{lr}\n\\toprule\n")
+  cat("Structure & Volume (mm$^3$) \\\\\n\\midrule\n")
+  for (i in seq_len(nrow(top))) {
+    cat(esc(top$ROI[i]), " & ", format(round(top$volume_mm3[i]), big.mark=","), "\\\\\n")
+  }
+  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+} else { cat("SAMSEG results not yet available.\n") }
+@
+
+\subsubsection{Cross-session volumetrics (SynthSeg)}
+
+<<tab-synthseg, results='asis'>>=
+key_structs <- c("left cerebral white matter", "right cerebral white matter",
+                 "left cerebral cortex", "right cerebral cortex",
+                 "left hippocampus", "right hippocampus",
+                 "left thalamus", "right thalamus")
+sessions <- c("ses-02", "ses-03", "ses-04", "ses-05")
+combined <- data.frame(Structure = key_structs, stringsAsFactors = FALSE)
+for (ses in sessions) {
+  csv <- file.path(adv_dir, "synthseg", paste0(ses, "_volumes.csv"))
+  if (file.exists(csv)) {
+    df <- read.csv(csv, check.names = FALSE)
+    cols <- tolower(names(df)[-1])
+    vals <- as.numeric(df[1, -1])
+    names(vals) <- cols
+    combined[[ses]] <- round(vals[key_structs], 0)
+  } else { combined[[ses]] <- NA }
+}
+cat("\\begin{table}[htbp]\n\\centering\n")
+cat("\\caption{Cross-session volumetrics (SynthSeg, mm$^3$).}\n")
+cat("\\label{tab:synthseg}\n")
+cat("\\begin{tabular}{l", rep("r", length(sessions)), "}\n\\toprule\n", sep="")
+cat("Structure & ", paste(sessions, collapse=" & "), "\\\\\n\\midrule\n")
+for (i in seq_len(nrow(combined))) {
+  vals <- paste(format(combined[i, -1], big.mark = ","), collapse = " & ")
+  cat(combined$Structure[i], " & ", vals, "\\\\\n")
+}
+cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+@
+
+\subsubsection{Hypothalamic subunits}
+
+<<tab-hypo, results='asis'>>=
+hypo_csv <- file.path(fs_dir, "mri", "hypothalamic_subunits_volumes.v1.csv")
+if (file.exists(hypo_csv)) {
+  hypo <- read.csv(hypo_csv, check.names = FALSE)
+  cols <- names(hypo)[-1]
+  vals <- as.numeric(hypo[1, -1])
+  esc <- function(x) gsub("_", "\\\\_", x)
+  cat("\\begin{table}[htbp]\n\\centering\n")
+  cat("\\caption{Hypothalamic subunit volumes (mm$^3$).}\n")
+  cat("\\label{tab:hypo}\n")
+  cat("\\begin{tabular}{lr}\n\\toprule\n")
+  cat("Subunit & Volume (mm$^3$) \\\\\n\\midrule\n")
+  for (i in seq_along(cols)) {
+    cat(esc(cols[i]), " & ", round(vals[i], 1), "\\\\\n")
+  }
+  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+} else { cat("Hypothalamic subunit volumes not yet available.\n") }
 @
 
 \subsection{T1w/T2w myelin ratio}
@@ -1211,127 +1302,6 @@ if (file.exists(trust_path)) {
   }
 } else {
   plot.new(); text(0.5, 0.5, "TRUST data not found")
-}
-@
-
-\subsection{Cross-session volumetrics (SynthSeg)}
-
-<<tab-synthseg, results='asis'>>=
-key_structs <- c("left cerebral white matter", "right cerebral white matter",
-                 "left cerebral cortex", "right cerebral cortex",
-                 "left hippocampus", "right hippocampus",
-                 "left thalamus", "right thalamus")
-
-sessions <- c("ses-02", "ses-03", "ses-04", "ses-05")
-combined <- data.frame(Structure = key_structs, stringsAsFactors = FALSE)
-
-for (ses in sessions) {
-  csv <- file.path(adv_dir, "synthseg", paste0(ses, "_volumes.csv"))
-  if (file.exists(csv)) {
-    df <- read.csv(csv, check.names = FALSE)
-    cols <- tolower(names(df)[-1])
-    vals <- as.numeric(df[1, -1])
-    names(vals) <- cols
-    combined[[ses]] <- round(vals[key_structs], 0)
-  } else {
-    combined[[ses]] <- NA
-  }
-}
-
-cat("\\begin{table}[htbp]\n\\centering\n")
-cat("\\caption{Cross-session volumetrics (SynthSeg, mm$^3$).}\n")
-cat("\\label{tab:synthseg}\n")
-cat("\\begin{tabular}{l", rep("r", length(sessions)), "}\n\\toprule\n", sep="")
-cat("Structure & ", paste(sessions, collapse=" & "), "\\\\\n\\midrule\n")
-for (i in seq_len(nrow(combined))) {
-  vals <- paste(format(combined[i, -1], big.mark = ","), collapse = " & ")
-  cat(combined$Structure[i], " & ", vals, "\\\\\n")
-}
-cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
-@
-
-\subsection{SAMSEG tissue volumes}
-
-<<tab-samseg, results='asis'>>=
-samseg_csv <- file.path(adv_dir, "samseg", "samseg.csv")
-if (file.exists(samseg_csv)) {
-  samseg <- read.csv(samseg_csv, check.names = FALSE)
-  # Format: ROI, volume_mm3, volume_ICV_x1000
-  samseg <- samseg[order(-samseg$volume_mm3), ]
-  # Skip Unknown and Intra-Cranial
-  samseg <- samseg[!(samseg$ROI %in% c("Unknown", "Intra-Cranial")), ]
-  top <- head(samseg, 12)
-  esc <- function(x) gsub("_", "\\\\_", x)  # escape underscores
-  cat("\\begin{table}[htbp]\n\\centering\n")
-  cat("\\caption{SAMSEG tissue volumes (T1w+T2w joint segmentation).}\n")
-  cat("\\label{tab:samseg}\n")
-  cat("\\begin{tabular}{lr}\n\\toprule\n")
-  cat("Structure & Volume (mm$^3$) \\\\\n\\midrule\n")
-  for (i in seq_len(nrow(top))) {
-    cat(esc(top$ROI[i]), " & ", format(round(top$volume_mm3[i]), big.mark=","), "\\\\\n")
-  }
-  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
-} else {
-  cat("SAMSEG results not yet available.\n")
-}
-@
-
-\subsection{Hypothalamic subunits}
-
-<<fig-hypo, fig.cap="Hypothalamic subunit segmentation overlaid on T1w. The hypothalamus regulates autonomic and neuroendocrine function; subunit volumes (anterior-inferior, posterior, tubular) provide structural markers of the autonomic nervous system that may predict individual differences in neurovascular coupling dynamics and TMS-evoked autonomic responses.", fig.height=3>>=
-hypo_seg <- file.path(fs_dir, "mri", "hypothalamic_subunits_seg.v1.mgz")
-t1_fs <- file.path(fs_dir, "mri", "T1.mgz")
-if (file.exists(hypo_seg) && file.exists(t1_fs)) {
-  suppressMessages(library(RNifti))
-  seg <- readNifti(hypo_seg)
-  t1  <- readNifti(t1_fs)
-  d <- dim(t1)
-  # Find slice with most hypothalamic voxels
-  seg_sum <- apply(seg > 0, 3, sum)
-  best_z <- which.max(seg_sum)
-  ax_t1  <- t1[, , best_z]
-  ax_seg <- seg[, , best_z]
-
-  par(mfrow = c(1, 2), mar = c(0.5, 0.5, 2, 0.5), bg = "black")
-  zlim_t1 <- quantile(ax_t1[ax_t1 > 0], c(0.01, 0.99), na.rm = TRUE)
-  ax_t1[ax_t1 < zlim_t1[1]] <- zlim_t1[1]
-  ax_t1[ax_t1 > zlim_t1[2]] <- zlim_t1[2]
-  image(ax_t1, col = gray.colors(256), axes = FALSE, asp = 1)
-  # Overlay segmentation
-  seg_mask <- ax_seg > 0
-  if (any(seg_mask)) {
-    overlay <- ax_t1
-    overlay[seg_mask] <- zlim_t1[2] * 1.2
-    image(overlay, col = gray.colors(256), axes = FALSE, asp = 1)
-    image(ifelse(ax_seg > 0, ax_seg, NA), col = rainbow(12, alpha = 0.6),
-          axes = FALSE, asp = 1, add = TRUE)
-  }
-  mtext("Hypothalamic Subunits", side = 3, line = -1.5, outer = TRUE, col = "white", cex = 1.1)
-  par(mfrow = c(1, 1), bg = "white")
-} else {
-  plot.new(); text(0.5, 0.5, "Hypothalamic seg not found")
-}
-@
-
-<<tab-hypo, results='asis'>>=
-hypo_csv <- file.path(fs_dir, "mri", "hypothalamic_subunits_volumes.v1.csv")
-if (file.exists(hypo_csv)) {
-  hypo <- read.csv(hypo_csv, check.names = FALSE)
-  # Wide format: subject, left anterior-inferior, ..., whole left, whole right
-  cols <- names(hypo)[-1]  # skip subject
-  vals <- as.numeric(hypo[1, -1])
-  esc <- function(x) gsub("_", "\\\\_", x)
-  cat("\\begin{table}[htbp]\n\\centering\n")
-  cat("\\caption{Hypothalamic subunit volumes (mm$^3$).}\n")
-  cat("\\label{tab:hypo}\n")
-  cat("\\begin{tabular}{lr}\n\\toprule\n")
-  cat("Subunit & Volume (mm$^3$) \\\\\n\\midrule\n")
-  for (i in seq_along(cols)) {
-    cat(esc(cols[i]), " & ", round(vals[i], 1), "\\\\\n")
-  }
-  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
-} else {
-  cat("Hypothalamic subunit volumes not yet available.\n")
 }
 @
 
