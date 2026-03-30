@@ -103,9 +103,12 @@ class BlochNeuralODE(eqx.Module):
 # =====================================================================
 
 class MultiCompartmentNODE(eqx.Module):
-    """Neural ODE with N tissue compartments.
+    """Neural ODE with N tissue compartments for mcDESPOT.
 
-    Each compartment has its own T1/T2 and a learned mixing function.
+    Each compartment has its own T1/T2 and a learned mixing function
+    that accounts for inter-compartment exchange, magnetisation transfer,
+    and off-resonance effects not captured by the analytical model.
+
     Replaces mcDESPOT's degenerate grid search with gradient-based fitting.
 
     Compartments: myelin water (MW), intra/extra-cellular water (IEW),
@@ -117,61 +120,95 @@ class MultiCompartmentNODE(eqx.Module):
     def __init__(self, n_compartments: int = 2, key=None):
         self.n_compartments = n_compartments
         k1, k2 = jax.random.split(key)
-        # Maps tissue params → compartment signals with learned interactions
-        n_params = 2 + n_compartments * 2  # M0, f1, [T1_i, T2_i for each]
-        if n_compartments == 3:
-            n_params = 2 + 2 * 3 + 1  # extra fraction
-        self.mixing_net = eqx.nn.MLP(
+        mlp = eqx.nn.MLP(
             in_size=n_compartments + 1,  # [compartment_signals..., fa]
             out_size=1,
             width_size=16,
             depth=2,
             key=k1,
         )
+        # Initialize weights near zero so correction starts negligible
+        # (analytical model is the prior, mixing net learns deviations)
+        self.mixing_net = jax.tree.map(
+            lambda x: x * 0.01 if eqx.is_array(x) else x, mlp)
 
-    def __call__(self, tissue_params, sequence):
-        """Forward: multi-compartment tissue params → signal.
-
-        For 2 compartments: params = [M0, f_mw, T1_mw, T1_iew, T2_mw, T2_iew]
-        For 3 compartments: params = [M0, f1, f2, T1_1, T1_2, T1_3, T2_1, T2_2, T2_3]
-        """
+    def _parse_params(self, tissue_params):
+        """Extract compartment fractions, T1s, T2s from param vector."""
         M0 = tissue_params[0]
-        fa_rad = sequence.flip_angles_rad
-        TR = sequence.TR
-
         if self.n_compartments == 2:
             f_mw = jnp.clip(tissue_params[1], 0.01, 0.40)
-            f_iew = 1 - f_mw
-            T1_mw = jnp.clip(tissue_params[2], 0.1, 2.0)
-            T1_iew = jnp.clip(tissue_params[3], 0.3, 4.0)
-            fractions = jnp.array([f_mw, f_iew])
-            T1s = jnp.array([T1_mw, T1_iew])
+            fractions = jnp.array([f_mw, 1 - f_mw])
+            T1s = jnp.array([
+                jnp.clip(tissue_params[2], 0.1, 2.0),    # MW T1
+                jnp.clip(tissue_params[3], 0.3, 4.0),    # IEW T1
+            ])
+            T2s = jnp.array([
+                jnp.clip(tissue_params[4], 0.005, 0.025), # MW T2: 5-25ms
+                jnp.clip(tissue_params[5], 0.040, 0.120), # IEW T2: 40-120ms
+            ])
         elif self.n_compartments == 3:
             f1 = jnp.clip(tissue_params[1], 0.01, 0.40)
             f2 = jnp.clip(tissue_params[2], 0.01, 0.60)
-            f3 = jnp.clip(1 - f1 - f2, 0.01, 0.98)
+            fractions = jnp.array([f1, f2, jnp.clip(1 - f1 - f2, 0.01, 0.98)])
             T1s = jnp.array([
                 jnp.clip(tissue_params[3], 0.1, 2.0),
                 jnp.clip(tissue_params[4], 0.3, 4.0),
                 jnp.clip(tissue_params[5], 1.0, 6.0),
             ])
-            fractions = jnp.array([f1, f2, f3])
+            T2s = jnp.array([
+                jnp.clip(tissue_params[6], 0.005, 0.025),
+                jnp.clip(tissue_params[7], 0.040, 0.120),
+                jnp.clip(tissue_params[8], 0.5, 3.0),
+            ])
         else:
-            raise ValueError(f"n_compartments must be 2 or 3, got {self.n_compartments}")
+            raise ValueError(f"n_compartments must be 2 or 3")
+        return M0, fractions, T1s, T2s
+
+    def forward_spgr(self, tissue_params, sequence):
+        """SPGR signal: sensitive to T1 (not T2)."""
+        M0, fractions, T1s, _ = self._parse_params(tissue_params)
+        fa_rad = sequence.flip_angles_rad
+        TR = sequence.TR
 
         def signal_at_fa(fa):
-            # Per-compartment SPGR signals
             E1s = jnp.exp(-TR / T1s)
-            comp_signals = M0 * fractions * jnp.sin(fa) * (1 - E1s) / (1 - E1s * jnp.cos(fa))
+            comp = M0 * fractions * jnp.sin(fa) * (1 - E1s) / (1 - E1s * jnp.cos(fa))
+            mix_input = jnp.concatenate([comp, jnp.array([fa])])
+            correction = self.mixing_net(mix_input) * 0.01
+            return jnp.sum(comp) * (1 + correction[0])
 
-            # Learned mixing: accounts for exchange, magnetisation transfer, etc.
-            mix_input = jnp.concatenate([comp_signals, jnp.array([fa])])
-            mix_correction = self.mixing_net(mix_input) * 0.01
+        return jax.vmap(signal_at_fa)(fa_rad)
 
-            return jnp.sum(comp_signals) + mix_correction[0] * jnp.sum(comp_signals)
+    def forward_ssfp(self, tissue_params, ssfp_sequence):
+        """bSSFP signal: sensitive to T2 (separates pools)."""
+        from neurojax.qmri.steady_state import bssfp_signal
+        M0, fractions, T1s, T2s = self._parse_params(tissue_params)
+        fa_rad = ssfp_sequence.flip_angles_rad
+        TR = ssfp_sequence.TR
 
-        signals = jax.vmap(signal_at_fa)(fa_rad)
-        return signals
+        def signal_at_fa(fa):
+            # Per-compartment bSSFP signals (T2-sensitive)
+            comp = jnp.array([
+                M0 * fractions[i] * bssfp_signal(1.0, T1s[i], T2s[i], fa, TR)
+                for i in range(self.n_compartments)
+            ])
+            mix_input = jnp.concatenate([comp, jnp.array([fa])])
+            correction = self.mixing_net(mix_input) * 0.01
+            return jnp.sum(comp) * (1 + correction[0])
+
+        return jax.vmap(signal_at_fa)(fa_rad)
+
+    def __call__(self, tissue_params, sequence):
+        """Forward model (SPGR by default for backward compat)."""
+        return self.forward_spgr(tissue_params, sequence)
+
+    def loss(self, tissue_params, spgr_data, ssfp_data,
+             spgr_sequence, ssfp_sequence):
+        """Joint SPGR + bSSFP loss for mcDESPOT fitting."""
+        pred_spgr = self.forward_spgr(tissue_params, spgr_sequence)
+        pred_ssfp = self.forward_ssfp(tissue_params, ssfp_sequence)
+        return (jnp.mean((pred_spgr - spgr_data) ** 2) +
+                jnp.mean((pred_ssfp - ssfp_data) ** 2))
 
 
 # =====================================================================
