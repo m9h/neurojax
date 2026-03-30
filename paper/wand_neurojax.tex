@@ -149,30 +149,128 @@ gradient-based fitting with per-region heterogeneous parameters.
 \section{Dataset}
 % ============================================================================
 
-Table~\ref{tab:wand} summarises the WAND sessions for the reference
-subject sub-08033 (all modalities confirmed, 10.24~GB downloaded).
+\subsection{CUBRIC and the Connectom scanner}
+
+The Cardiff University Brain Research Imaging Centre (CUBRIC) has been
+at the forefront of human connectomics since the installation of a
+Siemens MAGNETOM Connectom~3T scanner with 300\,mT/m gradients in
+2016 --- the first in Europe and only the second worldwide after the
+Massachusetts General Hospital system built for the Human Connectome
+Project~\citep{Jones2022connectom}. Under the direction of
+Derek~K.~Jones, CUBRIC has used these ultra-strong gradients to map
+white matter microstructure at unprecedented precision, enabling
+AxCaliber axon diameter estimation and CHARMED restricted-fraction
+imaging in~vivo.
+
+Complementing the diffusion programme, Krish~D.~Singh's group has
+pioneered the combination of magnetic resonance spectroscopy with
+electrophysiology~\citep{Muthukumaraswamy2009gaba}, demonstrating
+that resting GABA concentration in visual cortex predicts peak gamma
+oscillation frequency and fMRI BOLD amplitude. This established a
+direct, measurable link between inhibitory neurotransmitter
+concentration and neural dynamics --- a founding principle of the WAND
+dataset design and the MRS-constrained neural mass modelling in this
+work. The Singh group's subsequent studies extended this to
+glutamate, schizophrenia risk markers, and motor cortex, building
+the empirical case that MRS metabolites can serve as independent
+constraints on computational models of cortical circuit function.
+
+WAND~\citep{Mayerand2025wand} synthesises these programmes into a
+single cohort of 170 healthy volunteers (aged 18--63, BIDS-organised),
+acquired across up to 8 sessions on three scanner platforms at CUBRIC.
+The dataset was published in \textit{Scientific Data} (2024) and is
+available via GIN (\url{https://gin.g-node.org/CUBRIC/WAND}). To our
+knowledge, no computational modelling studies have yet been published
+using WAND; the present work represents the first application of
+differentiable biophysical modelling to this resource.
+
+\subsection{Scanner platforms and sessions}
+
+The WAND sessions span four distinct instrument platforms:
+
+\begin{itemize}
+  \item \textbf{Siemens MAGNETOM Connectom 3T} (300\,mT/m, ses-02,
+    ses-06): Ultra-strong gradients for diffusion microstructure
+    (AxCaliber, CHARMED) and quantitative relaxometry (VFA, QMT).
+    Sub-mm structural imaging (MP2RAGE 0.7\,mm, 7-echo GRE 0.67\,mm).
+  \item \textbf{Siemens MAGNETOM Prisma 3T} (80\,mT/m, 32-channel
+    receive-only head coil, ses-03, ses-05): fMRI, perfusion (pCASL,
+    TRUST), structural (T1w, T2w), and MRS (semi-LASER).
+  \item \textbf{Siemens MAGNETOM 7T} (32-channel receive / volume
+    transmit head coil, Nova Medical, ses-04): High-field MRS
+    (semi-LASER) for improved spectral resolution of GABA and
+    glutamate.
+  \item \textbf{CTF 275-channel radial gradiometer MEG} (ses-01):
+    Sampled at 1200\,Hz, analysed as synthetic third-order
+    gradiometers with 29 reference channels. EOG recorded
+    concurrently. Five paradigms: resting-state, auditory-motor,
+    mismatch negativity, Simon task, visual.
+  \item \textbf{Magstim BiStim\textsuperscript{2} TMS} (ses-08,
+    Magstim, Whitland, UK): D70 Alpha Flat figure-of-eight coil
+    (70\,mm). Neuronavigated with BrainSight (Rogue Research,
+    Montreal) and Polaris optical tracking (Northern Digital).
+    Controlled via CED~1401 interface with Signal~v6.04a software.
+    EMG recorded with Digitimer D440-4 amplifier and pre-gelled
+    Ag/AgCl electrodes. SICI paired-pulse protocol, 3 runs per
+    subject.
+\end{itemize}
+
+Table~\ref{tab:wand} details the acquisitions per session for the
+reference subject sub-08033 (all modalities confirmed, 10.24~GB).
 
 \begin{table}[htbp]
 \centering
 \caption{WAND acquisition sessions for sub-08033.}
 \label{tab:wand}
-\begin{tabular}{llp{8cm}}
+\begin{tabular}{lllp{6.5cm}}
 \toprule
-Session & Modalities & Key acquisitions \\
+Session & Scanner & Modalities & Key acquisitions \\
 \midrule
-ses-01 & MEG          & CTF 275ch: resting, auditory-motor, MMN, simon, visual \\
-ses-02 & DWI + anat   & AxCaliber (4 shells, $b$=0--15500), CHARMED, T1w, VFA (SPGR/SSFP), QMT (16 vols) \\
-ses-03 & fMRI + anat  & T1w, T2w (grad-corrected), pCASL, TRUST, InvRec, angiography \\
-ses-04 & MRS + anat   & sLASER: ACC, occipital, auditory, sensorimotor; T1w \\
-ses-05 & MRS + anat   & Second MRS session (test--retest); T1w \\
-ses-06 & Structural   & MP2RAGE, multi-echo GRE (7 echoes, 0.67\,mm), T2w (0.21\,mm) \\
-ses-08 & TMS          & TMS-EEG SICI protocol (3 runs) \\
+ses-01 & CTF MEG      & MEG          & 275ch: resting, auditory-motor, MMN, Simon, visual + headshape \\
+ses-02 & Connectom 3T & DWI + anat   & AxCaliber (4 shells, $b$=0--15500), CHARMED (AP+PA), T1w, VFA (SPGR/SSFP/IR), QMT (16 vols) \\
+ses-03 & Prisma 3T    & fMRI + perf  & T1w, T2w (grad-corrected), fieldmaps, pCASL, TRUST, InvRec, angiography, M0 \\
+ses-04 & 7T           & MRS + anat   & semi-LASER: ACC, occipital, auditory, sensorimotor; T1w \\
+ses-05 & Prisma 3T    & MRS + anat   & semi-LASER (test--retest); MEGA-PRESS; T1w \\
+ses-06 & Connectom 3T & Structural   & MP2RAGE (0.7\,mm), 7-echo GRE (0.67\,mm mag+phase), T2w (0.21\,mm in-plane) \\
+ses-08 & TMS lab      & TMS-EEG      & SICI protocol (3 runs, .mat format) \\
 \bottomrule
 \end{tabular}
 \end{table}
 
+\subsection{CUBRIC-provided derivatives}
+
+In addition to raw BIDS data, CUBRIC distributes several pre-computed
+derivatives:
+
+\begin{itemize}
+  \item \textbf{Brain-extracted T1w images} via HD-BET for each session
+  \item \textbf{Diffusion QC}: FSL \texttt{eddy\_qc} reports (motion
+    parameters, outlier counts, CNR maps) for the multishell DWI
+  \item \textbf{Structural and functional QC}: MRIQC reports for T1w,
+    T2w, and BOLD data
+  \item \textbf{MEG--MRI coregistrations}: T1w images transformed to
+    CTF MEG coordinate space (Cardiff GitLab)
+  \item \textbf{Phenotype data}: age, sex, ethnicity, anthropometrics
+    (weight, height, waist/hip, blood pressure), alcohol and smoking
+    status (\texttt{participants.tsv})
+  \item \textbf{Cognitive and behavioural data}: trait questionnaires
+    and task performance (\texttt{phenotype/} directory)
+\end{itemize}
+
+\noindent The processing reported here extends these CUBRIC derivatives
+in three directions: (1)~quantitative tissue property maps from the
+rich relaxometry acquisitions (VFA~T1, QMT~BPF, T2*, g-ratio,
+MP2RAGE~T1); (2)~advanced subcortical segmentations (DTI-enhanced
+thalamic nuclei, hippocampal subfields, hypothalamic subunits);
+and (3)~perfusion quantification (CBF, OEF, CMRO$_2$). We also
+extend the diffusion and microstructural derivatives beyond CUBRIC's
+eddy QC reports with DTI fitting (FA, MD, V1 from the CHARMED
+low-$b$ shells), and lay the groundwork for AxCaliber axon diameter
+estimation and microstructure-informed connectome construction via
+sbi4dwi on the full ultra-strong-gradient data.
+
 % ============================================================================
-\section{Methods: Quantitative Structural Processing}
+\section{Methods}
 % ============================================================================
 
 \subsection{FreeSurfer recon-all + advanced segmentations}
@@ -306,7 +404,21 @@ volumes, removing receive-field inhomogeneity.
 
 \end{knitrout}
 
-\subsection{Perfusion: CBF from pCASL}
+\subsection{Quantitative perfusion processing}
+
+The full perfusion pipeline combines three independent measurements
+--- cerebral blood flow, venous oxygenation, and blood T1 --- to yield
+the cerebral metabolic rate of oxygen consumption (CMRO$_2$). CBF is
+quantified with FSL's \texttt{oxford\_asl}, which wraps the BASIL
+(Bayesian Inference for Arterial Spin Labelling) framework
+\citep{Alsop2015asl}. BASIL itself uses FABBER, FSL's variational
+Bayesian inference engine, to invert the kinetic model with spatial
+regularisation and partial-volume correction. OEF is obtained from
+TRUST, and subject-specific blood T1 from the Look-Locker inversion
+recovery acquisition. These combine via Fick's principle to give
+CMRO$_2$.
+
+\subsubsection{CBF from pCASL}
 
 Cerebral blood flow was quantified from pseudo-continuous ASL
 (bolus~=~1.8\,s, PLD~=~2.0\,s, 110 volumes) using FSL
@@ -350,7 +462,7 @@ apparent $T_1^*$ and the inversion efficiency $B$.
 
 \end{knitrout}
 
-\subsection{TRUST: venous oxygenation}
+\subsubsection{TRUST: venous oxygenation}
 
 T2 of venous blood in the sagittal sinus was estimated from the
 TRUST acquisition~\citep{Lu2008trust} (24 volumes, 4 effective TEs
@@ -373,7 +485,7 @@ with coefficients $A$~=~4.5, $B$~=~47.1, $C$~=~55.5\,s$^{-1}$
 for Hct~=~0.42. Solving the quadratic for $Y$ gives SvO$_2$,
 from which OEF follows.
 
-\subsection{CMRO$_2$ via Fick's principle}
+\subsubsection{CMRO$_2$ via Fick's principle}
 
 The three independent perfusion measurements combine via the
 Fick equation to give the cerebral metabolic rate of oxygen consumption:
@@ -394,9 +506,146 @@ for Hb~=~15\,g/dl and SaO$_2$~=~0.98. This hierarchy from global OEF
 (TRUST) can be upgraded to regional OEF via quantitative
 BOLD~\citep{He2007qbold} fitting of the 7-echo GRE (ses-06).
 
+\subsection{Diffusion microstructure processing}
+
+Diffusion-weighted images from ses-02 (AxCaliber: 4 shells,
+$b$~=~0--15\,500\,s/mm$^2$; CHARMED: AP+PA) were preprocessed with
+FSL's standard distortion and motion correction pipeline.
+\texttt{topup} estimated the susceptibility-induced off-resonance
+field from the AP/PA $b$=0 image pair, and \texttt{eddy} corrected
+for eddy-current distortions, subject motion, and signal dropout
+(outlier replacement enabled). CUBRIC-provided \texttt{eddy\_qc}
+reports confirmed low motion and few outlier slices for sub-08033.
+
+DTI fitting was performed with \texttt{dtifit} on the low-$b$ shells
+($b \leq 2000$\,s/mm$^2$), yielding fractional anisotropy (FA), mean
+diffusivity (MD), and the principal eigenvector (V1). Multi-fibre
+estimation used \texttt{bedpostx} (Bayesian Estimation of Diffusion
+Parameters Obtained using Sampling Techniques), modelling up to 3
+crossing fibres per voxel with the \texttt{zeppelin} model for the
+extra-axonal compartment.
+
+Tract segmentation employed \texttt{xtract}, FSL's automated
+tractography tool, which segments 42 major white-matter tracts using
+standardised seed/target/exclusion ROIs in MNI space, warped to
+native diffusion space via nonlinear registration
+(\texttt{fnirt}). Probabilistic tractography was run with
+\texttt{probtrackx2} using the bedpostx fibre orientations with
+5000 streamlines per seed voxel.
+
+Whole-brain structural connectomes ($\mathbf{C}$, $\mathbf{L}$) were
+constructed by seeding streamlines from each parcel of the
+Desikan--Killiany cortical atlas (from FreeSurfer) and counting
+streamline endpoints in every other parcel. The connection weight
+matrix $\mathbf{C}$ stores streamline counts (log-normalised) and the
+fibre length matrix $\mathbf{L}$ stores median streamline lengths.
+Combined with g-ratio from QMT BPF and the Hursh--Rushton relationship,
+$\mathbf{L}$ yields the conduction delay matrix
+$\mathbf{D}_{ij} = L_{ij} / v_{ij}$ with per-connection velocity
+$v_{ij}$.
+
+For microstructural modelling beyond DTI, \texttt{sbi4dwi}
+(simulation-based inference for diffusion MRI) will fit the AxCaliber
+model to the full ultra-strong-gradient data, estimating axon diameter
+distributions and restricted signal fractions. DIPY serves as a
+complementary toolkit for signal reconstruction, tractography
+algorithm comparison, and diffusion spectrum imaging.
+
+\subsection{MEG processing}
+
+MEG data from ses-01 (CTF 275-channel, 1200\,Hz, synthetic
+third-order gradiometers) were processed using the
+\texttt{osl-ephys} pipeline. Pre-processing comprised:
+(i)~downsampling to 250\,Hz, (ii)~bandpass filtering (1--45\,Hz for
+resting-state, broadband for task), (iii)~automated bad-channel
+detection and interpolation, and (iv)~ICA artifact rejection via
+\texttt{osl\_dynamics.preprocessing}, removing ocular (EOG-correlated)
+and cardiac components by temporal correlation and topographic
+template matching.
+
+Source reconstruction used the RHINO (Registration of Headshapes
+Including Nose in OSL) coregistration procedure, which aligns the
+Polaris-digitised headshape to the FreeSurfer scalp surface
+extracted from the ses-03 T1w. A single-shell boundary element model
+(BEM) provided the forward model for beamforming (linearly
+constrained minimum variance, LCMV) and minimum-norm estimation.
+Source time courses were extracted at each parcel centroid of the
+Desikan--Killiany atlas and sign-flipped to resolve the inherent
+source orientation ambiguity across subjects.
+
+For dynamic brain state analysis, parcellated source envelopes were
+prepared with time-delay embedding (TDE, $\pm$7 lags) and PCA
+dimensionality reduction (retaining 95\% variance). This
+spatio-temporal feature space served as input to
+\texttt{osl-dynamics}, which provides both the Hidden Markov Model
+(HMM) of \citet{Vidaurre2018hmm} and DyNeMo
+\citep{Gohil2023dynemo}, a deep generative model that estimates
+time-varying linear mixtures of mode covariances. State/mode spectra,
+fractional occupancies, lifetimes, and switching rates provide the
+functional summary statistics against which the NeuroJAX whole-brain
+simulation is validated.
+
+\subsection{MRS processing}
+
+Magnetic resonance spectroscopy data were acquired with the
+semi-LASER (sLASER) sequence at both 3\,T (ses-05, Prisma) and
+7\,T (ses-04). Spectra were processed with \texttt{fsl\_mrs}
+\citep{Clarke2021fslmrs}, FSL's spectroscopy quantification tool,
+which performs frequency-and-phase alignment, coil combination,
+eddy-current correction, water reference scaling, and LCModel-style
+basis set fitting in the frequency domain.
+
+Voxel localisation used \texttt{svs\_segment}: the MRS voxel was
+registered to the ses-03 T1w and tissue fractions (GM, WM, CSF) were
+computed from FAST segmentation within the voxel bounding box. These
+fractions enable water-scaled absolute quantification of metabolite
+concentrations (institutional units, i.u.) and partial-volume
+correction for tissue-specific concentrations.
+
+The primary metabolites of interest are GABA and glutamate (Glu).
+Following the approach of \citet{Muthukumaraswamy2009gaba}, regional
+GABA concentration constrains the inhibitory synaptic coupling
+$J_I \propto [\text{GABA}]$ in the Reduced Wong-Wang neural mass
+model~\citep{Deco2013rww}, while glutamate constrains the excitatory
+NMDA coupling $J_\text{NMDA} \propto [\text{Glu}]$. With WAND's
+four voxel placements (ACC, occipital, auditory, sensorimotor), these
+constraints cover both default-mode and primary sensory regions,
+reducing parameter degeneracy in the whole-brain fit. MEGA-PRESS
+data from ses-05 provide an additional GABA estimate for
+test--retest reliability assessment.
+
+\subsection{TMS-EEG processing}
+
+TMS data from ses-08 used the short-interval intracortical inhibition
+(SICI) paired-pulse protocol with the Magstim BiStim$^2$ system.
+SICI pairs a subthreshold conditioning stimulus (80\% RMT, 2\,ms ISI)
+with a suprathreshold test stimulus to probe GABAergic inhibition in
+motor cortex. Three runs were acquired per subject.
+
+Analysis extracts TMS-evoked potentials (TEPs) from the
+CED-recorded EEG/EMG data, time-locked to the TMS pulse.
+After artifact rejection (TMS pulse artifact blanking, muscle
+artifact ICA removal), the TEP waveform is epoched
+($-$100 to +500\,ms) and baseline-corrected. Key TEP components
+(N15, P30, N45, P60, N100, P180) index successive stages of cortical
+processing: early components ($<$50\,ms) reflect local excitability
+while late components ($>$100\,ms) reflect network propagation through
+long-range connections.
+
+The SICI ratio (conditioned MEP amplitude / unconditioned MEP
+amplitude) provides a functional readout of GABAergic inhibition that
+complements the MRS GABA concentration, linking neurochemistry to
+cortical excitability. In the NeuroJAX framework, TEP waveforms serve
+as fitting targets: the whole-brain model receives a simulated TMS
+impulse at the stimulation site and the predicted network response is
+compared to the measured TEP, enabling gradient-based optimisation of
+connection-specific parameters.
+
 % ============================================================================
-\section{vpjax: Differentiable Vascular Physiology}
+\section{Results}
 % ============================================================================
+
+\subsection{vpjax: Differentiable vascular physiology}
 
 The quantitative structural maps feed into \textbf{vpjax} (Virtual
 Physiology in JAX), the vascular/metabolic complement to vbjax
@@ -411,7 +660,7 @@ to measurable haemodynamic signals:
   \underbrace{y(t)}_{\text{BOLD/ASL/qBOLD}}
 \end{equation}
 
-\subsection{Balloon--Windkessel hemodynamics}
+\subsubsection{Balloon--Windkessel hemodynamics}
 
 The extended Riera~\citep{Riera2006neurovascular} neurovascular model
 replaces the simplified Buxton hemodynamics with a full metabolic
@@ -430,7 +679,7 @@ under the Grubb assumption, $\alpha$ is the Grubb exponent, $\kappa$ is the
 signal decay rate, $\gamma$ the autoregulatory feedback, and $\tau$ the
 transit time.
 
-\subsection{qBOLD: regional OEF from multi-echo GRE}
+\subsubsection{qBOLD: regional OEF from multi-echo GRE}
 
 The key upgrade from global OEF (TRUST) to regional OEF uses the
 quantitative BOLD model~\citep{He2007qbold}:
@@ -448,7 +697,7 @@ from deoxy-Hb). The difference $R_2' = R_2^* - R_2 \propto
 \text{OEF} \times \text{DBV} \times B_0$. WAND's 7-echo GRE
 (TE~=~5--35\,ms) is ideal for fitting this model.
 
-\subsection{CMRO$_2$ hierarchy}
+\subsubsection{CMRO$_2$ hierarchy}
 
 vpjax provides three levels of oxygen metabolism estimation:
 %
@@ -467,7 +716,7 @@ Level & OEF source & Spatial resolution & WAND data \\
 \end{tabular}
 \end{table}
 
-\subsection{Local linearization integration}
+\subsubsection{Local linearization integration}
 
 The Balloon--Windkessel equations (Eqs.~\ref{eq:bw_s}--\ref{eq:bw_q})
 are stiff: the vascular response evolves on a $\sim$1\,s timescale while
@@ -488,7 +737,7 @@ via \texttt{jax.grad} through the matrix exponential, enabling gradient-based
 fitting of hemodynamic parameters alongside neural mass parameters in a
 single optimization.
 
-\subsection{Every variable has a measurement}
+\subsubsection{Every variable has a measurement}
 
 The central claim is that WAND provides independent measurements for
 every state variable and parameter in the neurovascular model:
@@ -514,7 +763,7 @@ Conduction velocity         & constraint (sbi4dwi) & AxCaliber \\
 \end{tabular}
 \end{table}
 
-\subsection{Meshless physics: from tissue geometry to field solutions}
+\subsubsection{Meshless physics: from tissue geometry to field solutions}
 
 The tissue segmentations (SAMSEG, SynthSeg, charm) and head meshes
 (brain2mesh, SimNIBS) provide the geometric substrate for forward
@@ -563,9 +812,7 @@ JAX enables coupling mechanical deformation fields with neural dynamics
 --- for example, predicting how traumatic brain injury alters
 connectome-level conduction delays.
 
-% ============================================================================
-\section{Relaxometry Signal Models}
-% ============================================================================
+\subsection{Relaxometry signal models}
 
 Each quantitative MRI acquisition varies a specific physical parameter
 across volumes. Figure~\ref{fig:relaxometry} shows the signal models
@@ -582,10 +829,6 @@ overlaid on the measured data from a representative white-matter ROI.
 \end{figure}
 
 \end{knitrout}
-
-% ============================================================================
-\section{Results}
-% ============================================================================
 
 \subsection{Cross-session volumetrics (SynthSeg)}
 
@@ -671,189 +914,6 @@ whole right  &  483.1 \\
 \end{table}
 
 
-\subsection{Thalamic nuclei (DTI-enhanced CNN)}
-
-DTI-enhanced thalamic nuclei segmentation was performed using the
-FreeSurfer CNN model~\citep{Billot2023synthseg} with FA and V1 maps
-from dtifit (CHARMED $b \leq 1200$\,s/mm$^2$, 83 volumes across
-$b = 0, 200, 500, 1200$). The DTI information improves boundary
-delineation between nuclei with distinct fibre orientations (e.g.\ VPL
-vs.\ PuL).
-
-\begin{table}[htbp]
-\centering
-\caption{Thalamic nuclei volumes (left hemisphere, mm$^3$). DTI-enhanced CNN segmentation with 46 bilateral nuclei.}
-\label{tab:thal}
-\begin{tabular}{lr|lr}
-\toprule
-Nucleus & Vol. & Nucleus & Vol. \\
-\midrule
-AV  &  354 &  Pf  &  90 \\
-CeM  &  111 &  PuA  &  329 \\
-CL  &  104 &  PuI  &  285 \\
-CM  &  361 &  PuL  &  236 \\
-LD  &  130 &  PuMm  &  479 \\
-LGN  &  444 &  PuMl  &  1014 \\
-LP  &  230 &  VA  &  497 \\
-L-Sg  &  55 &  VAmc  &  30 \\
-MDl  &  327 &  VLa  &  537 \\
-MDm  &  872 &  VLp  &  848 \\
-MGN  &  345 &  VPL  &  967 \\
-MV(Re)  &  34 & &  \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-\subsection{Hippocampal subfields and amygdala nuclei}
-
-Hippocampal subfield and amygdala nuclei segmentation used the FreeSurfer
-v22 atlas with T1-weighted input. Bilateral volumes for CA1--4, subiculum,
-molecular layer, GC-DG, HATA, fimbria, hippocampal tail, and 9 amygdala
-nuclei were obtained.
-
-\begin{table}[htbp]
-\centering
-\caption{Left hippocampal subfield volumes (mm$^3$).}
-\begin{tabular}{lr}
-\toprule
-Subfield & Volume \\
-\midrule
-Hippocampal\_tail  &  743.3 \\
-subiculum body  &  251.4 \\
-CA1 body  &  158.2 \\
-subiculum head  &  227 \\
-hippocampal fissure  &  200.5 \\
-presubiculum head  &  182.5 \\
-CA1 head  &  606.5 \\
-presubiculum body  &  197.9 \\
-parasubiculum  &  77.5 \\
-molecular\_layer\_HP head  &  396.5 \\
-molecular\_layer\_HP body  &  305.8 \\
-GC ML DG head  &  180.2 \\
-CA3 body  &  156.9 \\
-GC ML DG body  &  182.5 \\
-CA4 head  &  152.4 \\
-CA4 body  &  173.6 \\
-fimbria  &  109.2 \\
-CA3 head  &  150.4 \\
-HATA  &  59.6 \\
-Whole\_hippocampal\_body  &  1535.5 \\
-Whole\_hippocampal\_head  &  2032.6 \\
-Whole\_hippocampus  &  4311.3 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\begin{table}[htbp]
-\centering
-\caption{Right hippocampal subfield volumes (mm$^3$).}
-\begin{tabular}{lr}
-\toprule
-Subfield & Volume \\
-\midrule
-Hippocampal\_tail  &  702.8 \\
-subiculum body  &  291.9 \\
-CA1 body  &  150.5 \\
-subiculum head  &  186.5 \\
-hippocampal fissure  &  165.6 \\
-presubiculum head  &  165.9 \\
-CA1 head  &  577.7 \\
-presubiculum body  &  209.1 \\
-parasubiculum  &  79.1 \\
-molecular\_layer\_HP head  &  368.7 \\
-molecular\_layer\_HP body  &  290.9 \\
-GC ML DG head  &  178.3 \\
-CA3 body  &  123.2 \\
-GC ML DG body  &  146.3 \\
-CA4 head  &  149.2 \\
-CA4 body  &  126.9 \\
-fimbria  &  117.7 \\
-CA3 head  &  148.4 \\
-HATA  &  60.3 \\
-Whole\_hippocampal\_body  &  1456.4 \\
-Whole\_hippocampal\_head  &  1914.2 \\
-Whole\_hippocampus  &  4073.4 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-
-\subsection{Three-way T1 comparison}
-
-VFA T1 was estimated using three independent methods on the same
-ses-02 SPGR data (8 flip angles, TR$_\text{exc}$~=~4\,ms):
-
-\begin{table}[htbp]
-\centering
-\caption{Three-way VFA T1 comparison (ms). Expected 3T values: WM~$\approx$800, GM~$\approx$1400.}
-\label{tab:t1compare}
-\begin{tabular}{lrrr}
-\toprule
-Method & WM median & GM median & Notes \\
-\midrule
-FreeSurfer \texttt{mri\_ms\_fitparms} & 650 & 1605 & Best GM contrast \\
-QUIT DESPOT1 (NLLS)                   & 716 & 1320 & Tightest IQR \\
-Python linear DESPOT1                  & 727 & 1357 & Widest spread \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-All three WM estimates are 650--730\,ms (below the expected $\sim$800\,ms),
-consistent with B1$^+$ inhomogeneity pulling estimates down without
-B1 correction. The DESPOT1-HIFI joint T1+B1 estimation (available in
-\texttt{neurojax.qmri.despot}) would resolve this given the SPGR-IR
-data in ses-02.
-
-\subsection{QUIT QMT tissue-specific results}
-
-The QUIT Ramani model with super-Lorentzian lineshape produced
-physiologically plausible two-pool parameters:
-
-\begin{table}[htbp]
-\centering
-\caption{QUIT QMT two-pool parameter estimates by tissue class.}
-\label{tab:qmt}
-\begin{tabular}{lrrr}
-\toprule
-Parameter & WM & GM & Expected \\
-\midrule
-BPF ($f_b$)           & 0.163 & 0.082 & WM: 0.10--0.16 \\
-$k_{bf}$ (Hz)         & 1.04  & 0.44  & 1--5 \\
-$T_{1,f}$ (s)         & 0.83  & 1.59  & WM: 0.8--1.0, GM: 1.3--1.8 \\
-$T_{2,b}$ ($\mu$s)    & 7.3   & 8.1   & 8--15 \\
-$T_{2,f}$ (ms)        & 70    & 64    & WM: 20--40, GM: 40--80 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-The BPF shows correct WM/GM contrast ($\sim$2$\times$), and $T_{1,f}$
-values match the three-way DESPOT1 comparison. The elevated $T_{2,f}$
-and exchange rate instability (some voxels at upper bound) indicate
-the need for B1$^+$ correction --- a CUBRIC protocol question
-(Appendix).
-
-\subsection{DTI from ultra-strong gradient DWI}
-
-Diffusion tensor fitting was performed on the CHARMED acquisition
-($b \leq 1200$\,s/mm$^2$; $b = 0, 200, 500, 1200$; 83 volumes) from
-the Connectom 300\,mT/m scanner. Note: this is without eddy current
-correction (topup + eddy not yet applied to sub-08033); the full
-preprocessing pipeline will be run on the DGX.
-
-\begin{knitrout}
-\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{figure}
-
-{\centering \includegraphics[width=\maxwidth]{figure/fig-fa-1} 
-
-}
-
-\caption[Fractional anisotropy (FA) from dtifit on CHARMED b$\leq$1200\,s/mm$^2$ data]{Fractional anisotropy (FA) from dtifit on CHARMED b$\leq$1200\,s/mm$^2$ data. The ultra-strong gradients of the Connectom scanner enable high b-value shells (up to 15500) for AxCaliber microstructure estimation, while the lower shells provide conventional DTI metrics. FA maps feed into the DTI-enhanced thalamic nuclei segmentation and bedpostx crossing-fibre estimation.}\label{fig:fig-fa}
-\end{figure}
-
-\end{knitrout}
-
 \subsection{Perfusion results}
 
 \begin{knitrout}
@@ -898,58 +958,106 @@ OEF &  -1.4 \% \\
 \textit{Note: TRUST eTE calibration pending; SvO$_2$/OEF values require protocol-specific effective echo times.}
 
 
+\subsection{Thalamic nuclei (DTI-enhanced CNN)}
+
+DTI-enhanced thalamic nuclei segmentation used the FreeSurfer CNN model
+with FA and V1 maps from dtifit (CHARMED $b \leq 1200$\,s/mm$^2$, 83
+volumes). 46 bilateral nuclei were identified.
+
+\begin{table}[htbp]
+\centering
+\caption{Thalamic nuclei volumes (left hemisphere, mm$^3$).}
+\begin{tabular}{lr|lr}
+\toprule
+Nucleus & Vol. & Nucleus & Vol. \\
+\midrule
+AV  &  354 &  Pf  &  90 \\
+CeM  &  111 &  PuA  &  329 \\
+CL  &  104 &  PuI  &  285 \\
+CM  &  361 &  PuL  &  236 \\
+LD  &  130 &  PuMm  &  479 \\
+LGN  &  444 &  PuMl  &  1014 \\
+LP  &  230 &  VA  &  497 \\
+L-Sg  &  55 &  VAmc  &  30 \\
+MDl  &  327 &  VLa  &  537 \\
+MDm  &  872 &  VLp  &  848 \\
+MGN  &  345 &  VPL  &  967 \\
+MV(Re)  &  34 & &  \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsection{Three-way T1 comparison}
+
+\begin{table}[htbp]
+\centering
+\caption{Three-way VFA T1 comparison (ms). Expected: WM~$\approx$800, GM~$\approx$1400.}
+\begin{tabular}{lrrr}
+\toprule
+Method & WM median & GM median & Notes \\
+\midrule
+FreeSurfer \texttt{mri\_ms\_fitparms} & 650 & 1605 & Best GM contrast \\
+QUIT DESPOT1 (NLLS)                   & 716 & 1320 & Tightest IQR \\
+Python linear DESPOT1                  & 727 & 1357 & Widest spread \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{QUIT QMT tissue-specific results}
+
+\begin{table}[htbp]
+\centering
+\caption{QUIT QMT two-pool parameter estimates by tissue class.}
+\begin{tabular}{lrrr}
+\toprule
+Parameter & WM & GM & Expected \\
+\midrule
+BPF ($f_b$)           & 0.163 & 0.082 & WM: 0.10--0.16 \\
+$k_{bf}$ (Hz)         & 1.04  & 0.44  & 1--5 \\
+$T_{1,f}$ (s)         & 0.83  & 1.59  & WM: 0.8--1.0, GM: 1.3--1.8 \\
+$T_{2,b}$ ($\mu$s)    & 7.3   & 8.1   & 8--15 \\
+$T_{2,f}$ (ms)        & 70    & 64    & WM: 20--40, GM: 40--80 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{DTI from ultra-strong gradient DWI}
+
+\begin{knitrout}
+\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{figure}
+
+{\centering \includegraphics[width=\maxwidth]{figure/fig-fa-1} 
+
+}
+
+\caption[Fractional anisotropy from dtifit on CHARMED b$\leq$1200\,s/mm$^2$ data]{Fractional anisotropy from dtifit on CHARMED b$\leq$1200\,s/mm$^2$ data. FA maps feed into DTI-enhanced thalamic nuclei segmentation and bedpostx crossing-fibre estimation.}\label{fig:fig-fa}
+\end{figure}
+
+\end{knitrout}
+
+\subsection{neurojax.qmri: GPU-accelerated fitting}
+
+The \texttt{neurojax.qmri} module provides differentiable signal models
+in JAX: SPGR, bSSFP, IR-SPGR, multi-echo, QMT two-pool
+(super-Lorentzian), and MP2RAGE. The \texttt{VoxelwiseFitter} engine
+uses \texttt{jax.vmap} to fit all $\sim$1\,M voxels simultaneously on
+GPU with analytic gradients from \texttt{jax.grad}, bounded parameter
+optimisation via sigmoid reparameterisation, and Laplace uncertainty
+from the Hessian.
+
+\subsection{Cortical layer analysis with LAYNII}
+
+The sub-mm ses-06 data (MEGRE 0.67\,mm, MP2RAGE 0.7\,mm) enables
+cortical depth-resolved analysis using LAYNII~v2.10.0:
+\texttt{LN2\_LAYERS} for equivolume depth definition,
+\texttt{LN2\_PROFILE} for sampling R2*, QSM, T1, BPF per layer.
+Deep layers (V--VI, feedforward, higher iron) vs.\ superficial
+(I--III, feedback, heavier myelination) maps to the
+$\xi$-$\alpha$NET hierarchy~\citep{ValdesSosa2026xialphanet}.
+
 % ============================================================================
-\section{neurojax.qmri: GPU-accelerated fitting}
-% ============================================================================
-
-A key limitation of existing qMRI tools (QUIT, qMRLab) is serial
-voxelwise fitting on CPU. We have implemented a \texttt{neurojax.qmri}
-module providing differentiable signal models in JAX:
-
-\begin{itemize}
-  \item \textbf{steady\_state.py}: SPGR, bSSFP, IR-SPGR, multi-echo,
-    QMT two-pool (super-Lorentzian), MP2RAGE --- all compatible with
-    \texttt{jax.grad}.
-  \item \textbf{despot.py}: DESPOT1, DESPOT1-HIFI (joint T1+B1),
-    mcDESPOT (three-pool MWF) with \texttt{jax.vmap} batch fitting.
-  \item \textbf{fitting.py}: Generic \texttt{VoxelwiseFitter} engine
-    with bounded parameter optimisation (sigmoid reparameterisation),
-    optax optimisers, and Laplace uncertainty from the Hessian.
-\end{itemize}
-
-The advantage: \texttt{jax.vmap} fits all $\sim$1\,M voxels simultaneously
-on GPU, with analytic gradients from \texttt{jax.grad} (no finite
-differences). What took QUIT 80\,min on 4~CPU cores would run in
-seconds on a DGX GPU. Furthermore, the same differentiable signal models
-can be embedded directly in the whole-brain fitting loss, enabling
-end-to-end gradient descent from qMRI tissue properties through
-neural dynamics to sensor-level predictions.
-
-% ============================================================================
-\section{Cortical layer analysis with LAYNII}
-% ============================================================================
-
-The sub-millimetre structural data in ses-06 (MEGRE 0.67\,mm, MP2RAGE
-0.7\,mm) enables cortical depth-resolved analysis using
-LAYNII~v2.10.0 (66 layer fMRI tools, installed via Homebrew). The
-pipeline:
-%
-\begin{enumerate}
-  \item \texttt{LN2\_LAYERS}: equivolume cortical depth definition
-    ($\sim$2--3 layers across the $\sim$2.5\,mm cortical ribbon)
-  \item \texttt{LN2\_PROFILE}: sample R2*, QSM, T1, BPF at each depth
-  \item Iron--myelin decomposition per layer from R2* + QSM + BPF
-\end{enumerate}
-%
-Deep cortical layers (V--VI) carry feedforward connections with higher
-iron content; superficial layers (I--III) carry feedback connections
-with heavier myelination. This depth-resolved microstructure maps
-directly onto the feedforward/feedback hierarchy in the
-$\xi$-$\alpha$NET model~\citep{ValdesSosa2026xialphanet} and connects
-to vpjax's layer-specific neurovascular coupling parameters.
-
-% ============================================================================
-\section{Discussion and Prospective Conclusions}
+\section{Discussion}
 % ============================================================================
 
 The quantitative structural processing of the WAND reference subject
@@ -959,18 +1067,20 @@ qMRI fitting tools (QUIT, qMRLab, FreeSurfer, neurojax). The key results
 to date include:
 
 \begin{itemize}
-  \item QUIT Ramani QMT: BPF = 0.163 (WM), 0.082 (GM) --- correct
-    tissue contrast from the full two-pool model
+  \item QUIT Ramani QMT: BPF = 0.163 (WM), 0.082 (GM)
   \item Three-way T1 validation: WM = 650--727\,ms across three methods
   \item CBF from oxford\_asl: GM = 113, WM = 24\,ml/100g/min
   \item CMRO$_2$ = 109\,\textmu mol/100g/min (global OEF)
   \item 46 bilateral thalamic nuclei (DTI-enhanced CNN)
-  \item Hippocampal subfields + amygdala nuclei (20 bilateral maps)
+  \item Hippocampal subfields + amygdala nuclei
   \item Cross-session SynthSeg volumetrics (4 sessions)
 \end{itemize}
 
 \noindent With these structural foundations, we anticipate the following
 from the remaining processing:
+feasibility of extracting independent biophysical measurements for every
+parameter in a neurovascular coupling model from a single dataset. With
+the WAND data fully processed, we anticipate the following results:
 
 \begin{enumerate}
   \item \textbf{Microstructure-informed conduction delays}: AxCaliber axon
@@ -1026,30 +1136,10 @@ a unified biophysical model via \texttt{jax.grad}.
 % ============================================================================
 
 All processing used open-source tools with explicit version pinning:
-
-\begin{table}[htbp]
-\centering
-\caption{Software stack.}
-\begin{tabular}{lll}
-\toprule
-Tool & Version & Role \\
-\midrule
-FSL              & 6.0.7   & DWI preproc, dtifit, oxford\_asl, fsl\_anat, FLIRT/FNIRT \\
-FreeSurfer       & 8.2.0   & recon-all, SAMSEG, SynthSeg, segmentations, SynthMorph \\
-QUIT             & 3.4     & DESPOT1, QMT Ramani, multiecho, MP2RAGE \\
-qMRLab           & 2.4.2   & QMT qmt\_spgr (Octave) \\
-Octave           & 11.1.0  & qMRLab, iso2mesh, brain2mesh \\
-iso2mesh         & 1.9.8   & FEM tetrahedral head meshing \\
-brain2mesh       & ---     & Tissue segmentation $\to$ head mesh \\
-LAYNII           & 2.10.0  & Cortical layer analysis (66 tools) \\
-NeuroJAX         & dev     & Differentiable neural mass + qMRI (JAX + Equinox) \\
-vpjax            & dev     & Differentiable vascular physiology (Riera, qBOLD) \\
-sbi4dwi          & dev     & Microstructure SBI, conductivity PINN, pseudo-CT \\
-R + knitr        & 4.5.3   & Paper figures (RNifti, jsonlite) \\
-tectonic         & 0.15    & \LaTeX{} compilation \\
-\bottomrule
-\end{tabular}
-\end{table}
+FSL~6.0.7, FreeSurfer~8.2.0, NeuroJAX (JAX~+~Equinox), and
+Neurodesk containers for reproducibility. R visualisations use
+\texttt{RNifti} and \texttt{knitr}. \LaTeX{} compiled with
+\texttt{tectonic}~0.15.
 
 \bibliography{references}
 
