@@ -849,6 +849,41 @@ reducing parameter degeneracy in the whole-brain fit. MEGA-PRESS
 data from ses-05 provide an additional GABA estimate for
 test--retest reliability assessment.
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_mrs_slaser_7t.png}
+\caption{sLASER spectra at 7\,T (ses-04) for all four WAND VOI
+placements: anterior cingulate cortex (ACC), occipital, right
+auditory, and left sensorimotor. The 7\,T field strength provides
+excellent spectral resolution and SNR; NAA (2.02\,ppm), creatine
+(3.03\,ppm), and choline (3.22\,ppm) are clearly resolved in the
+occipital and auditory spectra. Phase correction values ($\phi_0$)
+are shown per VOI. The ACC and sensorimotor spectra require
+additional 1st-order phase correction --- a processing step that
+highlights the need for automated QC in multi-voxel MRS pipelines.
+Raw TWIX data (2064 spectral points, 32 receive channels, 64
+averages) were read with \texttt{pymapVBVD}, coil-combined with
+sensitivity weighting and phase alignment, then averaged.}
+\label{fig:mrs-slaser}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_mrs_mega_diff.png}
+\caption{MEGA-PRESS GABA-edited difference spectra at 3\,T (ses-05).
+The editing ON minus OFF subtraction reveals the GABA signal at
+3.01\,ppm (magenta line). Each VOI shows 160 averages per editing
+condition. The difference spectra are noisier than the sLASER
+(fewer averages after subtraction, lower field, larger linewidths)
+but GABA is detectable in all four regions. These GABA
+concentrations will directly constrain the inhibitory coupling
+parameter $J_I$ in the neural mass model. Co-edited macromolecule
+contamination at 3.0\,ppm (MM09) is a known confound that
+MEGA-PRESS cannot separate without additional editing
+(HERMES/HERCULES); this is noted as a limitation.}
+\label{fig:mrs-mega}
+\end{figure}
+
 \subsection{TMS-EEG processing}
 
 TMS data from ses-08 used the short-interval intracortical inhibition
@@ -1242,6 +1277,144 @@ Deep layers (V--VI, feedforward, higher iron) vs.\ superficial
 (I--III, feedback, heavier myelination) maps to the
 $\xi$-$\alpha$NET hierarchy~\citep{ValdesSosa2026xialphanet}.
 
+\subsection{Resting-state functional connectivity gradients}
+
+Resting-state BOLD fMRI (ses-03, Prisma 3T, TR\,=\,2\,s,
+2\,mm isotropic, 300~volumes, 10~minutes) was analysed using the
+\texttt{jaxoccoli} library within \texttt{hippy-feat}, a JAX-native
+functional connectivity toolkit that reimplements essential algorithms
+from hypercoil~\citep{Ciric2022hypercoil} in vbjax-style pure
+functional form.
+
+\paragraph{Fieldmap distortion correction.}
+Dual-echo GRE fieldmaps ($\Delta$TE\,=\,2.46\,ms) were used for
+B\textsubscript{0} distortion correction via FSL
+\texttt{fsl\_prepare\_fieldmap} and \texttt{fugue}. The fieldmap was
+brain-extracted, smoothed, registered to EPI space (FLIRT 6-DOF),
+and applied to the motion-corrected BOLD timeseries. The corrected
+and uncorrected FC matrices correlated at $r = 0.970$, but individual
+edges differed by up to 0.79 and higher-order gradients showed
+increasing sensitivity to correction (Gradient~5 alignment
+$r = 0.893$; Fig.~\ref{fig:fieldmap}).
+
+\paragraph{Multi-atlas parcellation.}
+The distortion-corrected BOLD was parcellated with four atlases:
+Schaefer 400 (Yeo 7 networks), Schaefer 100, Harvard-Oxford cortical
+(48~ROIs), and DiFuMo 64. All parcellations included bandpass
+filtering (0.01--0.1\,Hz), linear detrending, and z-score
+normalisation via \texttt{nilearn.maskers.NiftiLabelsMasker}.
+
+\paragraph{Connectivity measures.}
+Twenty connectivity measures were computed on the Schaefer 400
+parcellation using \texttt{jaxoccoli}: full Pearson correlation,
+partial correlation, precision matrix, covariance (with and without
+L2 regularisation), Laplacian eigenmaps, diffusion map embedding,
+spectral features (algebraic connectivity, spectral gap, spectral
+radius), relaxed modularity, Chebyshev spectral filtering, dynamic
+FC (sliding window, $w = 30$~TRs), phase-locking value, signal
+envelope, Wasserstein and Gromov-Wasserstein FC distance, and
+Bayesian variance-aware FC via the conjugate normal-inverse-gamma
+GLM.
+
+\paragraph{Dimensionality estimation.}
+MELODIC identified 67 independent components, retaining 61.7\% of
+variance at the PCA stage. Parallel analysis on the Schaefer 400
+parcellation estimated 16 significant components, while broken stick
+also yielded 16. The Schaefer 100 parcellation gave 6--8 components,
+consistent with the 7 canonical Yeo networks.
+
+\paragraph{FC gradient analysis.}
+Diffusion map embedding~\citep{Coifman2006diffusion} of the
+absolute-value FC matrix (Schaefer 400, $\alpha = 0.5$) produced a
+principal gradient (Gradient~1) aligned with the Margulies et
+al.~\citep{Margulies2016situated} unimodal-to-transmodal hierarchy
+($\rho = 0.333$, $p < 10^{-4}$) and the Sydnor et
+al.~\citep{Sydnor2021axis} sensorimotor-association axis
+($\rho = 0.213$, $p < 10^{-4}$).  Gradient~1 also showed the
+expected negative correlation with HCP T1w/T2w myelination
+($\rho = -0.166$, $p < 0.001$) and Neurosynth cognitive PC1
+($\rho = -0.379$, $p < 10^{-4}$; Fig.~\ref{fig:neuromaps}).
+
+\paragraph{Neurotransmitter receptor architecture.}
+Comparison with 9 PET-derived receptor density maps from
+\texttt{neuromaps}~\citep{Markello2022neuromaps} revealed that
+Gradient~1 correlated significantly with serotonin 5-HT2A receptor
+density ($\rho = 0.217$, $p < 10^{-4}$), 5-HT1A ($\rho = 0.181$,
+$p < 0.001$), and negatively with histamine H3 ($\rho = -0.159$,
+$p < 0.01$). Gradient~2 was dominated by neuromodulatory receptor
+distributions: histamine H3 ($\rho = 0.331$), mu-opioid
+($\rho = 0.281$), serotonin transporter ($\rho = 0.251$), and D1
+($\rho = 0.217$; all $p < 10^{-4}$;
+Fig.~\ref{fig:receptor_scatter}). These findings are consistent with
+the neurotransmitter landscape reported by Hansen et
+al.~\citep{Hansen2022neurotransmitter}, linking the principal FC
+gradient to hierarchical cortical organisation and the second
+gradient to monoaminergic neuromodulation.
+
+\paragraph{Dynamic FC.}
+Sliding-window correlation (60\,s windows) revealed substantial
+temporal variability in FC (mean edge SD\,=\,0.247, max\,=\,0.489),
+with modularity fluctuating between $Q = 0.005$ and $Q = 0.014$
+across windows. This temporal structure provides the FCD targets for
+whole-brain model fitting.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_fc_gradients.png}
+\caption{Resting-state FC gradients (Gradient 1--3) from diffusion
+map embedding of the Schaefer 400 FC matrix, projected onto cortical
+volume slices. Gradient~1 captures the unimodal (blue) to transmodal
+(red) axis; Gradient~2 separates visual from somatomotor cortex;
+Gradient~3 distinguishes temporal from prefrontal regions. Data from
+WAND sub-08033 ses-03, distortion-corrected.}
+\label{fig:fc_gradients}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_neuromaps_correlations.png}
+\caption{Spearman correlations between FC gradients and neuromaps
+reference maps (17 structural, functional, and PET maps). Gradient~1
+is anchored by Neurosynth cognitive PC1 and Margulies FC gradients.
+Gradient~2 is dominated by neuromodulatory receptor densities
+(H3, mu-opioid, SERT, D1). Red: $p < 0.001$; orange: $p < 0.01$;
+yellow: $p < 0.05$. Uncorrected for spatial autocorrelation.}
+\label{fig:neuromaps}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_spectral_embedding.png}
+\caption{Diffusion map embedding of the Schaefer 400 FC matrix
+coloured by Yeo 7 network assignment. Left: Gradient~1 vs Gradient~2
+separates default mode and frontoparietal networks from visual and
+somatomotor. Right: eigenspectrum showing a smooth decay consistent
+with the cortical gradient hierarchy. Spectral gap $\lambda_2 = 0.729$.}
+\label{fig:spectral_embedding}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig_receptor_scatter.png}
+\caption{Scatter plots of FC gradient values vs selected neuromaps
+reference maps (Schaefer 400 parcels, Yeo 7 network colours).
+Top row: Gradient~1 vs Margulies reference, Neurosynth cognitive PC1,
+myelin, and SA axis. Bottom row: Gradient~2 vs H3, mu-opioid, SERT,
+and D1 receptor densities.}
+\label{fig:receptor_scatter}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.85\textwidth]{figures/fig_fieldmap_correction.png}
+\caption{Effect of fieldmap distortion correction on FC gradients.
+Top row: gradient values across parcels. Bottom row: corrected vs
+uncorrected scatter ($r$ values shown). Gradients 1--3 are robust to
+correction ($r > 0.95$), but higher-order gradients show increasing
+sensitivity.}
+\label{fig:fieldmap}
+\end{figure}
+
 % ============================================================================
 \section{Discussion}
 % ============================================================================
@@ -1328,5 +1501,199 @@ Neurodesk containers for reproducibility. R visualisations use
 \texttt{tectonic}~0.15.
 
 \bibliography{references}
+
+% ============================================================================
+\appendix
+% ============================================================================
+
+\section{Modality-specific processing notes}
+
+\subsection{Quantitative structural MRI}
+
+The WAND ses-02 VFA acquisition uses the CUBRIC mcDESPOT protocol: 8
+SPGR flip angles (2--18\textdegree, $\text{TR}_\text{exc}$ = 4\,ms)
+and 16 bSSFP volumes (8 flip angles $\times$ 2 phase cycles,
+$\text{TR}_\text{exc}$ = 4.54\,ms) on the Connectom 3T. The
+QMT acquisition comprises 11 MT-weighted volumes at 3 MT flip angles
+(332\textdegree, 628\textdegree, 333\textdegree) across offset
+frequencies from 1\,kHz to 56\,kHz, plus an MT-off reference.
+
+Four independent fitting tools were applied as test oracles:
+QUIT~v3.4~\citep{Wood2018quit} (Ramani + super-Lorentzian, C++),
+qMRLab~v2.4.2 (Sled-Pike two-pool, Octave), FreeSurfer
+\texttt{mri\_ms\_fitparms} (joint T1/PD), and neurojax (linear
+DESPOT1, JAX). The three-way T1 comparison (Table~10) reveals
+systematic underestimation (WM 650--727\,ms vs.\ expected $\sim$800\,ms)
+consistent with B1$^+$ inhomogeneity, motivating the DESPOT1-HIFI
+joint T1+B1 estimation implemented in \texttt{neurojax.qmri.despot}.
+
+The QUIT Ramani QMT model produced physiologically plausible two-pool
+parameters (Table~11): BPF WM = 0.121, GM = 0.082 (1.32$\times$);
+$T_{1,f}$ WM = 0.87\,s, GM = 1.62\,s; $T_{2,b}$ $\sim$8\,$\mu$s
+(super-Lorentzian). Exchange rate instability ($k_{bf}$ upper bound
+at some voxels) indicates the need for B1 correction --- a protocol
+question for the CUBRIC team (Appendix~\ref{app:cubric}).
+
+\subsection{Perfusion imaging}
+
+WAND ses-03 perfusion data were processed following the ASL white paper
+recommendations~\citep{Alsop2015asl}. The pCASL acquisition (bolus =
+1.8\,s, PLD = 2.0\,s, 110 volumes) was quantified using FSL
+\texttt{oxford\_asl}, which employs the BASIL/FABBER variational
+Bayesian inference engine~\citep{Chappell2009basil} for kinetic model
+fitting with spatial regularisation. Subject-specific blood T1 was
+estimated from the Look-Locker inversion recovery acquisition (128
+$\times$ 128, 960 time points, TR = 150\,ms) using the
+Deichmann--Haase correction. The fitted value (460\,ms) fell outside
+the expected range, defaulting to 1650\,ms --- a fitting issue that
+warrants investigation with the CUBRIC team.
+
+TRUST venous oxygenation (24 volumes, TI = 1.02\,s) requires the
+protocol-specific effective echo times for accurate T2 $\to$
+SvO$_2$ calibration via the Lu et al.\ quadratic
+model~\citep{Lu2012bloodt2}. The CUBRIC
+\texttt{ep2d\_TRUST\_AsymShTE} protocol uses asymmetric short-TE
+encoding; the eTEs are not recorded in the BIDS sidecars and must
+be obtained from the sequence documentation.
+
+\subsection{Diffusion microstructure}
+
+DTI fitting was performed on the CHARMED acquisition ($b \leq
+1200$\,s/mm$^2$; 83 volumes across $b$ = 0, 200, 500, 1200) without
+eddy current correction (topup applied, eddy pending for sub-08033).
+The resulting FA and V1 maps were registered to FreeSurfer T1 space
+(FLIRT 6-DOF $\to$ \texttt{lta\_convert}) for DTI-enhanced thalamic
+nuclei segmentation. Full preprocessing (topup + eddy + bedpostx +
+probtrackx2 + connectome) is planned for the DGX.
+
+The WAND AxCaliber data (4 shells, $b$ = 0--15500\,s/mm$^2$, 264
+volumes on 300\,mT/m gradients) will be processed with sbi4dwi for
+axon diameter estimation and microstructure-informed connectome
+construction via the \texttt{ConnectomeMapper}.
+
+\subsection{Magnetic resonance spectroscopy}
+\label{app:mrs}
+
+\paragraph{Acquisition parameters.}
+ses-04 semi-LASER at 7\,T: TE = 78\,ms, TR = 5230\,ms, 64 averages,
+BW = 3000\,Hz, 2048 points. Four VOI placements: anterior cingulate
+cortex (25$\times$30$\times$40\,mm$^3$), occipital
+(30$\times$30$\times$30\,mm$^3$), right auditory
+(30$\times$45$\times$20\,mm$^3$), left sensorimotor
+(30$\times$30$\times$30\,mm$^3$). VAPOR water suppression.
+
+ses-05 MEGA-PRESS at 3\,T: TE = 68\,ms, TR = 2000\,ms, 160 averages,
+BW = 2000\,Hz, 2048 points. Same four VOI placements. Editing pulses
+at 1.9\,ppm (ON) and 7.5\,ppm (OFF), bandwidth 100\,Hz.
+
+\paragraph{Processing pipeline.}
+Raw Siemens TWIX data were read with \texttt{pymapVBVD} (bypassing a
+\texttt{spec2nii} validation bug on numeric PatientName fields in the
+TWIX header). Coil combination used sensitivity weighting with phase
+alignment to coil~0. MEGA-PRESS ON/OFF subtraction was performed
+after coil combination. All data were converted to NIfTI-MRS format
+using the \texttt{nifti\_mrs} Python library with monkey-patched
+header validation.
+
+\paragraph{Basis set considerations.}
+Initial fitting used singlet basis spectra (delta-function FIDs at
+known chemical shifts) with FSL-MRS Newton fitting, yielding GABA
+CRLB = 19.4\% and GPC CRLB = 12.4\% for the occipital VOI. NAA
+and Glu showed poor CRLBs ($>$100\%) because singlet approximations
+do not capture J-coupling evolution at TE = 78\,ms. Proper J-coupled
+basis spectra are required.
+
+Three sources of validated basis spectra are available:
+\begin{itemize}
+  \item \textbf{MRSHub}\footnote{\url{https://mrshub.org/datasets_basissets/}}:
+    community repository of downloadable basis sets for various
+    sequences and field strengths.
+  \item \textbf{LCModel}\footnote{\url{https://www.lcmodel.com/lcm-basis.shtml}}:
+    pre-computed basis sets for 7\,T (and other field strengths).
+  \item \textbf{VESPA/PyGAMMA}\footnote{\url{https://pmc.ncbi.nlm.nih.gov/articles/PMC10330446/}}:
+    density matrix simulation using PyGAMMA (v4.3.4, built locally)
+    with sequence-specific pulse definitions. Generates basis spectra
+    accounting for J-coupling evolution under the exact sLASER/MEGA-PRESS
+    timing.
+\end{itemize}
+
+The impact of using ideal hard pulses versus realistic adiabatic RF
+shapes in semi-LASER basis simulation has been characterised by
+Landheer et al.~\citep{Landheer2021slaser}, who showed that shaped
+pulses and magnetic field gradients can significantly affect basis
+spectra for strongly coupled spin systems at short TE, though the
+effect diminishes at longer TE. The across-vendor standardisation of
+semi-LASER~\citep{Oz2020slaser} provides the reference pulse
+definitions (GOIA-WURST, GOIA-HS) used in Siemens implementations.
+
+\paragraph{Metabolite quantification at 7\,T.}
+Approximately 18 metabolites are quantifiable at 7\,T using
+semi-LASER~\citep{Tkac2009sevenT}, including GABA ($\sim$1--2\,mM in
+GM), glutamate ($\sim$8--12\,mM), glutamine ($\sim$3--5\,mM), NAA
+($\sim$8--12\,mM), and myo-inositol ($\sim$5--8\,mM). The 3-fold
+reduction in Cram\'{e}r-Rao lower bounds at 7\,T versus
+3\,T~\citep{Mekle2009sevenT} is critical for resolving GABA without
+editing, providing cross-validation against the ses-05 MEGA-PRESS
+GABA estimate.
+
+\paragraph{Multiway spectral analysis.}
+The raw MRS data tensor (spectral $\times$ coils $\times$ averages)
+is amenable to chemometrics-inspired decomposition methods
+implemented in \texttt{neurojax.qmri.mrs\_tensor}: Tucker/HOSVD for
+optimal coil combination, PARAFAC for component separation, and
+MCR-ALS for data-driven spectral unmixing without pre-defined basis
+sets. These connect to the established multiway analysis literature
+in analytical chemistry~\citep{Bro1997parafac} and provide an
+alternative to basis-set-dependent fitting.
+
+\subsection{MEG electrophysiology}
+
+ses-01 MEG data (CTF 275-channel, 1200\,Hz, 5 paradigms) will be
+processed with the osl-ephys pipeline~\citep{vanEs2025oslephys}:
+ICA-based artefact rejection, RHINO coregistration to FreeSurfer
+surfaces, beamformer/minimum-norm source reconstruction, parcellation
+to Desikan-Killiany atlas, and sign-flipping across subjects.
+Source-level timeseries feed into osl-dynamics for HMM/DyNeMo brain
+state analysis~\citep{Gohil2023dynemo}: time-delay embedding + PCA
+preparation, state spectral decomposition, and summary statistics
+(fractional occupancy, lifetime, switching rate).
+
+\subsection{TMS-EEG}
+
+ses-08 SICI (short-interval intracortical inhibition) data were
+acquired with a Magstim BiStim$^2$ (D70 Alpha Flat coil,
+BrainSight neuronavigation, Polaris optical tracking). Three runs
+per subject provide test-pulse and conditioned-pulse TMS-evoked
+potentials (TEPs) for extraction of the N15, P30, N45, P60, N100,
+P180 components. TEP waveforms and global field power serve as
+fitting targets for the whole-brain neural mass model.
+
+\section{CUBRIC protocol questions}
+\label{app:cubric}
+
+The following questions have been compiled during processing and are
+pending responses from the CUBRIC team:
+
+\begin{enumerate}
+  \item QMT MT pulse duration (Trf) for the \texttt{tfl\_qMT\_v09}
+    sequence.
+  \item B1$^+$ map availability for ses-02 (critical for QMT and VFA
+    T1 accuracy).
+  \item TRUST effective echo times for the
+    \texttt{ep2d\_TRUST\_AsymShTE} protocol.
+  \item SPGR flip angle ordering in the 4D VFA file (assumed
+    2, 4, 6, 8, 10, 12, 14, 18\textdegree).
+  \item SSFP flip angles and phase cycling scheme (8 FAs $\times$ 2
+    phase cycles assumed).
+  \item sLASER RF pulse waveform files for basis set simulation.
+  \item MEGA-PRESS editing pulse shape and timing details.
+  \item Cross-session registration validation (Connectom $\to$ Prisma
+    geometric distortion).
+  \item Pre-computed basis spectra for sLASER at 7\,T and MEGA-PRESS
+    at 3\,T (if available).
+\end{enumerate}
+
+The full list of 26 questions is maintained in
+\texttt{docs/CUBRIC\_QUESTIONS.md} in the repository.
 
 \end{document}
