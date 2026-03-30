@@ -175,11 +175,68 @@ WAND~\citep{Mayerand2025wand} closes this gap with seven imaging sessions
 per subject on the Connectom 300~mT/m scanner at CUBRIC Cardiff,
 covering every modality needed for a fully-constrained neurovascular model.
 
-\subsection{The NeuroJAX approach}
+\subsection{Differentiable generative modelling with the JAX ecosystem}
 
-Where existing tools (osl-dynamics~\citep{Gohil2023dynemo},
-WhoBPyT, TVB) treat preprocessing and modelling as separate stages,
-NeuroJAX compiles them into a single JAX computation graph:
+\paragraph{Generative models in neuroimaging.}
+The generative modelling approach to neuroimaging inverts a forward
+(biophysical) model to infer latent parameters from observed data.
+Rather than treating brain images as static maps, generative models
+simulate the physical processes that produce the measurements ---
+neural mass dynamics, hemodynamic coupling, electromagnetic forward
+projection, MR signal formation --- and fit the model parameters to
+match empirical recordings. This approach has driven two decades of
+progress in dynamic causal modelling (DCM), whole-brain network
+simulation via The Virtual Brain
+(TVB)~\citep{SanzLeon2013tvb}, and more recently
+WhoBPyT~\citep{Griffiths2024whobpyt}, which recasts whole-brain
+simulation as a deep network in PyTorch for gradient-based fitting.
+The limitation of these tools is that they treat preprocessing and
+modelling as separate stages, and their fitting procedures (Euler
+integration, finite-difference gradients, grid search) do not scale
+to the parameter dimensionality that multi-modal constraints demand.
+
+\paragraph{Simulation-based inference and neural differential equations.}
+Two developments in machine learning transform what is computationally
+feasible. First, \textbf{simulation-based inference}
+(SBI)~\citep{Cranmer2020sbi} replaces likelihood evaluation with
+learned neural density estimators trained on simulated data, enabling
+Bayesian posterior estimation for models with intractable likelihoods
+--- exactly the situation in whole-brain simulation where the
+mapping from parameters to observables passes through stiff ODEs and
+nonlinear forward models. When coupled with GPU-accelerated
+simulators, SBI makes it practical to explore parameter spaces of
+hundreds of dimensions that were previously inaccessible. Second,
+\textbf{neural ordinary differential equations}
+(Neural ODEs)~\citep{Chen2018neuralode} and their extensions to
+controlled and stochastic differential equations
+(CDEs, SDEs)~\citep{Kidger2022neuralDE} embed neural networks within
+differential equation solvers, enabling learned dynamics that respect
+physical structure while remaining fully differentiable. The parallel
+development of \textbf{physics-informed neural networks}
+(PINNs)~\citep{Raissi2019pinns} --- which enforce PDE constraints as
+soft penalties in the loss function --- provides a meshless alternative
+to FEM for field problems (conductivity, elasticity, electromagnetic
+forward models). Together, these methods enable a new class of
+brain model: one where the tissue-level physics, the network dynamics,
+and the observation forward models are all differentiable, composable,
+and GPU-accelerated.
+
+\paragraph{The JAX + Equinox + Diffrax stack.}
+NeuroJAX is built on JAX~\citep{Bradbury2018jax} with
+Equinox~\citep{Kidger2021equinox} for neural network modules and
+Diffrax for differential equation solvers --- the same stack developed
+by Kidger for Neural CDEs. This choice is deliberate: JAX provides
+\texttt{jax.grad} (automatic differentiation through arbitrary Python),
+\texttt{jax.vmap} (automatic vectorisation for batch processing),
+\texttt{jax.jit} (XLA compilation to GPU/TPU), and
+\texttt{jax.lax.scan} (efficient sequential computation). Equinox
+provides PyTree-based neural network modules that compose naturally
+with JAX transformations. Diffrax provides adaptive-step ODE/SDE/CDE
+solvers with adjoint backpropagation. The result is that the entire
+forward model --- from Bloch equation tissue simulation through
+Balloon--Windkessel hemodynamics to sensor-level prediction --- compiles
+into a single XLA computation graph through which gradients flow
+end-to-end:
 %
 \begin{equation}
   \mathcal{L}(\theta) = \sum_m w_m \, d_m\!\bigl(
@@ -190,9 +247,11 @@ NeuroJAX compiles them into a single JAX computation graph:
 %
 where $\theta$ are biophysical parameters, $\mathbf{C}$/$\mathbf{D}$ are
 the structural connectome weights/delays, $\mathbf{L}$ is the leadfield,
-and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE).
-End-to-end \texttt{jax.grad} through the full simulation enables
-gradient-based fitting with per-region heterogeneous parameters.
+and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE). This
+enables gradient-based fitting with per-region heterogeneous parameters
+across hundreds of brain regions --- a problem that grid search or
+finite-difference methods cannot touch, but that
+\texttt{jax.grad} solves in seconds on a GPU.
 
 % ============================================================================
 \section{Dataset}
