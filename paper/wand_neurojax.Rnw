@@ -894,6 +894,41 @@ reducing parameter degeneracy in the whole-brain fit. MEGA-PRESS
 data from ses-05 provide an additional GABA estimate for
 test--retest reliability assessment.
 
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_mrs_slaser_7t.png}
+\caption{sLASER spectra at 7\,T (ses-04) for all four WAND VOI
+placements: anterior cingulate cortex (ACC), occipital, right
+auditory, and left sensorimotor. The 7\,T field strength provides
+excellent spectral resolution and SNR; NAA (2.02\,ppm), creatine
+(3.03\,ppm), and choline (3.22\,ppm) are clearly resolved in the
+occipital and auditory spectra. Phase correction values ($\phi_0$)
+are shown per VOI. The ACC and sensorimotor spectra require
+additional 1st-order phase correction --- a processing step that
+highlights the need for automated QC in multi-voxel MRS pipelines.
+Raw TWIX data (2064 spectral points, 32 receive channels, 64
+averages) were read with \texttt{pymapVBVD}, coil-combined with
+sensitivity weighting and phase alignment, then averaged.}
+\label{fig:mrs-slaser}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\textwidth]{figures/fig_mrs_mega_diff.png}
+\caption{MEGA-PRESS GABA-edited difference spectra at 3\,T (ses-05).
+The editing ON minus OFF subtraction reveals the GABA signal at
+3.01\,ppm (magenta line). Each VOI shows 160 averages per editing
+condition. The difference spectra are noisier than the sLASER
+(fewer averages after subtraction, lower field, larger linewidths)
+but GABA is detectable in all four regions. These GABA
+concentrations will directly constrain the inhibitory coupling
+parameter $J_I$ in the neural mass model. Co-edited macromolecule
+contamination at 3.0\,ppm (MM09) is a known confound that
+MEGA-PRESS cannot separate without additional editing
+(HERMES/HERCULES); this is noted as a limitation.}
+\label{fig:mrs-mega}
+\end{figure}
+
 \subsection{TMS-EEG processing}
 
 TMS data from ses-08 used the short-interval intracortical inhibition
