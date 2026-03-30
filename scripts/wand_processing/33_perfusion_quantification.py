@@ -39,11 +39,189 @@ import numpy as np
 from scipy.optimize import curve_fit
 
 
-def fit_blood_t1(ir_file, perf_out):
-    """Fit blood T1 from inversion recovery Look-Locker data.
+def find_sss_roi(target_img, signal_2d, anat_dir=None, perf_out=None,
+                 label="sss"):
+    """Find superior sagittal sinus ROI in a single-slice perfusion image.
 
-    WAND InvRec: 128×128×1×960, TR=150ms, Look-Locker continuous sampling.
-    FrameTimesStart from 0 to 145.63s — multi-inversion-time T1 recovery.
+    Three-tier strategy:
+      Tier 1: Structural-guided — project superior midline brain surface
+              from FSL-anat T1w onto the target slice via affine composition
+      Tier 2: Signal + spatial constraints — midline + posterior + top-N
+      Tier 3: Return None (caller uses literature defaults)
+
+    Args:
+        target_img: nibabel image of the target single-slice acquisition
+        signal_2d: 2D array (same spatial dims as target) with signal metric
+                   (e.g. eTE0 difference for TRUST, late-TI signal for InvRec)
+        anat_dir: Path to FSL-anat directory (contains T1_biascorr_brain*)
+        perf_out: Path to save diagnostic ROI mask
+        label: prefix for saved files
+
+    Returns:
+        roi_mask: 2D boolean array, or None if all tiers fail
+        method: str describing which tier succeeded
+    """
+    target_affine = target_img.affine
+    shape_2d = signal_2d.shape
+
+    # --- Tier 1: Structural-guided ---
+    if anat_dir is not None:
+        brain_path = None
+        mask_path = None
+        # Handle both Path and string, and the nested .anat directory
+        anat_dir = Path(anat_dir)
+        for candidate in [anat_dir, anat_dir.parent]:
+            bp = candidate / "T1_biascorr_brain.nii.gz"
+            mp = candidate / "T1_biascorr_brain_mask.nii.gz"
+            if bp.exists() and mp.exists():
+                brain_path, mask_path = bp, mp
+                break
+
+        if brain_path is not None:
+            print(f"  Tier 1: structural-guided ROI from {brain_path.parent.name}")
+            struct_img = nib.load(str(brain_path))
+            struct_mask = nib.load(str(mask_path)).get_fdata() > 0
+            struct_affine = struct_img.affine
+
+            # Mapping: struct voxel → scanner coord → target voxel
+            struct_to_target = np.linalg.inv(target_affine) @ struct_affine
+
+            # Find midline superior brain surface voxels in structural space
+            # Compute scanner x-coordinate for each structural i-index
+            struct_shape = struct_mask.shape
+            i_indices = np.arange(struct_shape[0])
+            # Scanner x for each i (at j=0, k=0): x = affine[0,0]*i + affine[0,3]
+            scanner_x = struct_affine[0, 0] * i_indices + struct_affine[0, 3]
+
+            candidates = []
+            for x_tol in [8.0, 12.0]:  # Try tight first, widen if needed
+                candidates = []
+                midline_i = np.where(np.abs(scanner_x) < x_tol)[0]
+
+                for i in midline_i:
+                    for j in range(struct_shape[1]):
+                        # Find topmost brain voxel in this column
+                        col = struct_mask[i, j, :]
+                        if not col.any():
+                            continue
+                        k_top = np.max(np.where(col)[0])
+                        # Take top 2 voxels (SSS sits on brain surface)
+                        for k in range(k_top, max(k_top - 2, -1), -1):
+                            if struct_mask[i, j, k]:
+                                candidates.append([i, j, k])
+
+                if not candidates:
+                    continue
+
+                candidates = np.array(candidates)
+
+                # Project to target voxel space
+                ones = np.ones((len(candidates), 1))
+                struct_coords_h = np.hstack([candidates, ones])
+                target_coords = (struct_to_target @ struct_coords_h.T).T[:, :3]
+
+                # Keep only candidates that fall within the target slice
+                # Target is single-slice: k should be near 0
+                slice_k = target_coords[:, 2]
+                in_slice = np.abs(slice_k - 0.0) < 1.0  # within 1 voxel of slice
+
+                # Also within image bounds
+                in_bounds = (
+                    (target_coords[:, 0] >= 0) &
+                    (target_coords[:, 0] < shape_2d[0]) &
+                    (target_coords[:, 1] >= 0) &
+                    (target_coords[:, 1] < shape_2d[1])
+                )
+                valid = in_slice & in_bounds
+                if valid.sum() < 3:
+                    continue
+
+                # Round to nearest target voxel
+                ti = np.round(target_coords[valid, 0]).astype(int)
+                tj = np.round(target_coords[valid, 1]).astype(int)
+
+                # Get unique voxels
+                unique_voxels = set(zip(ti, tj))
+                ti = np.array([v[0] for v in unique_voxels])
+                tj = np.array([v[1] for v in unique_voxels])
+
+                # Intersect with signal: keep above median of candidates
+                sig_vals = signal_2d[ti, tj]
+                sig_thresh = np.median(sig_vals)
+                keep = sig_vals > sig_thresh
+                ti, tj = ti[keep], tj[keep]
+
+                if len(ti) >= 3:
+                    roi_mask = np.zeros(shape_2d, dtype=bool)
+                    roi_mask[ti, tj] = True
+                    print(f"    {roi_mask.sum()} voxels (|x|<{x_tol}mm, "
+                          f"signal>{sig_thresh:.1f})")
+                    if perf_out:
+                        _save_roi_mask(roi_mask, target_img, perf_out, label)
+                    return roi_mask, f"tier1_structural_xtol{x_tol}"
+
+            print("    Tier 1 failed (no candidates in target slice)")
+
+    # --- Tier 2: Signal + spatial constraints ---
+    print("  Tier 2: signal + spatial constraints")
+    # Compute scanner coordinates for each target voxel
+    ii, jj = np.meshgrid(np.arange(shape_2d[0]), np.arange(shape_2d[1]),
+                         indexing='ij')
+    # Scanner x for each voxel (k=0 for single slice)
+    scanner_x_map = (target_affine[0, 0] * ii + target_affine[0, 1] * jj +
+                     target_affine[0, 3])
+    scanner_y_map = (target_affine[1, 0] * ii + target_affine[1, 1] * jj +
+                     target_affine[1, 3])
+
+    # Midline constraint: |x| < 7mm
+    midline_mask = np.abs(scanner_x_map) < 7.0
+
+    # Posterior constraint: y < 25th percentile of brain y-coordinates
+    brain_voxels = signal_2d > np.percentile(signal_2d[signal_2d > 0], 10)
+    if brain_voxels.any():
+        y_thresh = np.percentile(scanner_y_map[brain_voxels], 25)
+        posterior_mask = scanner_y_map < y_thresh
+    else:
+        posterior_mask = np.ones(shape_2d, dtype=bool)
+
+    spatial_mask = midline_mask & posterior_mask & (signal_2d > 0)
+    n_spatial = spatial_mask.sum()
+    print(f"    Spatial candidates: {n_spatial} (midline & posterior)")
+
+    if n_spatial >= 3:
+        # Take top N by signal
+        for n_top in [5, 10, 15]:
+            sig_in_mask = signal_2d[spatial_mask]
+            if len(sig_in_mask) < n_top:
+                n_top = len(sig_in_mask)
+            thresh = np.sort(sig_in_mask)[-n_top]
+            roi_mask = spatial_mask & (signal_2d >= thresh)
+            if roi_mask.sum() >= 3:
+                print(f"    {roi_mask.sum()} voxels (top-{n_top} by signal)")
+                if perf_out:
+                    _save_roi_mask(roi_mask, target_img, perf_out, label)
+                return roi_mask, f"tier2_spatial_top{n_top}"
+
+    # --- Tier 3: failure ---
+    print("  Tier 3: ROI selection failed, using literature defaults")
+    return None, "tier3_default"
+
+
+def _save_roi_mask(roi_mask, target_img, perf_out, label):
+    """Save ROI mask as NIfTI for QC."""
+    perf_out = Path(perf_out)
+    # Construct a 3D volume (add slice dimension back)
+    mask_3d = roi_mask[:, :, np.newaxis].astype(np.uint8)
+    nib.save(nib.Nifti1Image(mask_3d, target_img.affine),
+             str(perf_out / f"{label}_roi_mask.nii.gz"))
+
+
+def fit_blood_t1(ir_file, perf_out, anat_dir=None):
+    """Fit blood T1 from inversion recovery data.
+
+    WAND InvRec: 128x128x1x960 — 16 discrete IR blocks of 60 readouts each.
+    Block interval ~150ms, inter-block gap ~265ms.
+    Fit block-averaged IR recovery: S(TI) = |M0 * (1 - C * exp(-TI/T1))|.
     """
     print("\n=== Step 1: Blood T1 from Inversion Recovery ===")
 
@@ -61,76 +239,131 @@ def fit_blood_t1(ir_file, perf_out):
 
     if n_TIs != data.shape[-1]:
         print(f"  WARNING: FrameTimesStart ({n_TIs}) != data volumes ({data.shape[-1]})")
-        # Fallback: generate TIs from TR
         TR = meta.get('RepetitionTime', 0.15)
         frame_times = np.arange(data.shape[-1]) * TR
-
-    print(f"TIs: {frame_times[0]:.3f} to {frame_times[-1]:.3f}s ({n_TIs} points)")
 
     # Squeeze to 2D + time
     if data.ndim == 4:
         data = data[:, :, 0, :]  # (128, 128, 960)
 
-    # ROI: center of sagittal sinus (high signal, blood compartment)
-    # Use the peak signal region in the late TIs (when blood is fully recovered)
+    # --- Detect multi-block structure ---
+    diffs = np.diff(frame_times)
+    median_dt = np.median(diffs)
+    gap_indices = np.where(diffs > 1.5 * median_dt)[0]
+
+    if len(gap_indices) > 0:
+        block_starts = np.concatenate([[0], gap_indices + 1])
+        block_ends = np.concatenate([gap_indices + 1, [len(frame_times)]])
+        n_blocks = len(block_starts)
+        fpb = block_ends[0] - block_starts[0]  # frames per block
+        print(f"Detected {n_blocks} IR blocks, {fpb} frames each, "
+              f"dt={median_dt*1000:.0f}ms, gap={diffs[gap_indices[0]]*1000:.0f}ms")
+    else:
+        # Single continuous acquisition — treat as 1 block
+        n_blocks = 1
+        fpb = len(frame_times)
+        block_starts = np.array([0])
+        block_ends = np.array([fpb])
+        print(f"Single IR block, {fpb} frames")
+
+    # --- ROI selection ---
     late_signal = np.mean(data[:, :, -50:], axis=2)
-    threshold = np.percentile(late_signal[late_signal > 0], 90)
-    roi_mask = late_signal > threshold
+    roi_mask, roi_method = find_sss_roi(
+        img, late_signal, anat_dir=anat_dir, perf_out=perf_out,
+        label="invrec_sss"
+    )
+
+    if roi_mask is None:
+        print("Using default T1_blood = 1650 ms (ROI selection failed)")
+        T1_blood = 1.65
+        _save_t1_blood(T1_blood, perf_out)
+        return T1_blood
+
     n_roi = roi_mask.sum()
-    print(f"Blood ROI: {n_roi} voxels (>90th percentile late signal)")
+    print(f"Blood ROI: {n_roi} voxels ({roi_method})")
 
-    # Extract mean ROI signal
-    roi_signal = np.mean(data[roi_mask, :], axis=0)
+    # --- Block-averaged inversion recovery ---
+    # Compute per-block relative TI times and average signal across blocks
+    block_tis = frame_times[block_starts[0]:block_ends[0]] - frame_times[block_starts[0]]
+    roi_blocks = np.zeros((n_blocks, fpb))
 
-    # Look-Locker T1 fitting
-    # Signal model: S(t) = S0 * |1 - (1-cos(α)) * exp(-t/T1*)|
-    # where T1* = 1 / (1/T1 - ln(cos(α))/TR) is the apparent T1
-    # For small flip angles: T1 ≈ T1* * (S0/S_inf - 1)
+    for b in range(n_blocks):
+        s, e = block_starts[b], block_ends[b]
+        if e - s != fpb:
+            continue  # skip partial blocks
+        roi_blocks[b] = np.mean(data[roi_mask, s:e], axis=0)
 
-    # Simple approach: fit S(t) = A * (1 - B * exp(-t/T1star))
-    def ll_model(t, A, B, T1star):
-        return A * (1 - B * np.exp(-t / T1star))
+    # Average across blocks for a clean recovery curve
+    roi_mean = np.mean(roi_blocks, axis=0)
 
-    # Initial guess
-    A0 = roi_signal[-1]
-    B0 = 1.5
-    T1star0 = 1.2
+    # --- Fit IR model: S(TI) = |M0 * (1 - C * exp(-TI/T1))| ---
+    def ir_model(ti, M0, C, T1):
+        return np.abs(M0 * (1 - C * np.exp(-ti / T1)))
 
+    M0_guess = roi_mean[-1]
     try:
         popt, pcov = curve_fit(
-            ll_model, frame_times, roi_signal,
-            p0=[A0, B0, T1star0],
-            bounds=([0, 0, 0.1], [roi_signal.max() * 3, 3.0, 5.0]),
-            maxfev=10000
+            ir_model, block_tis, roi_mean,
+            p0=[M0_guess, 2.0, 1.65],
+            bounds=([0, 1.0, 0.5], [M0_guess * 5, 2.5, 3.0]),
+            maxfev=20000
         )
-        A, B, T1star = popt
-        T1star_std = np.sqrt(pcov[2, 2])
+        M0, C, T1_blood = popt
+        T1_std = np.sqrt(pcov[2, 2]) if pcov[2, 2] > 0 else 0
 
-        # Correct T1* to true T1
-        # T1 = T1* * B  (Deichmann & Haase 1992 correction)
-        T1_blood = T1star * B
-        print(f"T1* (apparent): {T1star*1000:.0f} ms")
-        print(f"B factor: {B:.3f}")
-        print(f"Blood T1: {T1_blood*1000:.0f} ms")
+        print(f"IR fit: M0={M0:.1f}, C={C:.3f}, T1={T1_blood*1000:.0f} +/- {T1_std*1000:.0f} ms")
         print(f"Expected at 3T: 1600-1700 ms")
 
-        if T1_blood < 1.0 or T1_blood > 3.0:
+        # Cross-validate with null-point method
+        # Null point: S = 0 → TI_null = T1 * ln(C)
+        null_idx = np.argmin(roi_mean[:fpb // 2])  # null in first half
+        TI_null = block_tis[null_idx]
+        if TI_null > 0 and C > 1.0:
+            T1_null = TI_null / np.log(C)
+            print(f"Null-point T1: {T1_null*1000:.0f} ms (TI_null={TI_null*1000:.0f}ms)")
+            discrepancy = abs(T1_null - T1_blood) / T1_blood
+            if discrepancy > 0.15:
+                print(f"  WARNING: null-point vs fit discrepancy {discrepancy*100:.0f}%")
+
+        # Per-block T1 for uncertainty estimate
+        block_t1s = []
+        for b in range(n_blocks):
+            try:
+                bp, _ = curve_fit(
+                    ir_model, block_tis, roi_blocks[b],
+                    p0=[M0, C, T1_blood],
+                    bounds=([0, 1.0, 0.5], [M0 * 5, 2.5, 3.0]),
+                    maxfev=5000
+                )
+                block_t1s.append(bp[2])
+            except Exception:
+                pass
+        if block_t1s:
+            block_t1s = np.array(block_t1s)
+            iqr = np.percentile(block_t1s, 75) - np.percentile(block_t1s, 25)
+            print(f"Per-block T1: median={np.median(block_t1s)*1000:.0f}ms, "
+                  f"IQR={iqr*1000:.0f}ms (n={len(block_t1s)})")
+
+        if T1_blood < 1.0 or T1_blood > 2.5:
             print(f"  WARNING: T1_blood={T1_blood*1000:.0f}ms outside expected range")
             print(f"  Using default T1_blood = 1650 ms")
             T1_blood = 1.65
 
     except Exception as e:
-        print(f"Look-Locker fitting failed: {e}")
+        print(f"IR fitting failed: {e}")
         T1_blood = 1.65
         print(f"Using default T1_blood = {T1_blood*1000:.0f} ms")
 
-    # Save
+    _save_t1_blood(T1_blood, perf_out)
+    return T1_blood
+
+
+def _save_t1_blood(T1_blood, perf_out):
+    """Save blood T1 value."""
     np.save(str(perf_out / "T1_blood.npy"), T1_blood)
     with open(perf_out / "T1_blood.txt", "w") as f:
         f.write(f"{T1_blood:.4f}")
     print(f"Saved: {perf_out / 'T1_blood.txt'}")
-
-    return T1_blood
 
 
 def run_oxford_asl(pcasl_file, m0_file, anat_dir, perf_out, t1_blood,
@@ -241,14 +474,14 @@ def run_oxford_asl(pcasl_file, m0_file, anat_dir, perf_out, t1_blood,
     return cbf_out
 
 
-def fit_trust(trust_file, perf_out):
+def fit_trust(trust_file, perf_out, anat_dir=None):
     """Fit TRUST data for venous T2 → SvO₂ → OEF.
 
-    TRUST: 64×64×1×24 volumes, TI=1.02s (venous blood labeling inversion)
-    Protocol: 4 effective TEs × 3 repeats × 2 (control/label) = 24 volumes
+    TRUST: 64x64x1x24 volumes, TI=1.02s (venous blood labeling inversion)
+    Protocol: 4 effective TEs x 3 repeats x 2 (control/label) = 24 volumes
+    Standard CUBRIC TRUST eTEs at 3T: 0, 40, 80, 160 ms
 
-    The effective TE (eTE) is the T2 preparation time.
-    Standard TRUST eTEs at 3T: 0, 40, 80, 160 ms
+    Uses structural-guided SSS ROI and per-voxel T2 quality control.
     """
     print("\n=== Step 3: TRUST → SvO₂ → OEF ===")
 
@@ -265,25 +498,18 @@ def fit_trust(trust_file, perf_out):
         data = data[:, :, 0, :]  # (64, 64, 24)
 
     n_vols = data.shape[-1]
-    print(f"Volumes: {n_vols}")
-
-    # TRUST protocol: interleaved control-label pairs at different eTEs
-    # 24 = 4 eTEs × 3 repeats × 2 (control/label)
-    # Ordering: [ctrl_eTE1_rep1, label_eTE1_rep1, ctrl_eTE1_rep2, ...]
     n_pairs = n_vols // 2
     n_eTEs = 4
     n_repeats = n_pairs // n_eTEs
 
     # Standard CUBRIC TRUST eTEs (ms → s)
     eTEs = np.array([0, 40, 80, 160]) * 1e-3
+    print(f"eTEs: {eTEs * 1000} ms, repeats: {n_repeats}")
 
-    print(f"eTEs: {eTEs * 1000} ms")
-    print(f"Repeats per eTE: {n_repeats}")
-
-    # Separate control and label
-    control = data[:, :, 0::2]   # even volumes
-    label = data[:, :, 1::2]     # odd volumes
-    diff = np.abs(control - label)  # (64, 64, 12)
+    # Separate control and label, compute difference
+    control = data[:, :, 0::2]
+    label = data[:, :, 1::2]
+    diff = np.abs(control - label)
 
     # Average repeats per eTE
     diff_avg = np.zeros((*diff.shape[:2], n_eTEs))
@@ -291,62 +517,111 @@ def fit_trust(trust_file, perf_out):
         indices = list(range(i, n_pairs, n_eTEs))
         diff_avg[:, :, i] = np.mean(diff[:, :, indices], axis=2)
 
-    # Identify sagittal sinus ROI (maximum difference signal at eTE=0)
+    # --- ROI selection ---
     eTE0_signal = diff_avg[:, :, 0]
-    threshold = np.percentile(eTE0_signal[eTE0_signal > 0], 92)
-    sinus_roi = eTE0_signal > threshold
+    sinus_roi, roi_method = find_sss_roi(
+        img, eTE0_signal, anat_dir=anat_dir, perf_out=perf_out,
+        label="trust_sss"
+    )
+
+    if sinus_roi is None:
+        print("  ROI selection failed — using default OEF=0.35")
+        results = _trust_defaults(eTEs)
+        with open(perf_out / "trust_results.json", "w") as f:
+            json.dump(results, f, indent=2)
+        return results
+
     n_roi = sinus_roi.sum()
-    print(f"Sagittal sinus ROI: {n_roi} voxels")
+    print(f"Sagittal sinus ROI: {n_roi} voxels ({roi_method})")
 
-    if n_roi < 3:
-        print("  WARNING: Insufficient sinus voxels. Using top 20 voxels.")
-        flat = eTE0_signal.flatten()
-        top_idx = np.argsort(flat)[-20:]
-        sinus_roi = np.zeros_like(eTE0_signal, dtype=bool)
-        sinus_roi.flat[top_idx] = True
-        n_roi = sinus_roi.sum()
-
-    # Extract ROI signal at each eTE
-    roi_signal = np.array([np.mean(diff_avg[sinus_roi, i]) for i in range(n_eTEs)])
-    print(f"ROI signal by eTE: {roi_signal.round(2)}")
-
-    # Fit mono-exponential T2 decay: S(eTE) = S0 * exp(-eTE / T2)
+    # --- Per-voxel T2 fitting with quality control ---
     def t2_model(eTE, S0, T2):
         return S0 * np.exp(-eTE / T2)
 
-    try:
-        popt, pcov = curve_fit(
-            t2_model, eTEs[:len(roi_signal)], roi_signal,
-            p0=[roi_signal[0], 0.060],
-            bounds=([0, 0.005], [roi_signal[0] * 3, 0.300]),
-            maxfev=10000
-        )
-        T2_blood = popt[1]
-        T2_std = np.sqrt(pcov[1, 1])
-        print(f"Venous blood T2: {T2_blood*1000:.1f} ± {T2_std*1000:.1f} ms")
+    voxel_coords = np.where(sinus_roi)
+    voxel_t2s = []
+    voxel_s0s = []
+    voxel_status = []
 
-    except Exception as e:
-        print(f"T2 fitting failed: {e}")
-        T2_blood = 0.055  # fallback
-        print(f"Using default T2_blood = {T2_blood*1000:.1f} ms")
+    for idx in range(n_roi):
+        i, j = voxel_coords[0][idx], voxel_coords[1][idx]
+        sig = diff_avg[i, j, :]
 
-    # T2 → SvO₂ calibration (Lu & Ge 2008, 3T bovine blood)
-    # 1/T2 = A + B*(1-Y)² + C*(1-Y)⁴
-    # or simplified: 1/T2 = A + B*(1-Y) + C*(1-Y)²
-    # Coefficients for Hct=0.42 at 3T (Lu et al. 2012):
-    A = 4.50    # 1/s, T2 of fully oxygenated blood
-    B = 47.1    # 1/s
-    C = 55.5    # 1/s
-    # These are approximate — exact values depend on Hct and field strength
+        if sig[0] < 5:
+            voxel_status.append("rejected_low_S0")
+            continue
+
+        try:
+            popt, pcov = curve_fit(
+                t2_model, eTEs, sig,
+                p0=[sig[0], 0.050],
+                bounds=([0, 0.005], [sig[0] * 5, 0.300]),
+                maxfev=5000
+            )
+            t2_v, s0_v = popt[1], popt[0]
+
+            # Compute R-squared
+            predicted = t2_model(eTEs, *popt)
+            ss_res = np.sum((sig - predicted) ** 2)
+            ss_tot = np.sum((sig - sig.mean()) ** 2)
+            r_sq = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+
+            if t2_v > 0.100:
+                voxel_status.append(f"rejected_T2_high_{t2_v*1000:.0f}ms")
+            elif t2_v < 0.015:
+                voxel_status.append(f"rejected_T2_low_{t2_v*1000:.0f}ms")
+            elif r_sq < 0.95:
+                voxel_status.append(f"rejected_Rsq_{r_sq:.3f}")
+            else:
+                voxel_t2s.append(t2_v)
+                voxel_s0s.append(s0_v)
+                voxel_status.append(f"accepted_T2={t2_v*1000:.1f}ms")
+        except Exception:
+            voxel_status.append("rejected_fit_failed")
+
+    n_accepted = len(voxel_t2s)
+    print(f"  Voxel-wise T2: {n_accepted}/{n_roi} accepted")
+    for s in voxel_status:
+        print(f"    {s}")
+
+    if n_accepted >= 1:
+        # Weighted median T2 (weighted by S0 — more blood = higher weight)
+        voxel_t2s = np.array(voxel_t2s)
+        voxel_s0s = np.array(voxel_s0s)
+        sort_idx = np.argsort(voxel_t2s)
+        cumw = np.cumsum(voxel_s0s[sort_idx])
+        median_idx = np.searchsorted(cumw, cumw[-1] / 2)
+        T2_blood = voxel_t2s[sort_idx[median_idx]]
+        print(f"  Weighted-median T2: {T2_blood*1000:.1f} ms")
+        if n_accepted > 1:
+            print(f"  T2 range: [{voxel_t2s.min()*1000:.1f}, {voxel_t2s.max()*1000:.1f}] ms")
+    else:
+        # Fallback: ROI-mean fit
+        print("  All voxels rejected — falling back to ROI-mean fit")
+        roi_signal = np.array([np.mean(diff_avg[sinus_roi, i]) for i in range(n_eTEs)])
+        try:
+            popt, _ = curve_fit(
+                t2_model, eTEs, roi_signal,
+                p0=[roi_signal[0], 0.050],
+                bounds=([0, 0.005], [roi_signal[0] * 3, 0.300]),
+                maxfev=10000
+            )
+            T2_blood = popt[1]
+            print(f"  ROI-mean T2: {T2_blood*1000:.1f} ms")
+        except Exception as e:
+            print(f"  ROI-mean fit also failed: {e}")
+            T2_blood = 0.055
+            print(f"  Using default T2_blood = {T2_blood*1000:.1f} ms")
+
+    # --- T2 → SvO₂ calibration (Lu et al. 2012, Hct=0.42, 3T) ---
+    # 1/T2 = A + B*(1-Y) + C*(1-Y)²
+    A, B, C_cal = 4.50, 47.1, 55.5  # s⁻¹
 
     R2 = 1.0 / T2_blood
+    discriminant = B**2 - 4 * C_cal * (A - R2)
 
-    # Solve: C*(1-Y)² + B*(1-Y) + (A - R2) = 0
-    a_coeff = C
-    b_coeff = B
-    c_coeff = A - R2
-
-    discriminant = b_coeff**2 - 4 * a_coeff * c_coeff
+    # Build ROI-level signal for output
+    roi_signal = np.array([np.mean(diff_avg[sinus_roi, i]) for i in range(n_eTEs)])
 
     results = {
         "T2_blood_s": float(T2_blood),
@@ -355,12 +630,16 @@ def fit_trust(trust_file, perf_out):
         "eTEs_ms": [float(x * 1000) for x in eTEs],
         "roi_signal": [float(x) for x in roi_signal],
         "n_roi_voxels": int(n_roi),
+        "n_accepted_voxels": n_accepted,
+        "roi_method": roi_method,
+        "voxel_t2_ms": [float(t * 1000) for t in voxel_t2s] if n_accepted > 0 else [],
+        "voxel_status": voxel_status,
     }
 
     if discriminant >= 0:
-        one_minus_Y = (-b_coeff + np.sqrt(discriminant)) / (2 * a_coeff)
+        one_minus_Y = (-B + np.sqrt(discriminant)) / (2 * C_cal)
         SvO2 = 1.0 - one_minus_Y
-        SaO2 = 0.98  # assumed arterial saturation
+        SaO2 = 0.98
         OEF = (SaO2 - SvO2) / SaO2
 
         print(f"\nSvO₂: {SvO2*100:.1f}%")
@@ -378,23 +657,26 @@ def fit_trust(trust_file, perf_out):
         })
     else:
         print("T2→SvO₂ calibration failed (negative discriminant)")
-        print("  This can happen if T2 is too long (fully oxygenated) or too short")
-        # Use literature default
-        OEF = 0.35
-        SvO2 = 0.98 * (1 - OEF)
-        results.update({
-            "SvO2": float(SvO2),
-            "OEF": float(OEF),
-            "SaO2": 0.98,
-            "note": "default OEF used (calibration failed)",
-        })
+        results.update(_trust_defaults(eTEs))
 
-    # Save
     with open(perf_out / "trust_results.json", "w") as f:
         json.dump(results, f, indent=2)
     print(f"Saved: {perf_out / 'trust_results.json'}")
 
     return results
+
+
+def _trust_defaults(eTEs):
+    """Return default TRUST results when fitting fails."""
+    OEF = 0.35
+    SvO2 = 0.98 * (1 - OEF)
+    return {
+        "SvO2": float(SvO2),
+        "OEF": float(OEF),
+        "SaO2": 0.98,
+        "Hct_assumed": 0.42,
+        "note": "default OEF used (ROI or fitting failed)",
+    }
 
 
 def compute_cmro2(cbf_out, trust_results, perf_out):
@@ -489,7 +771,7 @@ def main():
     wand = Path(args.wand_root)
     perf_dir = wand / subject / "ses-03" / "perf"
     anat_dir = (wand / "derivatives" / "fsl-anat" / subject /
-                "ses-03" / "anat" / f"{subject}_ses-03_T1w.anat")
+                "ses-03" / f"{subject}_ses-03_T1w.anat")
     perf_out = wand / "derivatives" / "perfusion" / subject
     perf_out.mkdir(parents=True, exist_ok=True)
     fmap_dir = perf_out / "fieldmap"
@@ -502,7 +784,7 @@ def main():
     # Step 1: Blood T1
     ir_file = perf_dir / f"{subject}_ses-03_acq-InvRec_cbf.nii.gz"
     if ir_file.exists():
-        t1_blood = fit_blood_t1(ir_file, perf_out)
+        t1_blood = fit_blood_t1(ir_file, perf_out, anat_dir=anat_dir)
     else:
         print("InvRec data not found, using default T1_blood = 1650 ms")
         t1_blood = 1.65
@@ -527,7 +809,7 @@ def main():
     trust_file = perf_dir / f"{subject}_ses-03_acq-TRUST_cbf.nii.gz"
     trust_results = None
     if trust_file.exists():
-        trust_results = fit_trust(trust_file, perf_out)
+        trust_results = fit_trust(trust_file, perf_out, anat_dir=anat_dir)
 
     # Step 4: CMRO₂
     if cbf_out and trust_results:
