@@ -269,7 +269,7 @@ WAND ses-03 includes a complete cerebrovascular imaging battery:
 | **pCASL** | Cerebral blood flow (CBF, ml/100g/min) | 64×64×22, 110 vols, PLD=2.0s | FSL `oxford_asl` / BASIL |
 | **TRUST** | Venous oxygen saturation (SvO₂) via sagittal sinus blood T2 | 64×64×1, 24 vols, TI=1.02s | Custom T2 fitting (Lu et al. 2008) |
 | **Inversion Recovery** | Blood T1 for absolute CBF calibration | 128×128×1, 960 TIs | Multi-TI T1 fitting |
-| **Phase-contrast angiography** | Vascular anatomy + flow velocities | 384×512×60, 3D high-res | Vessel segmentation |
+| **Phase-contrast angiography** | Feeding artery flow at pCASL labeling plane | 384×512×60, z=[-105,-28]mm (neck) | Total CBF from ICA+VA flow; labeling efficiency QC |
 | **M0 scan** (AP direction) | Equilibrium magnetization for ASL quantification | 64×64×22, 3 vols | Part of oxford_asl pipeline |
 
 **Relevance to TMS study:**
@@ -278,7 +278,7 @@ WAND ses-03 includes a complete cerebrovascular imaging battery:
 - **Vascular anatomy** informs neurovascular coupling model (Riera et al. 2006/2007)
 - **CBF + MRS + fMRI BOLD** provides three independent hemodynamic/metabolic measures of the same tissue
 
-**Processing:** FSL `oxford_asl` / BASIL: pCASL + M0 + structural T1 → absolute CBF map. InvRec data provides blood T1 for calibration. TRUST gives global OEF. All via Neurodesk containers.
+**Processing:** FSL `oxford_asl` / BASIL: pCASL + M0 + structural T1 → absolute CBF map. InvRec data (16 blocks × 60 TIs) provides subject-specific blood T1 via block-averaged IR fitting. TRUST gives global OEF via structural-guided sagittal sinus ROI (T1w brain surface projection) and per-voxel T2 quality control. Phase-contrast angiography is acquired at the pCASL labeling plane (neck, z≈-60mm) to (a) plan/verify labeling slab position over the feeding arteries, (b) compute total cerebral blood flow from ICA+VA flow velocities × cross-sectional area as an independent CBF cross-validation, and (c) assess labeling efficiency by comparing PC-derived total flow with ASL-derived whole-brain CBF.
 
 **CMRO₂ hierarchy (vpjax):**
 
