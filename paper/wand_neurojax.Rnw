@@ -423,7 +423,8 @@ HMM and DyNeMo brain state models~\citep{Gohil2023dynemo}. This
 remarkable convergence means that a single software ecosystem ---
 FSL~+~OHBA --- can process structural MRI, diffusion, fMRI, perfusion,
 spectroscopy, and MEG from WAND, with FreeSurfer providing the
-complementary cortical surface infrastructure.
+complementary cortical surface infrastructure and a host of tools for
+advanced structural processing.
 
 NeuroJAX and vpjax add the differentiable modelling layer that these
 preprocessing tools lack: end-to-end gradient-based fitting from
