@@ -684,6 +684,55 @@ distributions and restricted signal fractions. DIPY serves as a
 complementary toolkit for signal reconstruction, tractography
 algorithm comparison, and diffusion spectrum imaging.
 
+\subsection{Resting-state fMRI processing}
+
+WAND ses-03 includes resting-state BOLD fMRI on the Prisma 3T,
+providing the functional connectivity targets against which structural
+connectivity and simulated dynamics are compared.
+
+\paragraph{Preprocessing.}
+Resting fMRI preprocessing follows the FSL pipeline: motion correction
+(\texttt{mcflirt}), brain extraction (\texttt{bet}), spatial smoothing,
+high-pass temporal filtering, and registration to standard space via
+the \texttt{fsl\_anat} structural output (FLIRT~+~FNIRT). Alternatively,
+fMRIPrep~\citep{Esteban2019fmriprep} provides a BIDS-native
+preprocessing workflow with automated confound regression, fieldmap
+correction, and surface projection via FreeSurfer.
+
+\paragraph{Independent component analysis.}
+Resting-state networks are identified using FSL's
+MELODIC~\citep{Beckmann2004melodic}, which performs probabilistic
+independent component analysis (ICA) on the 4D BOLD data to decompose
+it into spatially independent components with associated time courses.
+Group-level ICA across WAND subjects will identify the canonical
+resting-state networks that Smith et
+al.~\citep{Smith2009correspondence} defined by demonstrating a
+one-to-one correspondence between BrainMap task-activation networks
+and resting-state networks derived from ICA of nearly 30,000 subjects.
+These canonical networks --- including default mode, dorsal attention,
+salience, visual, sensorimotor, frontoparietal, and language --- serve
+as the functional parcellation against which whole-brain model
+predictions of functional connectivity (FC) and functional connectivity
+dynamics (FCD) are evaluated.
+
+\paragraph{Artefact removal.}
+FSL's FIX (FMRIB's ICA-based X-noisifier) provides automated
+classification of ICA components into signal and noise (motion,
+physiological, scanner artefacts), enabling data-driven denoising
+without the need for explicit confound regressors. For WAND, where
+physiological monitoring data are partially available, FIX offers a
+robust alternative to nuisance regression.
+
+\paragraph{Dual regression and network modelling.}
+Subject-specific network maps are obtained via dual regression against
+the group ICA templates, yielding per-subject spatial maps and time
+courses for each canonical network. These time courses provide the
+empirical FC and FCD matrices that serve as fitting targets for the
+NeuroJAX whole-brain model (Eq.~1).
+Bijsterbosch, Smith, and Beckmann~\citep{Bijsterbosch2017rsfmri}
+provide a comprehensive treatment of these methods in their Oxford
+Neuroimaging Primer on resting-state fMRI functional connectivity.
+
 \subsection{MEG processing}
 
 MEG data from ses-01 (CTF 275-channel, 1200\,Hz, synthetic
