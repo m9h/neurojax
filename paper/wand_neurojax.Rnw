@@ -1017,7 +1017,7 @@ via \texttt{jax.grad} through the matrix exponential, enabling gradient-based
 fitting of hemodynamic parameters alongside neural mass parameters in a
 single optimization.
 
-\subsubsection{Every variable has a measurement}
+\subsubsection{Model variables and their independent measurements}
 
 The central claim is that WAND provides independent measurements for
 every state variable and parameter in the neurovascular model:

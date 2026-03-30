@@ -126,11 +126,68 @@ WAND~\citep{Mayerand2025wand} closes this gap with seven imaging sessions
 per subject on the Connectom 300~mT/m scanner at CUBRIC Cardiff,
 covering every modality needed for a fully-constrained neurovascular model.
 
-\subsection{The NeuroJAX approach}
+\subsection{Differentiable generative modelling with the JAX ecosystem}
 
-Where existing tools (osl-dynamics~\citep{Gohil2023dynemo},
-WhoBPyT, TVB) treat preprocessing and modelling as separate stages,
-NeuroJAX compiles them into a single JAX computation graph:
+\paragraph{Generative models in neuroimaging.}
+The generative modelling approach to neuroimaging inverts a forward
+(biophysical) model to infer latent parameters from observed data.
+Rather than treating brain images as static maps, generative models
+simulate the physical processes that produce the measurements ---
+neural mass dynamics, hemodynamic coupling, electromagnetic forward
+projection, MR signal formation --- and fit the model parameters to
+match empirical recordings. This approach has driven two decades of
+progress in dynamic causal modelling (DCM), whole-brain network
+simulation via The Virtual Brain
+(TVB)~\citep{SanzLeon2013tvb}, and more recently
+WhoBPyT~\citep{Griffiths2024whobpyt}, which recasts whole-brain
+simulation as a deep network in PyTorch for gradient-based fitting.
+The limitation of these tools is that they treat preprocessing and
+modelling as separate stages, and their fitting procedures (Euler
+integration, finite-difference gradients, grid search) do not scale
+to the parameter dimensionality that multi-modal constraints demand.
+
+\paragraph{Simulation-based inference and neural differential equations.}
+Two developments in machine learning transform what is computationally
+feasible. First, \textbf{simulation-based inference}
+(SBI)~\citep{Cranmer2020sbi} replaces likelihood evaluation with
+learned neural density estimators trained on simulated data, enabling
+Bayesian posterior estimation for models with intractable likelihoods
+--- exactly the situation in whole-brain simulation where the
+mapping from parameters to observables passes through stiff ODEs and
+nonlinear forward models. When coupled with GPU-accelerated
+simulators, SBI makes it practical to explore parameter spaces of
+hundreds of dimensions that were previously inaccessible. Second,
+\textbf{neural ordinary differential equations}
+(Neural ODEs)~\citep{Chen2018neuralode} and their extensions to
+controlled and stochastic differential equations
+(CDEs, SDEs)~\citep{Kidger2022neuralDE} embed neural networks within
+differential equation solvers, enabling learned dynamics that respect
+physical structure while remaining fully differentiable. The parallel
+development of \textbf{physics-informed neural networks}
+(PINNs)~\citep{Raissi2019pinns} --- which enforce PDE constraints as
+soft penalties in the loss function --- provides a meshless alternative
+to FEM for field problems (conductivity, elasticity, electromagnetic
+forward models). Together, these methods enable a new class of
+brain model: one where the tissue-level physics, the network dynamics,
+and the observation forward models are all differentiable, composable,
+and GPU-accelerated.
+
+\paragraph{The JAX + Equinox + Diffrax stack.}
+NeuroJAX is built on JAX~\citep{Bradbury2018jax} with
+Equinox~\citep{Kidger2021equinox} for neural network modules and
+Diffrax for differential equation solvers --- the same stack developed
+by Kidger for Neural CDEs. This choice is deliberate: JAX provides
+\texttt{jax.grad} (automatic differentiation through arbitrary Python),
+\texttt{jax.vmap} (automatic vectorisation for batch processing),
+\texttt{jax.jit} (XLA compilation to GPU/TPU), and
+\texttt{jax.lax.scan} (efficient sequential computation). Equinox
+provides PyTree-based neural network modules that compose naturally
+with JAX transformations. Diffrax provides adaptive-step ODE/SDE/CDE
+solvers with adjoint backpropagation. The result is that the entire
+forward model --- from Bloch equation tissue simulation through
+Balloon--Windkessel hemodynamics to sensor-level prediction --- compiles
+into a single XLA computation graph through which gradients flow
+end-to-end:
 %
 \begin{equation}
   \mathcal{L}(\theta) = \sum_m w_m \, d_m\!\bigl(
@@ -141,9 +198,11 @@ NeuroJAX compiles them into a single JAX computation graph:
 %
 where $\theta$ are biophysical parameters, $\mathbf{C}$/$\mathbf{D}$ are
 the structural connectome weights/delays, $\mathbf{L}$ is the leadfield,
-and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE).
-End-to-end \texttt{jax.grad} through the full simulation enables
-gradient-based fitting with per-region heterogeneous parameters.
+and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE). This
+enables gradient-based fitting with per-region heterogeneous parameters
+across hundreds of brain regions --- a problem that grid search or
+finite-difference methods cannot touch, but that
+\texttt{jax.grad} solves in seconds on a GPU.
 
 % ============================================================================
 \section{Dataset}
@@ -273,6 +332,56 @@ sbi4dwi on the full ultra-strong-gradient data.
 \section{Methods}
 % ============================================================================
 
+The breadth of the WAND dataset demands a correspondingly broad
+processing toolkit. Two complementary open-source projects ---
+FreeSurfer and FSL --- form the backbone of our pipeline, together
+covering every modality in the dataset.
+
+\textbf{FreeSurfer}~\citep{Fischl2012freesurfer} grew out of the
+cortical surface reconstruction work of Anders Dale and Martin Sereno
+at UC San Diego in the early
+1990s~\citep{Dale1999cortical,Fischl1999cortical}. Bruce Fischl,
+joining as a postdoctoral fellow, replaced the manual steps of the
+surface pipeline with automated algorithms; the collaboration
+continued as Fischl and Douglas Greve built FreeSurfer into a
+production tool at the Athinoula A.\ Martinos Center for Biomedical
+Imaging, Massachusetts General Hospital, where it has been developed
+and maintained ever since. Over two decades it has grown into the
+standard tool for cortical parcellation, subcortical segmentation,
+and surface-based analysis. Recent versions (8.x) add
+deep-learning modules --- SynthSeg for contrast-invariant
+segmentation~\citep{Billot2023synthseg}, SynthMorph for
+contrast-agnostic registration~\citep{Hoffmann2022synthmorph}, and
+CNN-based thalamic and hippocampal segmentation --- that extend its
+reach to the heterogeneous multi-contrast data in WAND.
+
+\textbf{FSL} (FMRIB Software Library)~\citep{Jenkinson2012fsl,Smith2004fsl}
+was first released in 2000 from the Oxford Centre for Functional MRI of the
+Brain (FMRIB) and has become the most widely used neuroimaging analysis
+suite, with tools spanning structural (FAST, FIRST, fsl\_anat), diffusion
+(eddy, bedpostx, probtrackx2, xtract, dtifit), functional (FEAT, MELODIC,
+FIX), and registration (FLIRT, FNIRT, MMORF). Critically for WAND, FSL
+has extended beyond its MRI core into two additional domains:
+\textbf{perfusion imaging}, via oxford\_asl and
+BASIL/FABBER~\citep{Chappell2009basil} for ASL quantification, and
+\textbf{magnetic resonance spectroscopy}, via
+FSL-MRS~\citep{Clarke2021fslmrs} for end-to-end SVS and MRSI analysis.
+Through the Oxford Centre for Human Brain Activity (OHBA), the FSL
+ecosystem further extends to \textbf{electrophysiology}: osl-ephys
+provides MEG/EEG preprocessing and source
+reconstruction~\citep{vanEs2025oslephys}, while osl-dynamics implements
+HMM and DyNeMo brain state models~\citep{Gohil2023dynemo}. This
+remarkable convergence means that a single software ecosystem ---
+FSL~+~OHBA --- can process structural MRI, diffusion, fMRI, perfusion,
+spectroscopy, and MEG from WAND, with FreeSurfer providing the
+complementary cortical surface infrastructure and a host of tools for
+advanced structural processing.
+
+NeuroJAX and vpjax add the differentiable modelling layer that these
+preprocessing tools lack: end-to-end gradient-based fitting from
+tissue-level biophysics through hemodynamics to sensor-level
+predictions, all compiled in JAX for GPU acceleration.
+
 \subsection{FreeSurfer recon-all + advanced segmentations}
 
 Standard cortical reconstruction was performed with FreeSurfer~8.2.0
@@ -303,6 +412,83 @@ Additional segmentations:
 \end{figure}
 
 \end{knitrout}
+
+\subsubsection{SAMSEG tissue volumes}
+
+\begin{table}[htbp]
+\centering
+\caption{SAMSEG tissue volumes (T1w+T2w joint segmentation).}
+\label{tab:samseg}
+\begin{tabular}{lr}
+\toprule
+Structure & Volume (mm$^3$) \\
+\midrule
+Soft\_Nonbrain\_Tissue  &  1,394,952 \\
+CSF  &  374,654 \\
+Left-Cerebral-Cortex  &  268,149 \\
+Right-Cerebral-Cortex  &  266,766 \\
+Right-Cerebral-White-Matter  &  246,502 \\
+Left-Cerebral-White-Matter  &  239,711 \\
+Left-Cerebellum-Cortex  &  59,600 \\
+Right-Cerebellum-Cortex  &  59,053 \\
+Skull  &  49,736 \\
+Brain-Stem  &  22,098 \\
+Left-Cerebellum-White-Matter  &  14,864 \\
+Right-Cerebellum-White-Matter  &  14,666 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsubsection{Cross-session volumetrics (SynthSeg)}
+
+\begin{table}[htbp]
+\centering
+\caption{Cross-session volumetrics (SynthSeg, mm$^3$).}
+\label{tab:synthseg}
+\begin{tabular}{lrrrr}
+\toprule
+Structure &  ses-02 & ses-03 & ses-04 & ses-05 \\
+\midrule
+left cerebral white matter  &  280,441 & 280,766 & 275,760 & 282,130 \\
+right cerebral white matter  &  277,799 & 280,164 & 271,761 & 280,626 \\
+left cerebral cortex  &  321,868 & 322,111 & 319,239 & 324,713 \\
+right cerebral cortex  &  317,842 & 324,973 & 322,051 & 324,671 \\
+left hippocampus  &  4,493 & 4,646 & 4,336 & 4,654 \\
+right hippocampus  &  4,045 & 4,278 & 4,062 & 4,131 \\
+left thalamus  &  9,307 & 9,244 & 9,404 & 9,408 \\
+right thalamus  &  9,447 & 9,649 & 9,675 & 9,723 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+
+\subsubsection{Hypothalamic subunits}
+
+\begin{table}[htbp]
+\centering
+\caption{Hypothalamic subunit volumes (mm$^3$).}
+\label{tab:hypo}
+\begin{tabular}{lr}
+\toprule
+Subunit & Volume (mm$^3$) \\
+\midrule
+left anterior-inferior  &  18.8 \\
+left anterior-superior  &  29.1 \\
+left posterior  &  152.2 \\
+left tubular inferior  &  137.6 \\
+left tubular superior  &  124.4 \\
+right anterior-inferior  &  21.9 \\
+right anterior-superior  &  30.1 \\
+right posterior  &  156 \\
+right tubular inferior  &  131.1 \\
+right tubular superior  &  143.9 \\
+whole left  &  462.2 \\
+whole right  &  483.1 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
 
 \subsection{T1w/T2w myelin ratio}
 
@@ -551,6 +737,55 @@ distributions and restricted signal fractions. DIPY serves as a
 complementary toolkit for signal reconstruction, tractography
 algorithm comparison, and diffusion spectrum imaging.
 
+\subsection{Resting-state fMRI processing}
+
+WAND ses-03 includes resting-state BOLD fMRI on the Prisma 3T,
+providing the functional connectivity targets against which structural
+connectivity and simulated dynamics are compared.
+
+\paragraph{Preprocessing.}
+Resting fMRI preprocessing follows the FSL pipeline: motion correction
+(\texttt{mcflirt}), brain extraction (\texttt{bet}), spatial smoothing,
+high-pass temporal filtering, and registration to standard space via
+the \texttt{fsl\_anat} structural output (FLIRT~+~FNIRT). Alternatively,
+fMRIPrep~\citep{Esteban2019fmriprep} provides a BIDS-native
+preprocessing workflow with automated confound regression, fieldmap
+correction, and surface projection via FreeSurfer.
+
+\paragraph{Independent component analysis.}
+Resting-state networks are identified using FSL's
+MELODIC~\citep{Beckmann2004melodic}, which performs probabilistic
+independent component analysis (ICA) on the 4D BOLD data to decompose
+it into spatially independent components with associated time courses.
+Group-level ICA across WAND subjects will identify the canonical
+resting-state networks that Smith et
+al.~\citep{Smith2009correspondence} defined by demonstrating a
+one-to-one correspondence between BrainMap task-activation networks
+and resting-state networks derived from ICA of nearly 30,000 subjects.
+These canonical networks --- including default mode, dorsal attention,
+salience, visual, sensorimotor, frontoparietal, and language --- serve
+as the functional parcellation against which whole-brain model
+predictions of functional connectivity (FC) and functional connectivity
+dynamics (FCD) are evaluated.
+
+\paragraph{Artefact removal.}
+FSL's FIX (FMRIB's ICA-based X-noisifier) provides automated
+classification of ICA components into signal and noise (motion,
+physiological, scanner artefacts), enabling data-driven denoising
+without the need for explicit confound regressors. For WAND, where
+physiological monitoring data are partially available, FIX offers a
+robust alternative to nuisance regression.
+
+\paragraph{Dual regression and network modelling.}
+Subject-specific network maps are obtained via dual regression against
+the group ICA templates, yielding per-subject spatial maps and time
+courses for each canonical network. These time courses provide the
+empirical FC and FCD matrices that serve as fitting targets for the
+NeuroJAX whole-brain model (Eq.~1).
+Bijsterbosch, Smith, and Beckmann~\citep{Bijsterbosch2017rsfmri}
+provide a comprehensive treatment of these methods in their Oxford
+Neuroimaging Primer on resting-state fMRI functional connectivity.
+
 \subsection{MEG processing}
 
 MEG data from ses-01 (CTF 275-channel, 1200\,Hz, synthetic
@@ -737,7 +972,7 @@ via \texttt{jax.grad} through the matrix exponential, enabling gradient-based
 fitting of hemodynamic parameters alongside neural mass parameters in a
 single optimization.
 
-\subsubsection{Every variable has a measurement}
+\subsubsection{Model variables and their independent measurements}
 
 The central claim is that WAND provides independent measurements for
 every state variable and parameter in the neurovascular model:
@@ -829,90 +1064,6 @@ overlaid on the measured data from a representative white-matter ROI.
 \end{figure}
 
 \end{knitrout}
-
-\subsection{Cross-session volumetrics (SynthSeg)}
-
-\begin{table}[htbp]
-\centering
-\caption{Cross-session volumetrics (SynthSeg, mm$^3$).}
-\label{tab:synthseg}
-\begin{tabular}{lrrrr}
-\toprule
-Structure &  ses-02 & ses-03 & ses-04 & ses-05 \\
-\midrule
-left cerebral white matter  &  280,441 & 280,766 & 275,760 & 282,130 \\
-right cerebral white matter  &  277,799 & 280,164 & 271,761 & 280,626 \\
-left cerebral cortex  &  321,868 & 322,111 & 319,239 & 324,713 \\
-right cerebral cortex  &  317,842 & 324,973 & 322,051 & 324,671 \\
-left hippocampus  &  4,493 & 4,646 & 4,336 & 4,654 \\
-right hippocampus  &  4,045 & 4,278 & 4,062 & 4,131 \\
-left thalamus  &  9,307 & 9,244 & 9,404 & 9,408 \\
-right thalamus  &  9,447 & 9,649 & 9,675 & 9,723 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-\subsection{SAMSEG tissue volumes}
-
-\begin{table}[htbp]
-\centering
-\caption{SAMSEG tissue volumes (T1w+T2w joint segmentation).}
-\label{tab:samseg}
-\begin{tabular}{lr}
-\toprule
-Structure & Volume (mm$^3$) \\
-\midrule
-Soft\_Nonbrain\_Tissue  &  1,394,952 \\
-CSF  &  374,654 \\
-Left-Cerebral-Cortex  &  268,149 \\
-Right-Cerebral-Cortex  &  266,766 \\
-Right-Cerebral-White-Matter  &  246,502 \\
-Left-Cerebral-White-Matter  &  239,711 \\
-Left-Cerebellum-Cortex  &  59,600 \\
-Right-Cerebellum-Cortex  &  59,053 \\
-Skull  &  49,736 \\
-Brain-Stem  &  22,098 \\
-Left-Cerebellum-White-Matter  &  14,864 \\
-Right-Cerebellum-White-Matter  &  14,666 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-
-\subsection{Hypothalamic subunits}
-
-\begin{knitrout}
-\definecolor{shadecolor}{rgb}{0.969, 0.969, 0.969}\color{fgcolor}\begin{kframe}
-
-
-{\ttfamily\noindent\bfseries\color{errorcolor}{\#\# Error:\\\#\# ! Failed to read image from path /Users/mhough/dev/wand/derivatives/freesurfer/sub-08033/mri/hypothalamic\_subunits\_seg.v1.mgz}}\end{kframe}
-\end{knitrout}
-
-\begin{table}[htbp]
-\centering
-\caption{Hypothalamic subunit volumes (mm$^3$).}
-\label{tab:hypo}
-\begin{tabular}{lr}
-\toprule
-Subunit & Volume (mm$^3$) \\
-\midrule
-left anterior-inferior  &  18.8 \\
-left anterior-superior  &  29.1 \\
-left posterior  &  152.2 \\
-left tubular inferior  &  137.6 \\
-left tubular superior  &  124.4 \\
-right anterior-inferior  &  21.9 \\
-right anterior-superior  &  30.1 \\
-right posterior  &  156 \\
-right tubular inferior  &  131.1 \\
-right tubular superior  &  143.9 \\
-whole left  &  462.2 \\
-whole right  &  483.1 \\
-\bottomrule
-\end{tabular}
-\end{table}
-
 
 \subsection{Perfusion results}
 
