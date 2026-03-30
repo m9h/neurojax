@@ -380,6 +380,106 @@ def evaluate_pipelines(
     return results
 
 
+def evaluate_pipelines_snr_sweep(
+    raw: mne.io.Raw,
+    pipelines: list[PipelineConfig],
+    snr_levels_db: list[float] = [-20, -10, -5, 0, 5, 10, 20],
+    signal_freqs: tuple[float, ...] = (10.0,),
+    n_trials: int = 3,
+    seed: int = 42,
+) -> list[RecoveryMetrics]:
+    """Evaluate pipelines across a range of injection SNR levels.
+
+    Scales signal amplitude relative to the actual data noise floor so that
+    the injected signal has a specific SNR. At low SNR (e.g., -20 dB),
+    only pipelines that effectively remove artifacts will recover the signal.
+
+    Parameters
+    ----------
+    raw : mne.io.Raw
+    pipelines : list of PipelineConfig
+    snr_levels_db : list of float — target SNR in dB
+    signal_freqs : frequencies for oscillatory test signals
+    n_trials : int — repetitions per SNR level
+    seed : int
+
+    Returns
+    -------
+    list of RecoveryMetrics with snr_input set to the target SNR level
+    """
+    rng = np.random.default_rng(seed)
+
+    # Pre-pick and resample
+    raw = raw.copy().pick(picks="meg", exclude="bads")
+    if raw.info["sfreq"] > 250.0:
+        raw.resample(250.0, verbose=False)
+    n_times = raw.n_times
+    sfreq = raw.info["sfreq"]
+    n_channels = len(raw.ch_names)
+    meg_picks = np.arange(n_channels)
+
+    # Measure noise floor (RMS of MEG data)
+    noise_rms = np.sqrt(np.mean(raw.get_data() ** 2))
+
+    # Preprocess originals
+    logger.info("Preprocessing %d pipelines on original data...", len(pipelines))
+    originals = {}
+    for p in pipelines:
+        try:
+            originals[p.name] = p.func(raw.copy())
+        except Exception as e:
+            logger.warning("Pipeline '%s' failed on original: %s", p.name, e)
+
+    results = []
+
+    for snr_db in snr_levels_db:
+        # amplitude = noise_rms * 10^(SNR_dB/20)
+        amplitude = noise_rms * 10 ** (snr_db / 20.0)
+        logger.info("SNR = %+.0f dB → amplitude = %.2e (noise_rms = %.2e)",
+                     snr_db, amplitude, noise_rms)
+
+        for freq in signal_freqs:
+            signal = make_oscillatory_signal(
+                n_times, sfreq, freq=freq, amplitude=1.0)  # unit amplitude
+
+            for trial in range(n_trials):
+                spatial = rng.standard_normal(n_channels)
+                spatial = spatial / np.max(np.abs(spatial))
+
+                # Scale signal to target amplitude
+                scaled_signal = signal * amplitude
+
+                raw_injected, injected_data = inject_signal(
+                    raw, scaled_signal, spatial_pattern=spatial)
+
+                for p in pipelines:
+                    if p.name not in originals:
+                        continue
+                    try:
+                        raw_cleaned = p.func(raw_injected.copy())
+                        metrics = measure_recovery(
+                            raw_cleaned, originals[p.name],
+                            injected_data, meg_picks)
+
+                        rm = RecoveryMetrics(
+                            pipeline=p.name,
+                            signal_type=f"{freq}Hz",
+                            snr_input=snr_db,
+                            snr_output=metrics["snr_output_db"],
+                            snr_improvement=metrics["snr_output_db"] - snr_db,
+                            correlation=metrics["correlation"],
+                            rmse=metrics["rmse"],
+                            amplitude_ratio=metrics["amplitude_ratio"],
+                            waveform_distortion=metrics["waveform_distortion"],
+                        )
+                        results.append(rm)
+                    except Exception as e:
+                        logger.warning("  %s SNR=%+.0fdB trial %d: %s",
+                                       p.name, snr_db, trial, e)
+
+    return results
+
+
 # -------------------------------------------------------------------------
 # Default pipeline configurations
 # -------------------------------------------------------------------------
