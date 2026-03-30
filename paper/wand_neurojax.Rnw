@@ -1596,4 +1596,198 @@ Neurodesk containers for reproducibility. R visualisations use
 
 \bibliography{references}
 
+% ============================================================================
+\appendix
+% ============================================================================
+
+\section{Modality-specific processing notes}
+
+\subsection{Quantitative structural MRI}
+
+The WAND ses-02 VFA acquisition uses the CUBRIC mcDESPOT protocol: 8
+SPGR flip angles (2--18\textdegree, $\text{TR}_\text{exc}$ = 4\,ms)
+and 16 bSSFP volumes (8 flip angles $\times$ 2 phase cycles,
+$\text{TR}_\text{exc}$ = 4.54\,ms) on the Connectom 3T. The
+QMT acquisition comprises 11 MT-weighted volumes at 3 MT flip angles
+(332\textdegree, 628\textdegree, 333\textdegree) across offset
+frequencies from 1\,kHz to 56\,kHz, plus an MT-off reference.
+
+Four independent fitting tools were applied as test oracles:
+QUIT~v3.4~\citep{Wood2018quit} (Ramani + super-Lorentzian, C++),
+qMRLab~v2.4.2 (Sled-Pike two-pool, Octave), FreeSurfer
+\texttt{mri\_ms\_fitparms} (joint T1/PD), and neurojax (linear
+DESPOT1, JAX). The three-way T1 comparison (Table~10) reveals
+systematic underestimation (WM 650--727\,ms vs.\ expected $\sim$800\,ms)
+consistent with B1$^+$ inhomogeneity, motivating the DESPOT1-HIFI
+joint T1+B1 estimation implemented in \texttt{neurojax.qmri.despot}.
+
+The QUIT Ramani QMT model produced physiologically plausible two-pool
+parameters (Table~11): BPF WM = 0.121, GM = 0.082 (1.32$\times$);
+$T_{1,f}$ WM = 0.87\,s, GM = 1.62\,s; $T_{2,b}$ $\sim$8\,$\mu$s
+(super-Lorentzian). Exchange rate instability ($k_{bf}$ upper bound
+at some voxels) indicates the need for B1 correction --- a protocol
+question for the CUBRIC team (Appendix~\ref{app:cubric}).
+
+\subsection{Perfusion imaging}
+
+WAND ses-03 perfusion data were processed following the ASL white paper
+recommendations~\citep{Alsop2015asl}. The pCASL acquisition (bolus =
+1.8\,s, PLD = 2.0\,s, 110 volumes) was quantified using FSL
+\texttt{oxford\_asl}, which employs the BASIL/FABBER variational
+Bayesian inference engine~\citep{Chappell2009basil} for kinetic model
+fitting with spatial regularisation. Subject-specific blood T1 was
+estimated from the Look-Locker inversion recovery acquisition (128
+$\times$ 128, 960 time points, TR = 150\,ms) using the
+Deichmann--Haase correction. The fitted value (460\,ms) fell outside
+the expected range, defaulting to 1650\,ms --- a fitting issue that
+warrants investigation with the CUBRIC team.
+
+TRUST venous oxygenation (24 volumes, TI = 1.02\,s) requires the
+protocol-specific effective echo times for accurate T2 $\to$
+SvO$_2$ calibration via the Lu et al.\ quadratic
+model~\citep{Lu2012bloodt2}. The CUBRIC
+\texttt{ep2d\_TRUST\_AsymShTE} protocol uses asymmetric short-TE
+encoding; the eTEs are not recorded in the BIDS sidecars and must
+be obtained from the sequence documentation.
+
+\subsection{Diffusion microstructure}
+
+DTI fitting was performed on the CHARMED acquisition ($b \leq
+1200$\,s/mm$^2$; 83 volumes across $b$ = 0, 200, 500, 1200) without
+eddy current correction (topup applied, eddy pending for sub-08033).
+The resulting FA and V1 maps were registered to FreeSurfer T1 space
+(FLIRT 6-DOF $\to$ \texttt{lta\_convert}) for DTI-enhanced thalamic
+nuclei segmentation. Full preprocessing (topup + eddy + bedpostx +
+probtrackx2 + connectome) is planned for the DGX.
+
+The WAND AxCaliber data (4 shells, $b$ = 0--15500\,s/mm$^2$, 264
+volumes on 300\,mT/m gradients) will be processed with sbi4dwi for
+axon diameter estimation and microstructure-informed connectome
+construction via the \texttt{ConnectomeMapper}.
+
+\subsection{Magnetic resonance spectroscopy}
+\label{app:mrs}
+
+\paragraph{Acquisition parameters.}
+ses-04 semi-LASER at 7\,T: TE = 78\,ms, TR = 5230\,ms, 64 averages,
+BW = 3000\,Hz, 2048 points. Four VOI placements: anterior cingulate
+cortex (25$\times$30$\times$40\,mm$^3$), occipital
+(30$\times$30$\times$30\,mm$^3$), right auditory
+(30$\times$45$\times$20\,mm$^3$), left sensorimotor
+(30$\times$30$\times$30\,mm$^3$). VAPOR water suppression.
+
+ses-05 MEGA-PRESS at 3\,T: TE = 68\,ms, TR = 2000\,ms, 160 averages,
+BW = 2000\,Hz, 2048 points. Same four VOI placements. Editing pulses
+at 1.9\,ppm (ON) and 7.5\,ppm (OFF), bandwidth 100\,Hz.
+
+\paragraph{Processing pipeline.}
+Raw Siemens TWIX data were read with \texttt{pymapVBVD} (bypassing a
+\texttt{spec2nii} validation bug on numeric PatientName fields in the
+TWIX header). Coil combination used sensitivity weighting with phase
+alignment to coil~0. MEGA-PRESS ON/OFF subtraction was performed
+after coil combination. All data were converted to NIfTI-MRS format
+using the \texttt{nifti\_mrs} Python library with monkey-patched
+header validation.
+
+\paragraph{Basis set considerations.}
+Initial fitting used singlet basis spectra (delta-function FIDs at
+known chemical shifts) with FSL-MRS Newton fitting, yielding GABA
+CRLB = 19.4\% and GPC CRLB = 12.4\% for the occipital VOI. NAA
+and Glu showed poor CRLBs ($>$100\%) because singlet approximations
+do not capture J-coupling evolution at TE = 78\,ms. Proper J-coupled
+basis spectra are required.
+
+Three sources of validated basis spectra are available:
+\begin{itemize}
+  \item \textbf{MRSHub}\footnote{\url{https://mrshub.org/datasets_basissets/}}:
+    community repository of downloadable basis sets for various
+    sequences and field strengths.
+  \item \textbf{LCModel}\footnote{\url{https://www.lcmodel.com/lcm-basis.shtml}}:
+    pre-computed basis sets for 7\,T (and other field strengths).
+  \item \textbf{VESPA/PyGAMMA}\footnote{\url{https://pmc.ncbi.nlm.nih.gov/articles/PMC10330446/}}:
+    density matrix simulation using PyGAMMA (v4.3.4, built locally)
+    with sequence-specific pulse definitions. Generates basis spectra
+    accounting for J-coupling evolution under the exact sLASER/MEGA-PRESS
+    timing.
+\end{itemize}
+
+The impact of using ideal hard pulses versus realistic adiabatic RF
+shapes in semi-LASER basis simulation has been characterised by
+Landheer et al.~\citep{Landheer2021slaser}, who showed that shaped
+pulses and magnetic field gradients can significantly affect basis
+spectra for strongly coupled spin systems at short TE, though the
+effect diminishes at longer TE. The across-vendor standardisation of
+semi-LASER~\citep{Oz2020slaser} provides the reference pulse
+definitions (GOIA-WURST, GOIA-HS) used in Siemens implementations.
+
+\paragraph{Metabolite quantification at 7\,T.}
+Approximately 18 metabolites are quantifiable at 7\,T using
+semi-LASER~\citep{Tkac2009sevenT}, including GABA ($\sim$1--2\,mM in
+GM), glutamate ($\sim$8--12\,mM), glutamine ($\sim$3--5\,mM), NAA
+($\sim$8--12\,mM), and myo-inositol ($\sim$5--8\,mM). The 3-fold
+reduction in Cram\'{e}r-Rao lower bounds at 7\,T versus
+3\,T~\citep{Mekle2009sevenT} is critical for resolving GABA without
+editing, providing cross-validation against the ses-05 MEGA-PRESS
+GABA estimate.
+
+\paragraph{Multiway spectral analysis.}
+The raw MRS data tensor (spectral $\times$ coils $\times$ averages)
+is amenable to chemometrics-inspired decomposition methods
+implemented in \texttt{neurojax.qmri.mrs\_tensor}: Tucker/HOSVD for
+optimal coil combination, PARAFAC for component separation, and
+MCR-ALS for data-driven spectral unmixing without pre-defined basis
+sets. These connect to the established multiway analysis literature
+in analytical chemistry~\citep{Bro1997parafac} and provide an
+alternative to basis-set-dependent fitting.
+
+\subsection{MEG electrophysiology}
+
+ses-01 MEG data (CTF 275-channel, 1200\,Hz, 5 paradigms) will be
+processed with the osl-ephys pipeline~\citep{vanEs2025oslephys}:
+ICA-based artefact rejection, RHINO coregistration to FreeSurfer
+surfaces, beamformer/minimum-norm source reconstruction, parcellation
+to Desikan-Killiany atlas, and sign-flipping across subjects.
+Source-level timeseries feed into osl-dynamics for HMM/DyNeMo brain
+state analysis~\citep{Gohil2023dynemo}: time-delay embedding + PCA
+preparation, state spectral decomposition, and summary statistics
+(fractional occupancy, lifetime, switching rate).
+
+\subsection{TMS-EEG}
+
+ses-08 SICI (short-interval intracortical inhibition) data were
+acquired with a Magstim BiStim$^2$ (D70 Alpha Flat coil,
+BrainSight neuronavigation, Polaris optical tracking). Three runs
+per subject provide test-pulse and conditioned-pulse TMS-evoked
+potentials (TEPs) for extraction of the N15, P30, N45, P60, N100,
+P180 components. TEP waveforms and global field power serve as
+fitting targets for the whole-brain neural mass model.
+
+\section{CUBRIC protocol questions}
+\label{app:cubric}
+
+The following questions have been compiled during processing and are
+pending responses from the CUBRIC team:
+
+\begin{enumerate}
+  \item QMT MT pulse duration (Trf) for the \texttt{tfl\_qMT\_v09}
+    sequence.
+  \item B1$^+$ map availability for ses-02 (critical for QMT and VFA
+    T1 accuracy).
+  \item TRUST effective echo times for the
+    \texttt{ep2d\_TRUST\_AsymShTE} protocol.
+  \item SPGR flip angle ordering in the 4D VFA file (assumed
+    2, 4, 6, 8, 10, 12, 14, 18\textdegree).
+  \item SSFP flip angles and phase cycling scheme (8 FAs $\times$ 2
+    phase cycles assumed).
+  \item sLASER RF pulse waveform files for basis set simulation.
+  \item MEGA-PRESS editing pulse shape and timing details.
+  \item Cross-session registration validation (Connectom $\to$ Prisma
+    geometric distortion).
+  \item Pre-computed basis spectra for sLASER at 7\,T and MEGA-PRESS
+    at 3\,T (if available).
+\end{enumerate}
+
+The full list of 26 questions is maintained in
+\texttt{docs/CUBRIC\_QUESTIONS.md} in the repository.
+
 \end{document}
