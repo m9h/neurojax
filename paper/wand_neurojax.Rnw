@@ -235,22 +235,33 @@ differentiable biophysical modelling to this resource.
 
 \subsection{Scanner platforms and sessions}
 
-The WAND sessions span three distinct scanner systems, each optimised
-for different measurement goals:
+The WAND sessions span four distinct instrument platforms:
 
 \begin{itemize}
-  \item \textbf{Siemens Connectom 3T} (300\,mT/m, ses-02, ses-06):
-    Ultra-strong gradients for diffusion microstructure (AxCaliber,
-    CHARMED) and quantitative relaxometry (VFA, QMT). Also sub-mm
-    structural imaging (MP2RAGE 0.7\,mm, 7-echo GRE 0.67\,mm).
-  \item \textbf{Siemens Prisma 3T} (80\,mT/m, ses-03, ses-04, ses-05):
-    Standard clinical gradients for fMRI, perfusion (pCASL, TRUST),
-    structural (T1w, T2w), and MRS (sLASER in 4 brain regions).
-  \item \textbf{CTF 275-channel MEG} (ses-01): Whole-head
-    magnetoencephalography for millisecond-resolution dynamics across
-    5 paradigms (resting, auditory-motor, MMN, Simon, visual).
-  \item \textbf{TMS-EEG lab} (ses-08): Transcranial magnetic
-    stimulation with concurrent EEG (SICI protocol, 3 runs).
+  \item \textbf{Siemens MAGNETOM Connectom 3T} (300\,mT/m, ses-02,
+    ses-06): Ultra-strong gradients for diffusion microstructure
+    (AxCaliber, CHARMED) and quantitative relaxometry (VFA, QMT).
+    Sub-mm structural imaging (MP2RAGE 0.7\,mm, 7-echo GRE 0.67\,mm).
+  \item \textbf{Siemens MAGNETOM Prisma 3T} (80\,mT/m, 32-channel
+    receive-only head coil, ses-03, ses-05): fMRI, perfusion (pCASL,
+    TRUST), structural (T1w, T2w), and MRS (semi-LASER).
+  \item \textbf{Siemens MAGNETOM 7T} (32-channel receive / volume
+    transmit head coil, Nova Medical, ses-04): High-field MRS
+    (semi-LASER) for improved spectral resolution of GABA and
+    glutamate.
+  \item \textbf{CTF 275-channel radial gradiometer MEG} (ses-01):
+    Sampled at 1200\,Hz, analysed as synthetic third-order
+    gradiometers with 29 reference channels. EOG recorded
+    concurrently. Five paradigms: resting-state, auditory-motor,
+    mismatch negativity, Simon task, visual.
+  \item \textbf{Magstim BiStim\textsuperscript{2} TMS} (ses-08,
+    Magstim, Whitland, UK): D70 Alpha Flat figure-of-eight coil
+    (70\,mm). Neuronavigated with BrainSight (Rogue Research,
+    Montreal) and Polaris optical tracking (Northern Digital).
+    Controlled via CED~1401 interface with Signal~v6.04a software.
+    EMG recorded with Digitimer D440-4 amplifier and pre-gelled
+    Ag/AgCl electrodes. SICI paired-pulse protocol, 3 runs per
+    subject.
 \end{itemize}
 
 Table~\ref{tab:wand} details the acquisitions per session for the
@@ -267,8 +278,8 @@ Session & Scanner & Modalities & Key acquisitions \\
 ses-01 & CTF MEG      & MEG          & 275ch: resting, auditory-motor, MMN, Simon, visual + headshape \\
 ses-02 & Connectom 3T & DWI + anat   & AxCaliber (4 shells, $b$=0--15500), CHARMED (AP+PA), T1w, VFA (SPGR/SSFP/IR), QMT (16 vols) \\
 ses-03 & Prisma 3T    & fMRI + perf  & T1w, T2w (grad-corrected), fieldmaps, pCASL, TRUST, InvRec, angiography, M0 \\
-ses-04 & Prisma 3T    & MRS + anat   & sLASER: ACC, occipital, auditory, sensorimotor; T1w \\
-ses-05 & Prisma 3T    & MRS + anat   & Second MRS session (test--retest); T1w \\
+ses-04 & 7T           & MRS + anat   & semi-LASER: ACC, occipital, auditory, sensorimotor; T1w \\
+ses-05 & Prisma 3T    & MRS + anat   & semi-LASER (test--retest); MEGA-PRESS; T1w \\
 ses-06 & Connectom 3T & Structural   & MP2RAGE (0.7\,mm), 7-echo GRE (0.67\,mm mag+phase), T2w (0.21\,mm in-plane) \\
 ses-08 & TMS lab      & TMS-EEG      & SICI protocol (3 runs, .mat format) \\
 \bottomrule
@@ -296,10 +307,16 @@ derivatives:
 \end{itemize}
 
 \noindent The processing reported here extends these CUBRIC derivatives
-with quantitative tissue property maps (T1, BPF, T2*, g-ratio),
-advanced subcortical segmentations (thalamic nuclei, hippocampal
-subfields, hypothalamic subunits), perfusion quantification (CBF,
-CMRO$_2$), and cross-modal validation analyses.
+in three directions: (1)~quantitative tissue property maps from the
+rich relaxometry acquisitions (VFA~T1, QMT~BPF, T2*, g-ratio,
+MP2RAGE~T1); (2)~advanced subcortical segmentations (DTI-enhanced
+thalamic nuclei, hippocampal subfields, hypothalamic subunits);
+and (3)~perfusion quantification (CBF, OEF, CMRO$_2$). We also
+extend the diffusion and microstructural derivatives beyond CUBRIC's
+eddy QC reports with DTI fitting (FA, MD, V1 from the CHARMED
+low-$b$ shells), and lay the groundwork for AxCaliber axon diameter
+estimation and microstructure-informed connectome construction via
+sbi4dwi on the full ultra-strong-gradient data.
 
 % ============================================================================
 \section{Methods: Quantitative Structural Processing}
