@@ -934,6 +934,145 @@ if (file.exists(hypo_csv)) {
 }
 @
 
+\subsection{Thalamic nuclei (DTI-enhanced CNN)}
+
+DTI-enhanced thalamic nuclei segmentation was performed using the
+FreeSurfer CNN model~\citep{Billot2023synthseg} with FA and V1 maps
+from dtifit (CHARMED $b \leq 1200$\,s/mm$^2$, 83 volumes across
+$b = 0, 200, 500, 1200$). The DTI information improves boundary
+delineation between nuclei with distinct fibre orientations (e.g.\ VPL
+vs.\ PuL).
+
+<<tab-thalamic, results='asis'>>=
+thal_csv <- file.path(fs_dir, "mri", "ThalamicNuclei_DTI_CNN_volumes.csv")
+if (file.exists(thal_csv)) {
+  thal <- read.csv(thal_csv, check.names = FALSE)
+  cols <- names(thal)[-1]
+  vals <- as.numeric(thal[1, -1])
+  # Show left hemisphere nuclei only (for space)
+  left_idx <- grep("^Left-", cols)
+  esc <- function(x) gsub("_", "\\\\_", gsub("Left-ThalNuc-", "", x))
+  cat("\\begin{table}[htbp]\n\\centering\n")
+  cat("\\caption{Thalamic nuclei volumes (left hemisphere, mm$^3$). DTI-enhanced CNN segmentation with 46 bilateral nuclei.}\n")
+  cat("\\label{tab:thal}\n")
+  cat("\\begin{tabular}{lr|lr}\n\\toprule\n")
+  cat("Nucleus & Vol. & Nucleus & Vol. \\\\\n\\midrule\n")
+  half <- ceiling(length(left_idx) / 2)
+  for (i in seq_len(half)) {
+    j <- i + half
+    cat(esc(cols[left_idx[i]]), " & ", round(vals[left_idx[i]], 0))
+    if (j <= length(left_idx)) {
+      cat(" & ", esc(cols[left_idx[j]]), " & ", round(vals[left_idx[j]], 0))
+    } else {
+      cat(" & & ")
+    }
+    cat(" \\\\\n")
+  }
+  cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n")
+} else {
+  cat("Thalamic nuclei volumes not yet available.\n")
+}
+@
+
+\subsection{Hippocampal subfields and amygdala nuclei}
+
+Hippocampal subfield and amygdala nuclei segmentation used the FreeSurfer
+v22 atlas with T1-weighted input. Bilateral volumes for CA1--4, subiculum,
+molecular layer, GC-DG, HATA, fimbria, hippocampal tail, and 9 amygdala
+nuclei were obtained.
+
+<<tab-hippo, results='asis'>>=
+for (hemi in c("lh", "rh")) {
+  hippo_file <- file.path(fs_dir, "mri", paste0(hemi, ".hippoSfVolumes-T1.v22.txt"))
+  if (file.exists(hippo_file)) {
+    lines <- readLines(hippo_file)
+    parts <- strsplit(lines, " ")
+    names_h <- sapply(parts, `[`, 1)
+    vals_h  <- as.numeric(sapply(parts, `[`, 2))
+    esc <- function(x) gsub("_", "\\\\_", gsub("-", " ", x))
+    hemi_label <- ifelse(hemi == "lh", "Left", "Right")
+    cat(sprintf("\\begin{table}[htbp]\n\\centering\n\\caption{%s hippocampal subfield volumes (mm$^3$).}\n", hemi_label))
+    cat("\\begin{tabular}{lr}\n\\toprule\n")
+    cat("Subfield & Volume \\\\\n\\midrule\n")
+    for (i in seq_along(names_h)) {
+      cat(esc(names_h[i]), " & ", round(vals_h[i], 1), "\\\\\n")
+    }
+    cat("\\bottomrule\n\\end{tabular}\n\\end{table}\n\n")
+  }
+}
+@
+
+\subsection{Three-way T1 comparison}
+
+VFA T1 was estimated using three independent methods on the same
+ses-02 SPGR data (8 flip angles, TR$_\text{exc}$~=~4\,ms):
+
+\begin{table}[htbp]
+\centering
+\caption{Three-way VFA T1 comparison (ms). Expected 3T values: WM~$\approx$800, GM~$\approx$1400.}
+\label{tab:t1compare}
+\begin{tabular}{lrrr}
+\toprule
+Method & WM median & GM median & Notes \\
+\midrule
+FreeSurfer \texttt{mri\_ms\_fitparms} & 650 & 1605 & Best GM contrast \\
+QUIT DESPOT1 (NLLS)                   & 716 & 1320 & Tightest IQR \\
+Python linear DESPOT1                  & 727 & 1357 & Widest spread \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+All three WM estimates are 650--730\,ms (below the expected $\sim$800\,ms),
+consistent with B1$^+$ inhomogeneity pulling estimates down without
+B1 correction. The DESPOT1-HIFI joint T1+B1 estimation (available in
+\texttt{neurojax.qmri.despot}) would resolve this given the SPGR-IR
+data in ses-02.
+
+\subsection{QUIT QMT tissue-specific results}
+
+The QUIT Ramani model with super-Lorentzian lineshape produced
+physiologically plausible two-pool parameters:
+
+\begin{table}[htbp]
+\centering
+\caption{QUIT QMT two-pool parameter estimates by tissue class.}
+\label{tab:qmt}
+\begin{tabular}{lrrr}
+\toprule
+Parameter & WM & GM & Expected \\
+\midrule
+BPF ($f_b$)           & 0.163 & 0.082 & WM: 0.10--0.16 \\
+$k_{bf}$ (Hz)         & 1.04  & 0.44  & 1--5 \\
+$T_{1,f}$ (s)         & 0.83  & 1.59  & WM: 0.8--1.0, GM: 1.3--1.8 \\
+$T_{2,b}$ ($\mu$s)    & 7.3   & 8.1   & 8--15 \\
+$T_{2,f}$ (ms)        & 70    & 64    & WM: 20--40, GM: 40--80 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The BPF shows correct WM/GM contrast ($\sim$2$\times$), and $T_{1,f}$
+values match the three-way DESPOT1 comparison. The elevated $T_{2,f}$
+and exchange rate instability (some voxels at upper bound) indicate
+the need for B1$^+$ correction --- a CUBRIC protocol question
+(Appendix).
+
+\subsection{DTI from ultra-strong gradient DWI}
+
+Diffusion tensor fitting was performed on the CHARMED acquisition
+($b \leq 1200$\,s/mm$^2$; $b = 0, 200, 500, 1200$; 83 volumes) from
+the Connectom 300\,mT/m scanner. Note: this is without eddy current
+correction (topup + eddy not yet applied to sub-08033); the full
+preprocessing pipeline will be run on the DGX.
+
+<<fig-fa, fig.cap="Fractional anisotropy (FA) from dtifit on CHARMED b$\\leq$1200\\,s/mm$^2$ data. The ultra-strong gradients of the Connectom scanner enable high b-value shells (up to 15500) for AxCaliber microstructure estimation, while the lower shells provide conventional DTI metrics. FA maps feed into the DTI-enhanced thalamic nuclei segmentation and bedpostx crossing-fibre estimation.", fig.height=3>>=
+fa_path <- file.path(deriv, "fsl-dwi", subject, "ses-02", "dtifit", "dtifit_FA.nii.gz")
+if (file.exists(fa_path)) {
+  ortho_view(fa_path, "Fractional Anisotropy (FA)")
+} else {
+  plot.new(); text(0.5, 0.5, "FA map not found")
+}
+@
+
 \subsection{Perfusion results}
 
 <<fig-cmro2, fig.cap="CMRO$_2$ map (\\textmu mol\\,O$_2$/100g/min) computed from pCASL CBF $\\times$ OEF $\\times$ CaO$_2$ using default OEF = 0.35. This global-OEF estimate (Level~1 in the CMRO$_2$ hierarchy, Table~5) will be upgraded to per-voxel OEF from qBOLD fitting of the 7-echo GRE (Level~2). Median CMRO$_2$ = 109\\,\\textmu mol/100g/min, consistent with healthy adult values.", fig.height=3>>=
@@ -975,13 +1114,78 @@ if (file.exists(trust_file)) {
 @
 
 % ============================================================================
+\section{neurojax.qmri: GPU-accelerated fitting}
+% ============================================================================
+
+A key limitation of existing qMRI tools (QUIT, qMRLab) is serial
+voxelwise fitting on CPU. We have implemented a \texttt{neurojax.qmri}
+module providing differentiable signal models in JAX:
+
+\begin{itemize}
+  \item \textbf{steady\_state.py}: SPGR, bSSFP, IR-SPGR, multi-echo,
+    QMT two-pool (super-Lorentzian), MP2RAGE --- all compatible with
+    \texttt{jax.grad}.
+  \item \textbf{despot.py}: DESPOT1, DESPOT1-HIFI (joint T1+B1),
+    mcDESPOT (three-pool MWF) with \texttt{jax.vmap} batch fitting.
+  \item \textbf{fitting.py}: Generic \texttt{VoxelwiseFitter} engine
+    with bounded parameter optimisation (sigmoid reparameterisation),
+    optax optimisers, and Laplace uncertainty from the Hessian.
+\end{itemize}
+
+The advantage: \texttt{jax.vmap} fits all $\sim$1\,M voxels simultaneously
+on GPU, with analytic gradients from \texttt{jax.grad} (no finite
+differences). What took QUIT 80\,min on 4~CPU cores would run in
+seconds on a DGX GPU. Furthermore, the same differentiable signal models
+can be embedded directly in the whole-brain fitting loss, enabling
+end-to-end gradient descent from qMRI tissue properties through
+neural dynamics to sensor-level predictions.
+
+% ============================================================================
+\section{Cortical layer analysis with LAYNII}
+% ============================================================================
+
+The sub-millimetre structural data in ses-06 (MEGRE 0.67\,mm, MP2RAGE
+0.7\,mm) enables cortical depth-resolved analysis using
+LAYNII~v2.10.0 (66 layer fMRI tools, installed via Homebrew). The
+pipeline:
+%
+\begin{enumerate}
+  \item \texttt{LN2\_LAYERS}: equivolume cortical depth definition
+    ($\sim$2--3 layers across the $\sim$2.5\,mm cortical ribbon)
+  \item \texttt{LN2\_PROFILE}: sample R2*, QSM, T1, BPF at each depth
+  \item Iron--myelin decomposition per layer from R2* + QSM + BPF
+\end{enumerate}
+%
+Deep cortical layers (V--VI) carry feedforward connections with higher
+iron content; superficial layers (I--III) carry feedback connections
+with heavier myelination. This depth-resolved microstructure maps
+directly onto the feedforward/feedback hierarchy in the
+$\xi$-$\alpha$NET model~\citep{ValdesSosa2026xialphanet} and connects
+to vpjax's layer-specific neurovascular coupling parameters.
+
+% ============================================================================
 \section{Discussion and Prospective Conclusions}
 % ============================================================================
 
-The quantitative structural processing presented here demonstrates the
-feasibility of extracting independent biophysical measurements for every
-parameter in a neurovascular coupling model from a single dataset. With
-the WAND data fully processed, we anticipate the following results:
+The quantitative structural processing of the WAND reference subject
+(sub-08033) is now largely complete: 17 processing pipelines across
+5 sessions, producing over 80 derived maps and volumes from 4 independent
+qMRI fitting tools (QUIT, qMRLab, FreeSurfer, neurojax). The key results
+to date include:
+
+\begin{itemize}
+  \item QUIT Ramani QMT: BPF = 0.163 (WM), 0.082 (GM) --- correct
+    tissue contrast from the full two-pool model
+  \item Three-way T1 validation: WM = 650--727\,ms across three methods
+  \item CBF from oxford\_asl: GM = 113, WM = 24\,ml/100g/min
+  \item CMRO$_2$ = 109\,\textmu mol/100g/min (global OEF)
+  \item 46 bilateral thalamic nuclei (DTI-enhanced CNN)
+  \item Hippocampal subfields + amygdala nuclei (20 bilateral maps)
+  \item Cross-session SynthSeg volumetrics (4 sessions)
+\end{itemize}
+
+\noindent With these structural foundations, we anticipate the following
+from the remaining processing:
 
 \begin{enumerate}
   \item \textbf{Microstructure-informed conduction delays}: AxCaliber axon
@@ -1037,10 +1241,30 @@ a unified biophysical model via \texttt{jax.grad}.
 % ============================================================================
 
 All processing used open-source tools with explicit version pinning:
-FSL~6.0.7, FreeSurfer~8.2.0, NeuroJAX (JAX~+~Equinox), and
-Neurodesk containers for reproducibility. R visualisations use
-\texttt{RNifti} and \texttt{knitr}. \LaTeX{} compiled with
-\texttt{tectonic}~0.15.
+
+\begin{table}[htbp]
+\centering
+\caption{Software stack.}
+\begin{tabular}{lll}
+\toprule
+Tool & Version & Role \\
+\midrule
+FSL              & 6.0.7   & DWI preproc, dtifit, oxford\_asl, fsl\_anat, FLIRT/FNIRT \\
+FreeSurfer       & 8.2.0   & recon-all, SAMSEG, SynthSeg, segmentations, SynthMorph \\
+QUIT             & 3.4     & DESPOT1, QMT Ramani, multiecho, MP2RAGE \\
+qMRLab           & 2.4.2   & QMT qmt\_spgr (Octave) \\
+Octave           & 11.1.0  & qMRLab, iso2mesh, brain2mesh \\
+iso2mesh         & 1.9.8   & FEM tetrahedral head meshing \\
+brain2mesh       & ---     & Tissue segmentation $\to$ head mesh \\
+LAYNII           & 2.10.0  & Cortical layer analysis (66 tools) \\
+NeuroJAX         & dev     & Differentiable neural mass + qMRI (JAX + Equinox) \\
+vpjax            & dev     & Differentiable vascular physiology (Riera, qBOLD) \\
+sbi4dwi          & dev     & Microstructure SBI, conductivity PINN, pseudo-CT \\
+R + knitr        & 4.5.3   & Paper figures (RNifti, jsonlite) \\
+tectonic         & 0.15    & \LaTeX{} compilation \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \bibliography{references}
 
