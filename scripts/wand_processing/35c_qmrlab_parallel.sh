@@ -12,7 +12,7 @@ OUT_DIR="${QMRI}/qmrlab"
 mkdir -p "${OUT_DIR}"
 
 # Get total number of slices
-N_SLICES=$(python3 -c "
+N_SLICES=$(/Users/mhough/fsl/bin/python3 -c "
 import nibabel as nib
 img = nib.load('${QMRI}/quit/D1_T1_in_QMT.nii.gz')
 print(img.shape[2])
