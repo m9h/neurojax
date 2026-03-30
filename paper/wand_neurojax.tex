@@ -1187,15 +1187,50 @@ $T_{2,f}$ (ms)        & 70    & 64    & WM: 20--40, GM: 40--80 \\
 
 \end{knitrout}
 
-\subsection{neurojax.qmri: GPU-accelerated fitting}
+\subsection{WMH segmentation}
 
-The \texttt{neurojax.qmri} module provides differentiable signal models
-in JAX: SPGR, bSSFP, IR-SPGR, multi-echo, QMT two-pool
-(super-Lorentzian), and MP2RAGE. The \texttt{VoxelwiseFitter} engine
-uses \texttt{jax.vmap} to fit all $\sim$1\,M voxels simultaneously on
-GPU with analytic gradients from \texttt{jax.grad}, bounded parameter
-optimisation via sigmoid reparameterisation, and Laplace uncertainty
-from the Hessian.
+White matter hyperintensity segmentation was performed using
+FreeSurfer WMH-SynthSeg (Laso et al., under review), a
+DL-based method that segments WMH from T1w input without
+requiring FLAIR. Total WMH volume for sub-08033 was
+1558\,mm$^3$ --- consistent with a healthy young adult.
+
+\subsection{neurojax.qmri: GPU-accelerated fitting and neural relaxometry}
+
+The \texttt{neurojax.qmri} module provides both analytical signal models
+and learned physics-informed alternatives, all differentiable in JAX:
+
+\paragraph{Analytical models.}
+SPGR, bSSFP, IR-SPGR, multi-echo T2*, QMT two-pool
+(super-Lorentzian), and MP2RAGE signal equations. The
+\texttt{VoxelwiseFitter} engine uses \texttt{jax.vmap} to fit all
+$\sim$1\,M voxels simultaneously on GPU with analytic gradients
+from \texttt{jax.grad}, bounded parameter optimisation via sigmoid
+reparameterisation, and Laplace uncertainty from the Hessian.
+
+\paragraph{Neural relaxometry (Phase~2).}
+Three learned models extend beyond what analytical equations can express:
+\begin{itemize}
+  \item \textbf{BlochNeuralODE}: Equinox module combining analytical
+    Bloch relaxation with a learned MLP correction term.
+    Fully differentiable through Diffrax ODE integration, enabling
+    gradient-based fitting for arbitrary pulse sequences without
+    deriving new signal equations.
+  \item \textbf{MultiCompartmentNODE}: $N$-pool model (myelin water,
+    intra/extra-cellular water, optional CSF) with learned inter-compartment
+    mixing. Replaces mcDESPOT's degenerate grid search with
+    gradient-based estimation of myelin water fraction.
+  \item \textbf{RelaxometryPINN}: Maps spatial coordinates $(x,y,z)$
+    to tissue parameters via a deep network, enforcing signal model
+    consistency as a physics loss. Fits entire volumes at once,
+    learning spatial correlations and B1 inhomogeneity jointly.
+\end{itemize}
+%
+All models use Equinox pytree modules with differentiable pulse
+sequence descriptions (\texttt{SPGRSequence}, \texttt{QMTSequence},
+etc.) as structured inputs. 56 passing tests validate signal
+equations, fitting convergence, differentiability, and oracle
+comparison against WAND processing outputs.
 
 \subsection{Cortical layer analysis with LAYNII}
 
