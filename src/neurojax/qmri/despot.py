@@ -75,9 +75,14 @@ def despot1_fit_voxel(data: jnp.ndarray, flip_angles: jnp.ndarray,
     slope = jnp.sum((X - X.mean()) * (Y - Y.mean())) / (jnp.sum((X - X.mean())**2) + 1e-10)
     E1_init = jnp.clip(slope, 0.01, 0.999)
     T1_init = -TR / jnp.log(E1_init)
-    M0_init = data.max() / jnp.sin(flip_angles[jnp.argmax(data)])
+    # M0 from linear regression intercept: intercept = M0*(1-E1)
+    intercept = Y.mean() - slope * X.mean()
+    M0_init = jnp.where(jnp.abs(1 - E1_init) > 1e-6,
+                         intercept / (1 - E1_init),
+                         data.max() / jnp.sin(flip_angles[jnp.argmax(data)]))
 
-    params = jnp.array([jnp.abs(M0_init), jnp.clip(T1_init, 0.1, 5.0)])
+    params = jnp.array([jnp.clip(jnp.abs(M0_init), 1.0, 1e7),
+                         jnp.clip(T1_init, 0.1, 5.0)])
     init_loss = _despot1_loss(params, data, flip_angles, TR)
 
     # Gradient descent with optax
