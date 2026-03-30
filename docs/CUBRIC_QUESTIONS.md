@@ -37,6 +37,11 @@
 20. **UTE/ZTE data**: Is there any ultrashort TE or zero TE acquisition in WAND for direct skull bone imaging? This would enable BabelBrain's direct approach rather than relying on pseudo-CT from T1w.
 21. **Skull conductivity validation**: Has the CUBRIC team compared pseudo-CT-derived skull conductivity against the QMT/VFA measurements in bone? The qMRI data in ses-02 (QMT macromolecular content, VFA T1 in skull) could provide ground-truth bone density.
 
+## MRS Basis Sets
+24. **sLASER basis spectra**: Does CUBRIC have pre-computed basis spectra for the sLASER sequence used in ses-04 (TE=78ms, 7T)? Either as FSL-MRS .BASIS format, LCModel .basis, or VESPA output?
+25. **MEGA-PRESS basis spectra**: Same question for the MEGA-PRESS GABA editing sequence in ses-05 (TE=68ms, 3T). Need both ON and OFF basis sets.
+26. **Pulse sequence JSON**: Does CUBRIC have the pulse sequence timing files (RF pulse shapes, gradient timings) in a format compatible with fsl_mrs_sim for density matrix simulation?
+
 ## Software / Methods
 22. **Sean Deoni mcDESPOT software**: Is the CUBRIC team using Deoni's original mcDESPOT MATLAB code, QUIT, or another tool for the VFA/mcDESPOT fitting? Any recommended parameter settings for this specific protocol?
 23. **Processing pipeline**: Has the CUBRIC team published a recommended processing pipeline for the WAND qMRI data? Any parameter files or configs for QUIT/qMRLab?
