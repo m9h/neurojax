@@ -322,6 +322,49 @@ sbi4dwi on the full ultra-strong-gradient data.
 \section{Methods}
 % ============================================================================
 
+The breadth of the WAND dataset demands a correspondingly broad
+processing toolkit. Two complementary open-source projects ---
+FreeSurfer and FSL --- form the backbone of our pipeline, together
+covering every modality in the dataset.
+
+\textbf{FreeSurfer}~\citep{Fischl2012freesurfer} originated from
+the cortical surface reconstruction work of Dale, Fischl, and Sereno
+in the late 1990s~\citep{Dale1999cortical,Fischl1999cortical} at the
+Martinos Center, Massachusetts General Hospital. Over two decades it
+has grown into the standard tool for cortical parcellation, subcortical
+segmentation, and surface-based analysis. Recent versions (8.x) add
+deep-learning modules --- SynthSeg for contrast-invariant
+segmentation~\citep{Billot2023synthseg}, SynthMorph for
+contrast-agnostic registration~\citep{Hoffmann2022synthmorph}, and
+CNN-based thalamic and hippocampal segmentation --- that extend its
+reach to the heterogeneous multi-contrast data in WAND.
+
+\textbf{FSL} (FMRIB Software Library)~\citep{Jenkinson2012fsl,Smith2004fsl}
+was first released in 2000 from the Oxford Centre for Functional MRI of the
+Brain (FMRIB) and has become the most widely used neuroimaging analysis
+suite, with tools spanning structural (FAST, FIRST, fsl\_anat), diffusion
+(eddy, bedpostx, probtrackx2, xtract, dtifit), functional (FEAT, MELODIC,
+FIX), and registration (FLIRT, FNIRT, MMORF). Critically for WAND, FSL
+has extended beyond its MRI core into two additional domains:
+\textbf{perfusion imaging}, via oxford\_asl and
+BASIL/FABBER~\citep{Chappell2009basil} for ASL quantification, and
+\textbf{magnetic resonance spectroscopy}, via
+FSL-MRS~\citep{Clarke2021fslmrs} for end-to-end SVS and MRSI analysis.
+Through the Oxford Centre for Human Brain Activity (OHBA), the FSL
+ecosystem further extends to \textbf{electrophysiology}: osl-ephys
+provides MEG/EEG preprocessing and source
+reconstruction~\citep{vanEs2025oslephys}, while osl-dynamics implements
+HMM and DyNeMo brain state models~\citep{Gohil2023dynemo}. This
+remarkable convergence means that a single software ecosystem ---
+FSL~+~OHBA --- can process structural MRI, diffusion, fMRI, perfusion,
+spectroscopy, and MEG from WAND, with FreeSurfer providing the
+complementary cortical surface infrastructure.
+
+NeuroJAX and vpjax add the differentiable modelling layer that these
+preprocessing tools lack: end-to-end gradient-based fitting from
+tissue-level biophysics through hemodynamics to sensor-level
+predictions, all compiled in JAX for GPU acceleration.
+
 \subsection{FreeSurfer recon-all + advanced segmentations}
 
 Standard cortical reconstruction was performed with FreeSurfer~8.2.0
