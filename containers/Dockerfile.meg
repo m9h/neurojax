@@ -1,0 +1,46 @@
+# MEG processing container for WAND dataset
+# Extends NGC JAX 26.03 with MNE, coffeine, neurojax
+#
+# Build:
+#   docker build -f containers/Dockerfile.meg -t neurojax/meg:latest .
+#
+# Run:
+#   docker run --gpus all --ipc=host --ulimit memlock=-1 --ulimit stack=67108864 \
+#     -v /data/raw/wand:/data/raw/wand:ro \
+#     -v /home/mhough/dev/neurojax:/workspace/neurojax \
+#     -v /home/mhough/dev/jaxctrl:/workspace/jaxctrl \
+#     neurojax/meg:latest python scripts/wand_processing/35_meg_sensor_features.py sub-08033
+
+FROM nvcr.io/nvidia/jax:26.03-py3
+
+# MNE + MEG pipeline dependencies
+RUN pip install --no-cache-dir \
+    mne>=1.6 \
+    equinox>=0.11 \
+    diffrax>=0.6 \
+    "pyriemann>=0.7,<1.0" \
+    coffeine>=0.1 \
+    autoreject>=0.4 \
+    mne-features>=0.3 \
+    h5io>=0.2 \
+    nctpy>=0.1 \
+    nibabel>=5.0 \
+    pandas>=2.0 \
+    signax>=0.1
+
+# Patch coffeine for pyriemann >= 0.7 (CospCovariances → CoSpectra)
+RUN python -c "\
+import pathlib; \
+p = pathlib.Path('/usr/local/lib/python3.12/dist-packages/coffeine/power_features.py'); \
+txt = p.read_text(); \
+txt = txt.replace( \
+    'from pyriemann.estimation import CospCovariances', \
+    'try:\\n    from pyriemann.estimation import CospCovariances\\nexcept ImportError:\\n    from pyriemann.estimation import CoSpectra as CospCovariances' \
+); \
+p.write_text(txt); \
+print('Patched coffeine for pyriemann compat')"
+
+# neurojax + jaxctrl source mounted at runtime via -v
+ENV PYTHONPATH="/workspace/neurojax/src:/workspace/jaxctrl:${PYTHONPATH}"
+
+WORKDIR /workspace/neurojax
