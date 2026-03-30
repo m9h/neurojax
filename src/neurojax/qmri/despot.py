@@ -77,7 +77,8 @@ def despot1_fit_voxel(data: jnp.ndarray, flip_angles: jnp.ndarray,
     T1_init = -TR / jnp.log(E1_init)
     M0_init = data.max() / jnp.sin(flip_angles[jnp.argmax(data)])
 
-    params = jnp.array([M0_init, T1_init])
+    params = jnp.array([jnp.abs(M0_init), jnp.clip(T1_init, 0.1, 5.0)])
+    init_loss = _despot1_loss(params, data, flip_angles, TR)
 
     # Gradient descent with optax
     optimizer = optax.adam(lr)
@@ -86,13 +87,19 @@ def despot1_fit_voxel(data: jnp.ndarray, flip_angles: jnp.ndarray,
     def step(carry, _):
         params, opt_state = carry
         loss, grads = jax.value_and_grad(_despot1_loss)(params, data, flip_angles, TR)
+        # Clip gradients to prevent divergence
+        grads = jax.tree.map(lambda g: jnp.clip(g, -100, 100), grads)
         updates, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(params, updates)
         return (params, opt_state), loss
 
-    (params, _), losses = jax.lax.scan(step, (params, opt_state), None, length=n_iters)
+    (opt_params, _), losses = jax.lax.scan(step, (params, opt_state), None, length=n_iters)
 
-    M0, T1 = params[0], jnp.clip(params[1], 0.05, 8.0)
+    # Use optimised params only if they improved on the linear init
+    opt_loss = _despot1_loss(opt_params, data, flip_angles, TR)
+    final_params = jnp.where(opt_loss < init_loss, opt_params, params)
+
+    M0, T1 = final_params[0], jnp.clip(final_params[1], 0.05, 8.0)
     pred = spgr_signal_multi(M0, T1, flip_angles, TR)
     rmse = jnp.sqrt(jnp.mean((pred - data) ** 2))
 
