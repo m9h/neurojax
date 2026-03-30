@@ -16,12 +16,12 @@
 set -euo pipefail
 
 SUBJECT="${1:-sub-08033}"
-WAND_ROOT="${WAND_ROOT:-/Users/mhough/dev/wand}"
+WAND_ROOT="${WAND_ROOT:-/data/raw/wand}"
 DERIV="${WAND_ROOT}/derivatives"
 MRS_OUT="${DERIV}/fsl-mrs/${SUBJECT}"
-ANAT_DIR="${DERIV}/fsl-anat/${SUBJECT}/ses-03/anat/${SUBJECT}_ses-03_T1w.anat"
+ANAT_DIR="${DERIV}/fsl-anat/${SUBJECT}/ses-02/${SUBJECT}_ses-02_T1w.anat"
 
-export FSLDIR="${FSLDIR:-/Users/mhough/fsl}"
+export FSLDIR="${FSLDIR:-/home/mhough/fsl}"
 source "${FSLDIR}/etc/fslconf/fsl.sh"
 
 mkdir -p "${MRS_OUT}"
@@ -65,18 +65,11 @@ for SES_INFO in "ses-04:slaser:7T" "ses-05:mega:3T"; do
         # Step 1: Convert TWIX → NIfTI-MRS
         echo "  1. Converting TWIX → NIfTI-MRS..."
 
-        if [ "${ACQ}" = "slaser" ]; then
-            spec2nii twix -e image -j "${VOI_OUT}/svs.nii.gz" "${SVS_FILE}" 2>&1 | tail -3 || \
-            spec2nii twix -j "${VOI_OUT}/svs.nii.gz" "${SVS_FILE}" 2>&1 | tail -3
-        elif [ "${ACQ}" = "mega" ]; then
-            spec2nii twix -e image -j "${VOI_OUT}/svs.nii.gz" "${SVS_FILE}" 2>&1 | tail -3 || \
-            spec2nii twix -j "${VOI_OUT}/svs.nii.gz" "${SVS_FILE}" 2>&1 | tail -3
-        fi
+        spec2nii twix -e image "${SVS_FILE}" -o "${VOI_OUT}" -f svs 2>&1 | tail -3
 
         # Convert water reference
         if [ -f "${REF_FILE}" ]; then
-            spec2nii twix -e image -j "${VOI_OUT}/ref.nii.gz" "${REF_FILE}" 2>&1 | tail -3 || \
-            spec2nii twix -j "${VOI_OUT}/ref.nii.gz" "${REF_FILE}" 2>&1 | tail -3
+            spec2nii twix -e image "${REF_FILE}" -o "${VOI_OUT}" -f ref 2>&1 | tail -3
         fi
 
         # Check what was produced
