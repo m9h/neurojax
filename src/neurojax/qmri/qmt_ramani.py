@@ -115,8 +115,8 @@ def compute_sf_single(alpha_deg, offset_hz, T2f, Trf, pulse_fn=gausshann_pulse,
         return jnp.trapezoid(integrand, u)
 
     g_val = super_lorentzian_g(offset_hz, T2f)
-    W = jnp.pi * omega1_rms_sq * g_val
-    Sf_cw = jnp.exp(-W * Trf)
+    W = jnp.pi * omega1_rms_sq * jnp.clip(g_val, 0, 1e-3)  # cap lineshape
+    Sf_cw = jnp.clip(jnp.exp(-W * Trf), 0.0, 1.0)
 
     # For low offsets, also do Bloch ODE (more accurate for pulse shape effects)
     # Adaptive steps: scale with offset to keep omega*dt stable
@@ -139,12 +139,13 @@ def compute_sf_single(alpha_deg, offset_hz, T2f, Trf, pulse_fn=gausshann_pulse,
         return M_new, None
 
     M_final, _ = jax.lax.scan(step, M, t)
-    Sf_bloch = M_final[2]
+    Sf_bloch = jnp.clip(M_final[2], 0.0, 1.0)
 
     # Use Bloch for low offsets, CW for high offsets
     # Blend at ~5kHz for smooth transition
     blend = jax.nn.sigmoid((jnp.abs(offset_hz) - 5000.0) / 1000.0)
     Sf = Sf_bloch * (1 - blend) + Sf_cw * blend
+    Sf = jnp.clip(Sf, 0.0, 1.0)
 
     return jnp.where(jnp.isfinite(Sf), Sf, Sf_cw)
 
