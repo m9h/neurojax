@@ -1148,6 +1148,8 @@ Method & Tissues & Seg.\ input & Mesh type & Strengths \\
 \midrule
 MNE BEM & 3 shells (brain, skull, scalp) & FreeSurfer watershed & BEM triangular surfaces &
   Standard for MEG, fast, well-validated \\
+FSL BET+betsurf & 4 surfaces (brain, inner/outer skull, scalp) & T1w (no FreeSurfer) &
+  BEM triangular surfaces & Fast ($\sim$5\,min), no FreeSurfer needed, FSL-native \\
 brain2mesh (iso2mesh) & 5 tissues (CSF, GM, WM, bone, scalp) & FreeSurfer \texttt{aparc+aseg} + morphological dilation &
   FEM tetrahedral volume & Customisable, open source, EEG 10--20 landmarks \\
 SimNIBS charm & 10 tissues incl.\ compact/spongy bone & T1w + T2w (DL atlas) &
