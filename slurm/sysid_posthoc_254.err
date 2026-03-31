@@ -65,3 +65,17 @@ INFO Epoch 10/20  loss=114.0677  nll=113.5358  kl=0.5911  kl_w=0.900
 INFO Epoch 11/20  loss=113.0256  nll=112.4968  kl=0.5288  kl_w=1.000
 INFO Epoch 12/20  loss=113.8591  nll=113.3724  kl=0.4867  kl_w=1.000
 INFO Epoch 13/20  loss=113.6898  nll=113.2511  kl=0.4387  kl_w=1.000
+INFO Epoch 14/20  loss=113.5232  nll=113.1223  kl=0.4008  kl_w=1.000
+INFO Epoch 15/20  loss=113.5043  nll=113.1390  kl=0.3653  kl_w=1.000
+INFO Epoch 16/20  loss=113.5791  nll=113.2443  kl=0.3348  kl_w=1.000
+INFO Epoch 17/20  loss=113.9076  nll=113.6029  kl=0.3047  kl_w=1.000
+INFO Epoch 18/20  loss=114.1330  nll=113.8505  kl=0.2825  kl_w=1.000
+INFO Epoch 19/20  loss=113.3493  nll=113.0921  kl=0.2571  kl_w=1.000
+INFO Epoch 20/20  loss=113.6727  nll=113.4358  kl=0.2369  kl_w=1.000
+Traceback (most recent call last):
+  File "/home/mhough/dev/neurojax/examples/compare_sysid_wand.py", line 470, in <module>
+    main()
+  File "/home/mhough/dev/neurojax/examples/compare_sysid_wand.py", line 308, in main
+    hmm_sr = switching_rate(jnp.array(hmm_hard), n_states=args.n_states, fs=sfreq)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: switching_rate() got an unexpected keyword argument 'n_states'

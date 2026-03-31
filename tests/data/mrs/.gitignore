@@ -1,0 +1,30 @@
+# Ignore downloaded MRS data files (large binary data)
+# Keep README.md and download script tracked
+
+# All data files
+*.zip
+*.dat
+*.7
+*.sdat
+*.spar
+*.RAW
+*.raw
+*.mat
+*.nii
+*.nii.gz
+*.rda
+*.dcm
+*.DICOM
+
+# Downloaded content directories
+ismrm_fitting_challenge/FittingChallenge/
+ismrm_fitting_challenge/FittingChallenge.zip
+big_gaba/*/
+!big_gaba/README.md
+smart_mrs/SMART-MRS/
+mrshub_edited_examples/osprey_mega/
+mrshub_edited_examples/spec2nii_tests/
+mrshub_edited_examples/gannet_examples/
+
+# Download markers
+.downloaded

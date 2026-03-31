@@ -61,3 +61,6 @@ SHA256SUMS
 # IDEs
 .vscode/
 .idea/
+octave-workspace
+tests/data/mrs/ismrm_fitting_challenge/repo
+tests/data/mrs/nifti_mrs_standard

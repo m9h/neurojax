@@ -304,15 +304,15 @@ def main():
 
     print("\n--- HMM Summary Statistics ---")
     hmm_fo = np.array(fractional_occupancy(jnp.array(hmm_gamma)))
-    hmm_lt = mean_lifetime(jnp.array(hmm_hard), n_states=args.n_states, fs=sfreq)
-    hmm_sr = switching_rate(jnp.array(hmm_hard), n_states=args.n_states, fs=sfreq)
+    hmm_lt = mean_lifetime(jnp.array(hmm_hard), fs=sfreq)
+    hmm_sr = switching_rate(jnp.array(hmm_hard), fs=sfreq)
     print(f"  Fractional occupancy: {np.round(hmm_fo, 3)}")
     print(f"  Mean lifetime: {np.mean(hmm_lt)*1000:.0f} ms")
     print(f"  Switching rate: {hmm_sr:.2f} Hz")
 
     print("\n--- DyNeMo Summary Statistics ---")
     dynemo_fo = np.array(fractional_occupancy(jnp.array(dynemo_alpha)))
-    dynemo_sr = switching_rate(jnp.array(dynemo_hard), n_states=args.n_states, fs=sfreq)
+    dynemo_sr = switching_rate(jnp.array(dynemo_hard), fs=sfreq)
     print(f"  Fractional occupancy: {np.round(dynemo_fo, 3)}")
     print(f"  Switching rate: {dynemo_sr:.2f} Hz")
 

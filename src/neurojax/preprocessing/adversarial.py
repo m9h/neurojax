@@ -571,17 +571,97 @@ def make_default_pipelines(sfreq: float = 250.0) -> list[PipelineConfig]:
         # Resampling already done before injection; skip here
         return raw
 
+    # --- ICA-based pipelines ---
+
+    def _pipeline_ica_ecg(raw):
+        """ICA with automatic ECG component removal (Picard)."""
+        raw = raw.copy()
+        non_meg = [ch for ch, t in zip(raw.ch_names, raw.get_channel_types()) if t not in ("mag", "grad")]
+        if non_meg:
+            raw.pick(picks="meg", exclude="bads")
+        raw.filter(1.0, 45.0, verbose=False)
+        ica = mne.preprocessing.ICA(
+            n_components=20, method="picard", max_iter=300,
+            random_state=42, verbose=False)
+        ica.fit(raw, verbose=False)
+        try:
+            ecg_idx, _ = ica.find_bads_ecg(raw, verbose=False)
+            if ecg_idx:
+                ica.exclude = ecg_idx
+        except Exception:
+            pass
+        ica.apply(raw, verbose=False)
+        return raw
+
+    def _pipeline_ica_ecg_eog(raw):
+        """ICA with automatic ECG + EOG component removal."""
+        raw = raw.copy()
+        non_meg = [ch for ch, t in zip(raw.ch_names, raw.get_channel_types()) if t not in ("mag", "grad")]
+        if non_meg:
+            raw.pick(picks="meg", exclude="bads")
+        raw.filter(1.0, 45.0, verbose=False)
+        ica = mne.preprocessing.ICA(
+            n_components=20, method="picard", max_iter=300,
+            random_state=42, verbose=False)
+        ica.fit(raw, verbose=False)
+        excludes = []
+        try:
+            ecg_idx, _ = ica.find_bads_ecg(raw, verbose=False)
+            excludes.extend(ecg_idx)
+        except Exception:
+            pass
+        try:
+            eog_idx, _ = ica.find_bads_eog(raw, verbose=False)
+            excludes.extend(eog_idx)
+        except Exception:
+            pass
+        ica.exclude = list(set(excludes))
+        ica.apply(raw, verbose=False)
+        return raw
+
+    def _pipeline_ica_aggressive(raw):
+        """ICA with more components and both artifact types."""
+        raw = raw.copy()
+        non_meg = [ch for ch, t in zip(raw.ch_names, raw.get_channel_types()) if t not in ("mag", "grad")]
+        if non_meg:
+            raw.pick(picks="meg", exclude="bads")
+        raw.filter(1.0, 45.0, verbose=False)
+        ica = mne.preprocessing.ICA(
+            n_components=40, method="picard", max_iter=500,
+            random_state=42, verbose=False)
+        ica.fit(raw, verbose=False)
+        excludes = []
+        try:
+            ecg_idx, _ = ica.find_bads_ecg(raw, threshold=2.0, verbose=False)
+            excludes.extend(ecg_idx)
+        except Exception:
+            pass
+        try:
+            eog_idx, _ = ica.find_bads_eog(raw, threshold=2.0, verbose=False)
+            excludes.extend(eog_idx)
+        except Exception:
+            pass
+        ica.exclude = list(set(excludes))
+        ica.apply(raw, verbose=False)
+        return raw
+
     return [
         PipelineConfig("minimal_1-45Hz", _pipeline_minimal,
-                       "Bandpass 1-45 Hz, resample"),
+                       "Bandpass 1-45 Hz"),
         PipelineConfig("wide_0.1-100Hz", _pipeline_wide,
-                       "Wide bandpass 0.1-100 Hz, resample"),
+                       "Wide bandpass 0.1-100 Hz"),
         PipelineConfig("narrow_1-30Hz", _pipeline_narrow,
-                       "Narrow bandpass 1-30 Hz, resample"),
+                       "Narrow bandpass 1-30 Hz"),
         PipelineConfig("notch50_1-45Hz", _pipeline_notch50,
                        "Notch 50+100 Hz, bandpass 1-45 Hz"),
         PipelineConfig("ssp_ecg_1-45Hz", _pipeline_ssp_ecg,
                        "SSP ECG (2 proj), bandpass 1-45 Hz"),
         PipelineConfig("ssp_ecg_eog_1-45Hz", _pipeline_ssp_ecg_eog,
                        "SSP ECG+EOG, bandpass 1-45 Hz"),
+        PipelineConfig("ica_ecg_1-45Hz", _pipeline_ica_ecg,
+                       "ICA ECG removal (Picard, 20 comp), bandpass 1-45 Hz"),
+        PipelineConfig("ica_ecg_eog_1-45Hz", _pipeline_ica_ecg_eog,
+                       "ICA ECG+EOG removal (Picard, 20 comp), bandpass 1-45 Hz"),
+        PipelineConfig("ica_aggressive_1-45Hz", _pipeline_ica_aggressive,
+                       "ICA aggressive (Picard, 40 comp, low threshold), bandpass 1-45 Hz"),
     ]
