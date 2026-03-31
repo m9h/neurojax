@@ -159,7 +159,7 @@ limit predictive validity. The Welsh Advanced Neuroimaging Database
 (WAND)~\citep{Mayerand2025wand} provides all of them in 170 healthy
 volunteers: ultra-strong-gradient diffusion MRI (300~mT/m AxCaliber),
 quantitative MRI (T1/T2/QMT/MP2RAGE), perfusion (pCASL, TRUST),
-spectroscopy (GABA/glutamate), 275-channel MEG, and TMS-EEG.
+spectroscopy (GABA/glutamate), 275-channel MEG, and TMS-EMG.
 
 We introduce \textbf{NeuroJAX}, a differentiable, GPU-accelerated Python
 toolkit built on JAX~\citep{Bradbury2018jax} and
@@ -183,10 +183,10 @@ Large-scale computational models of brain dynamics
 subject-specific input: (1) structural connectivity and conduction delays
 from diffusion MRI, (2) regional tissue properties---myelination, metabolite
 concentrations, perfusion---that constrain biophysical parameters, and
-(3) functional recordings (MEG, fMRI, TMS-EEG) that provide the fitting
+(3) functional recordings (MEG, fMRI, TMS-EMG) that provide the fitting
 targets. The tension in the field is that most datasets provide only a
 subset: the Human Connectome Project gives excellent diffusion and fMRI but
-no TMS; clinical TMS-EEG studies rarely include microstructural MRI.
+no TMS; clinical TMS-EMG studies rarely include microstructural MRI.
 
 WAND~\citep{Mayerand2025wand} closes this gap with seven imaging sessions
 per subject on the Connectom 300~mT/m scanner at CUBRIC Cardiff,
@@ -264,7 +264,7 @@ end-to-end:
 %
 where $\theta$ are biophysical parameters, $\mathbf{C}$/$\mathbf{D}$ are
 the structural connectome weights/delays, $\mathbf{L}$ is the leadfield,
-and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE). This
+and $m$ indexes modalities (FC, FCD, MEP amplitude, MEP MSE). This
 enables gradient-based fitting with per-region heterogeneous parameters
 across hundreds of brain regions --- a problem that grid search or
 finite-difference methods cannot touch, but that
@@ -357,7 +357,7 @@ ses-03 & Prisma 3T    & fMRI + perf  & T1w, T2w (grad-corrected), fieldmaps, pCA
 ses-04 & 7T           & MRS + anat   & semi-LASER: ACC, occipital, auditory, sensorimotor; T1w \\
 ses-05 & Prisma 3T    & MRS + anat   & semi-LASER (test--retest); MEGA-PRESS; T1w \\
 ses-06 & Connectom 3T & Structural   & MP2RAGE (0.7\,mm), 7-echo GRE (0.67\,mm mag+phase), T2w (0.21\,mm in-plane) \\
-ses-08 & TMS lab      & TMS-EEG      & SICI protocol (3 runs, .mat format) \\
+ses-08 & TMS lab      & TMS + EMG    & SICI paired-pulse, 3 $\times$ 70 trials, EMG from FDI muscle \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -929,32 +929,33 @@ MEGA-PRESS cannot separate without additional editing
 \label{fig:mrs-mega}
 \end{figure}
 
-\subsection{TMS-EEG processing}
+\subsection{TMS-EMG processing}
 
 TMS data from ses-08 used the short-interval intracortical inhibition
 (SICI) paired-pulse protocol with the Magstim BiStim$^2$ system.
-SICI pairs a subthreshold conditioning stimulus (80\% RMT, 2\,ms ISI)
-with a suprathreshold test stimulus to probe GABAergic inhibition in
-motor cortex. Three runs were acquired per subject.
+SICI pairs a subthreshold conditioning stimulus ($\sim$80\% RMT,
+$\sim$2\,ms ISI) with a suprathreshold test stimulus to probe
+GABA$_A$-mediated intracortical inhibition in motor cortex. Three
+runs of 70 trials each were acquired per subject, with EMG recorded
+from the right first dorsal interosseous via a Digitimer D440-4
+amplifier at 10\,kHz sampling.
 
-Analysis extracts TMS-evoked potentials (TEPs) from the
-CED-recorded EEG/EMG data, time-locked to the TMS pulse.
-After artifact rejection (TMS pulse artifact blanking, muscle
-artifact ICA removal), the TEP waveform is epoched
-($-$100 to +500\,ms) and baseline-corrected. Key TEP components
-(N15, P30, N45, P60, N100, P180) index successive stages of cortical
-processing: early components ($<$50\,ms) reflect local excitability
-while late components ($>$100\,ms) reflect network propagation through
-long-range connections.
+Analysis extracts motor evoked potentials (MEPs) from the EMG
+recording, time-locked to the TMS pulse. After rejection of trials
+with pre-stimulus EMG activity ($>$50\,$\mu$V in the 100\,ms
+pre-TMS window), MEP peak-to-peak amplitude is measured in the
+15--50\,ms post-TMS window. MEP onset latency ($\sim$20\,ms for
+hand muscles) reflects corticospinal conduction time.
 
-The SICI ratio (conditioned MEP amplitude / unconditioned MEP
-amplitude) provides a functional readout of GABAergic inhibition that
-complements the MRS GABA concentration, linking neurochemistry to
-cortical excitability. In the NeuroJAX framework, TEP waveforms serve
-as fitting targets: the whole-brain model receives a simulated TMS
-impulse at the stimulation site and the predicted network response is
-compared to the measured TEP, enabling gradient-based optimisation of
-connection-specific parameters.
+The SICI ratio (conditioned MEP / unconditioned test MEP) provides
+a functional readout of GABAergic inhibition that directly
+complements the MRS GABA concentration from ses-04/05, linking
+neurochemistry to cortical excitability at the individual level.
+In the NeuroJAX framework, the model predicts cortical excitability
+at M1 from the structural connectome and regional E/I balance
+parameters (constrained by MRS GABA/Glu); the predicted excitability
+maps to MEP amplitude via a corticospinal transfer function, enabling
+gradient-based fitting of the neural mass model to the TMS outcome.
 
 % ============================================================================
 \section{Results}
@@ -1752,15 +1753,20 @@ state analysis~\citep{Gohil2023dynemo}: time-delay embedding + PCA
 preparation, state spectral decomposition, and summary statistics
 (fractional occupancy, lifetime, switching rate).
 
-\subsection{TMS-EEG}
+\subsection{TMS-EMG}
 
-ses-08 SICI (short-interval intracortical inhibition) data were
-acquired with a Magstim BiStim$^2$ (D70 Alpha Flat coil,
-BrainSight neuronavigation, Polaris optical tracking). Three runs
-per subject provide test-pulse and conditioned-pulse TMS-evoked
-potentials (TEPs) for extraction of the N15, P30, N45, P60, N100,
-P180 components. TEP waveforms and global field power serve as
-fitting targets for the whole-brain neural mass model.
+ses-08 SICI data were acquired with a Magstim BiStim$^2$ (D70 Alpha
+Flat coil, BrainSight neuronavigation, Polaris optical tracking).
+EMG was recorded from the right first dorsal interosseous muscle via
+a Digitimer D440-4 amplifier with pre-gelled Ag/AgCl electrodes at
+10\,kHz sampling (CED 1401 + Signal v6.04a). Note: this session
+records motor evoked potentials (MEPs) only --- there is no concurrent
+scalp EEG. Three runs of 70 trials each provide test-pulse and
+conditioned-pulse MEPs. MEP peak-to-peak amplitudes (Run~1:
+$13.7 \pm 1.6$\,mV; Run~2: $20.3 \pm 1.8$\,mV; Run~3:
+$25.5 \pm 2.5$\,mV) and SICI ratios serve as fitting targets for
+the whole-brain neural mass model's prediction of cortical
+excitability at M1.
 
 \section{CUBRIC protocol questions}
 \label{app:cubric}
