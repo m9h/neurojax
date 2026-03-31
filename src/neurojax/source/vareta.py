@@ -42,7 +42,9 @@ import jax
 import jax.numpy as jnp
 
 
-@jax.jit
+from functools import partial
+
+@partial(jax.jit, static_argnames=("n_iter",))
 def vareta(
     data: jnp.ndarray,
     gain: jnp.ndarray,
