@@ -1128,6 +1128,91 @@ JAX enables coupling mechanical deformation fields with neural dynamics
 --- for example, predicting how traumatic brain injury alters
 connectome-level conduction delays.
 
+\subsection{Head model comparison: tissue segmentation to forward models}
+
+The electromagnetic forward model (leadfield matrix $\mathbf{L}$) that
+maps cortical sources to MEG/EEG sensors depends critically on the head
+geometry and tissue conductivities. Three complementary approaches
+generate head models from the WAND structural data, each operating on
+different segmentation inputs:
+
+\begin{table}[htbp]
+\centering
+\caption{Head modelling pipeline comparison. All approaches use the
+same underlying WAND structural data but different segmentation and
+meshing strategies.}
+\label{tab:headmodel}
+\begin{tabular}{p{2.5cm}p{2cm}p{2cm}p{2.5cm}p{3cm}}
+\toprule
+Method & Tissues & Seg.\ input & Mesh type & Strengths \\
+\midrule
+MNE BEM & 3 shells (brain, skull, scalp) & FreeSurfer watershed & BEM triangular surfaces &
+  Standard for MEG, fast, well-validated \\
+brain2mesh (iso2mesh) & 5 tissues (CSF, GM, WM, bone, scalp) & FreeSurfer \texttt{aparc+aseg} + morphological dilation &
+  FEM tetrahedral volume & Customisable, open source, EEG 10--20 landmarks \\
+SimNIBS charm & 10 tissues incl.\ compact/spongy bone & T1w + T2w (DL atlas) &
+  FEM tetrahedral volume & TMS-optimised, best skull model, no FreeSurfer needed \\
+BabelBrain & 5+ tissues & Pseudo-CT from T1w (Plymouth DL) + atlas &
+  FEM volume & FUS/TMS planning, skull conductivity from pseudo-CT \\
+sbi4dwi PINN & Continuous $\sigma(\mathbf{x})$ & Any tissue map &
+  Meshless (neural field) & Differentiable, no mesh generation, GPU-native \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Segmentation inputs.}
+The choice of tissue segmentation determines the head model fidelity.
+WAND provides multiple options from the same subject:
+
+\begin{itemize}
+  \item \textbf{FreeSurfer \texttt{aparc+aseg}} (completed): 68 cortical +
+    19 subcortical labels. Standard for MNE BEM and brain2mesh.
+    Does not segment skull or scalp.
+  \item \textbf{SAMSEG} (completed): Joint T1w+T2w Bayesian segmentation
+    including non-brain tissue (skull label visible in Table~5). Provides
+    a skull estimate from the joint model.
+  \item \textbf{FSL FAST} (completed): Tissue probability maps
+    (CSF/GM/WM) for voxelwise partial volume estimation. Used by
+    brain2mesh for the brain compartments.
+  \item \textbf{SimNIBS charm}: DL-based 10-tissue segmentation
+    including separate compact and spongy bone --- critical for
+    accurate TMS E-field modelling through the skull. Not yet run
+    (requires SimNIBS installation).
+  \item \textbf{Pseudo-CT} (sbi4dwi \texttt{PseudoCTMapper}): T1w $\to$
+    Hounsfield units via Plymouth DL model, then Archie's Law for
+    skull conductivity. WAND's QMT bone density provides ground-truth
+    validation.
+\end{itemize}
+
+\paragraph{Interaction with voxelwise quantitative maps.}
+The WAND qMRI data enables \emph{subject-specific conductivity
+assignment} rather than population-average values:
+\begin{itemize}
+  \item \textbf{QMT BPF} $\to$ myelin volume fraction $\to$ WM anisotropic
+    conductivity (more myelin = lower transverse conductivity)
+  \item \textbf{T1w/T2w ratio} $\to$ cortical hierarchy proxy $\to$
+    depth-dependent conductivity via LAYNII layer profiles
+  \item \textbf{Pseudo-CT from QMT} $\to$ bone mineral density $\to$
+    skull conductivity via Archie's Law (porosity $\to$ $\sigma$)
+  \item \textbf{FA/diffusion tensor} $\to$ WM anisotropic conductivity
+    tensor (Tuch 2001: $\sigma_{ij} \propto d_{ij}^s$ where $d_{ij}$
+    is the diffusion tensor and $s \approx 1$)
+\end{itemize}
+
+This is the critical link between the qMRI processing (Section~3)
+and the electromagnetic forward model: the tissue property maps
+we computed are not just descriptive --- they directly parameterise
+the conductivity model that determines how cortical sources project
+to sensors.
+
+\paragraph{Meshless alternative.}
+The sbi4dwi \texttt{ConductivityPDELoss} PINN
+(Eq.~\ref{eq:poisson}) avoids mesh generation entirely by learning
+a continuous conductivity field $\sigma(\mathbf{x})$ from the
+segmentation, then solving the Poisson equation via neural network.
+This is fully differentiable, enabling end-to-end gradient flow from
+the forward model through to neural mass parameters.
+
 \subsection{Relaxometry signal models}
 
 Each quantitative MRI acquisition varies a specific physical parameter
