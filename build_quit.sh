@@ -1,124 +1,71 @@
-#!/usr/bin/env bash
-# Build QUIT (QUantitative Imaging Tools) from source on ARM64/aarch64 DGX Spark
-# Usage: bash build_quit.sh 2>&1 | tee build_quit.log
+#!/bin/bash
+# Build QUIT + dependencies from source on ARM64/aarch64 (DGX Spark)
+# Tested on Ubuntu 24.04, aarch64, GCC 13.3
 #
-# Prerequisites (already confirmed available on this system):
-#   cmake, g++, make, libeigen3-dev, zlib1g-dev
+# Prerequisites (all available via apt on Ubuntu 24.04):
+#   cmake (>=3.29 via pip), build-essential, libeigen3-dev, zlib1g-dev,
+#   libceres-dev, nlohmann-json3-dev, libargs-dev
 #
-# QUIT uses a SuperBuild CMake pattern that automatically downloads and builds
-# ITK as an external project. This means no separate ITK installation is needed,
-# but the first build will be slow (~20-30 min) as it compiles ITK from source.
+# Usage: bash build_quit.sh
 set -euo pipefail
 
-QUIT_SRC="/home/mhough/dev/QUIT"
-QUIT_BUILD="${QUIT_SRC}/build"
-INSTALL_PREFIX="/home/mhough/.local"
-NPROC="$(nproc)"
+PREFIX="${HOME}/.local"
+NPROC=$(nproc)
 
-echo "=============================================="
-echo "  QUIT Build Script for ARM64 (aarch64)"
-echo "  $(date)"
-echo "  Cores: ${NPROC}"
-echo "=============================================="
+# 1. CMake >= 3.29 (system cmake 3.28 is too old)
+pip install cmake --upgrade 2>/dev/null
 
-# ---- Step 1: Check build dependencies ----
-echo ""
-echo "=== Step 1: Checking build dependencies ==="
-MISSING=()
-which cmake   >/dev/null 2>&1 || MISSING+=("cmake")
-which g++     >/dev/null 2>&1 || MISSING+=("build-essential")
-which make    >/dev/null 2>&1 || MISSING+=("build-essential")
-test -f /usr/include/eigen3/Eigen/Core || MISSING+=("libeigen3-dev")
-test -f /usr/include/zlib.h            || MISSING+=("zlib1g-dev")
-
-if [ ${#MISSING[@]} -gt 0 ]; then
-    echo "Installing missing packages: ${MISSING[*]}"
-    sudo apt-get update -qq
-    sudo apt-get install -y "${MISSING[@]}"
-else
-    echo "All dependencies found (cmake, g++, eigen3, zlib). Skipping apt."
+# 2. libfmt 11 (system has libfmt 9, QUIT needs 11)
+if [ ! -f "${PREFIX}/lib/libfmt.a" ]; then
+    echo "=== Building libfmt 11 ==="
+    cd /tmp && rm -rf fmt
+    git clone --depth 1 --branch 11.0.0 https://github.com/fmtlib/fmt.git
+    cd fmt && mkdir build && cd build
+    cmake .. -DCMAKE_INSTALL_PREFIX="${PREFIX}" -DFMT_TEST=OFF
+    make -j${NPROC} && make install
 fi
 
-# Also need nlohmann-json and fmt (QUIT deps that may not be vendored)
-for pkg in nlohmann-json3-dev libfmt-dev; do
-    if ! dpkg -s "$pkg" >/dev/null 2>&1; then
-        echo "Installing optional dependency: $pkg"
-        sudo apt-get install -y "$pkg" || echo "WARNING: $pkg not available, QUIT may vendor it"
-    fi
-done
+# 3. args cmake config (libargs-dev has no cmake integration)
+mkdir -p "${PREFIX}/share/cmake/args"
+cat > "${PREFIX}/share/cmake/args/argsConfig.cmake" << 'CMEOF'
+add_library(taywee_args INTERFACE)
+target_include_directories(taywee_args INTERFACE /usr/include)
+add_library(taywee::args ALIAS taywee_args)
+set(args_FOUND TRUE)
+CMEOF
 
-# ---- Step 2: Clone QUIT ----
-echo ""
-echo "=== Step 2: Clone QUIT ==="
-if [ -d "${QUIT_SRC}/.git" ]; then
-    echo "QUIT already cloned at ${QUIT_SRC}"
-    cd "${QUIT_SRC}"
-    git log --oneline -1
-else
-    git clone --recursive https://github.com/spinicist/QUIT.git "${QUIT_SRC}"
+# 4. ITK 5.4 from source (with system Eigen to avoid version conflicts)
+ITK_SRC="${HOME}/dev/ITK"
+ITK_BUILD="${HOME}/dev/ITK-build"
+if [ ! -f "${PREFIX}/lib/cmake/ITK-5.4/ITKConfig.cmake" ]; then
+    echo "=== Building ITK 5.4 ==="
+    [ -d "${ITK_SRC}/.git" ] || git clone --depth 1 --branch v5.4.2 \
+        https://github.com/InsightSoftwareConsortium/ITK.git "${ITK_SRC}"
+    mkdir -p "${ITK_BUILD}" && cd "${ITK_BUILD}"
+    cmake "${ITK_SRC}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+        -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
+        -DITK_USE_SYSTEM_EIGEN=ON
+    make -j${NPROC} && make install
 fi
 
-# ---- Step 3: Configure with CMake ----
-echo ""
-echo "=== Step 3: Configure CMake build ==="
-mkdir -p "${QUIT_BUILD}"
-cd "${QUIT_BUILD}"
-
-# QUIT's top-level CMakeLists.txt is typically a SuperBuild that handles ITK.
-# Check if there's a SuperBuild structure.
-if grep -q "ExternalProject" "${QUIT_SRC}/CMakeLists.txt" 2>/dev/null; then
-    echo "Detected SuperBuild pattern (will download & build ITK automatically)"
-fi
-
+# 5. QUIT
+echo "=== Building QUIT ==="
+QUIT_SRC="${HOME}/dev/QUIT"
+[ -d "${QUIT_SRC}/.git" ] || git clone --depth 1 \
+    https://github.com/spinicist/QUIT.git "${QUIT_SRC}"
+mkdir -p "${QUIT_SRC}/build" && cd "${QUIT_SRC}/build" && rm -rf *
 cmake .. \
     -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX="${INSTALL_PREFIX}" \
-    -DBUILD_SHARED_LIBS=OFF
-
-# ---- Step 4: Build ----
-echo ""
-echo "=== Step 4: Build (using ${NPROC} cores) ==="
-echo "This may take 20-40 minutes on first build (ITK compilation)..."
-time make -j"${NPROC}"
-
-# ---- Step 5: Install ----
-echo ""
-echo "=== Step 5: Install to ${INSTALL_PREFIX} ==="
-make install
-
-# ---- Step 6: Verify ----
-echo ""
-echo "=== Step 6: Verify installation ==="
-
-# QUIT may install a single 'qi' binary or individual tools like qi_despot1
-FOUND=0
-if [ -x "${INSTALL_PREFIX}/bin/qi" ]; then
-    echo "SUCCESS: qi binary found"
-    "${INSTALL_PREFIX}/bin/qi" --help 2>&1 | head -5 || true
-    FOUND=1
-fi
-
-# Check for individual QUIT tools
-for tool in qi_despot1 qi_despot2 qi_vfa qi_afi qi_dream qi_ssfp_planet \
-            qi_mpm_r2s qi_jsr qi_zshim qi_asl qi_perfusion; do
-    if [ -x "${INSTALL_PREFIX}/bin/${tool}" ]; then
-        echo "  Found: ${tool}"
-        FOUND=1
-    fi
-done
-
-if [ "$FOUND" -eq 0 ]; then
-    echo "WARNING: No qi binaries found in ${INSTALL_PREFIX}/bin/"
-    echo "Checking build directory for binaries..."
-    find "${QUIT_BUILD}" -name "qi*" -executable -type f 2>/dev/null | head -10
-    echo ""
-    echo "Build may have failed or install prefix may differ."
-    echo "Check: ${QUIT_BUILD}/CMakeCache.txt for CMAKE_INSTALL_PREFIX"
-fi
+    -DCMAKE_INSTALL_PREFIX="${PREFIX}" \
+    -DCMAKE_PREFIX_PATH="${PREFIX};${PREFIX}/lib/cmake;${PREFIX}/share/cmake" \
+    -DITK_DIR="${PREFIX}/lib/cmake/ITK-5.4" \
+    -Dfmt_DIR="${PREFIX}/lib/cmake/fmt"
+make -j${NPROC} && make install
 
 echo ""
-echo "=============================================="
-echo "  Build finished at $(date)"
-echo "  Binaries: ${INSTALL_PREFIX}/bin/"
-echo "  Add to PATH: export PATH=\"${INSTALL_PREFIX}/bin:\$PATH\""
-echo "=============================================="
+echo "=== QUIT installed ==="
+echo "Binary: ${PREFIX}/bin/qi"
+echo "Add to shell: export LD_LIBRARY_PATH=${PREFIX}/lib:\$LD_LIBRARY_PATH"
+${PREFIX}/bin/qi --version 2>/dev/null || ${PREFIX}/bin/qi --help 2>&1 | head -3
