@@ -93,7 +93,7 @@ limit predictive validity. The Welsh Advanced Neuroimaging Database
 (WAND)~\citep{Mayerand2025wand} provides all of them in 170 healthy
 volunteers: ultra-strong-gradient diffusion MRI (300~mT/m AxCaliber),
 quantitative MRI (T1/T2/QMT/MP2RAGE), perfusion (pCASL, TRUST),
-spectroscopy (GABA/glutamate), 275-channel MEG, and TMS-EEG.
+spectroscopy (GABA/glutamate), 275-channel MEG, and TMS-EMG.
 
 We introduce \textbf{NeuroJAX}, a differentiable, GPU-accelerated Python
 toolkit built on JAX~\citep{Bradbury2018jax} and
@@ -117,10 +117,10 @@ Large-scale computational models of brain dynamics
 subject-specific input: (1) structural connectivity and conduction delays
 from diffusion MRI, (2) regional tissue properties---myelination, metabolite
 concentrations, perfusion---that constrain biophysical parameters, and
-(3) functional recordings (MEG, fMRI, TMS-EEG) that provide the fitting
+(3) functional recordings (MEG, fMRI, TMS-EMG) that provide the fitting
 targets. The tension in the field is that most datasets provide only a
 subset: the Human Connectome Project gives excellent diffusion and fMRI but
-no TMS; clinical TMS-EEG studies rarely include microstructural MRI.
+no TMS; clinical TMS-EMG studies rarely include microstructural MRI.
 
 WAND~\citep{Mayerand2025wand} closes this gap with seven imaging sessions
 per subject on the Connectom 300~mT/m scanner at CUBRIC Cardiff,
@@ -198,7 +198,7 @@ end-to-end:
 %
 where $\theta$ are biophysical parameters, $\mathbf{C}$/$\mathbf{D}$ are
 the structural connectome weights/delays, $\mathbf{L}$ is the leadfield,
-and $m$ indexes modalities (FC, FCD, TEP waveform, sensor MSE). This
+and $m$ indexes modalities (FC, FCD, MEP amplitude, MEP MSE). This
 enables gradient-based fitting with per-region heterogeneous parameters
 across hundreds of brain regions --- a problem that grid search or
 finite-difference methods cannot touch, but that
@@ -291,7 +291,7 @@ ses-03 & Prisma 3T    & fMRI + perf  & T1w, T2w (grad-corrected), fieldmaps, pCA
 ses-04 & 7T           & MRS + anat   & semi-LASER: ACC, occipital, auditory, sensorimotor; T1w \\
 ses-05 & Prisma 3T    & MRS + anat   & semi-LASER (test--retest); MEGA-PRESS; T1w \\
 ses-06 & Connectom 3T & Structural   & MP2RAGE (0.7\,mm), 7-echo GRE (0.67\,mm mag+phase), T2w (0.21\,mm in-plane) \\
-ses-08 & TMS lab      & TMS-EEG      & SICI protocol (3 runs, .mat format) \\
+ses-08 & TMS lab      & TMS + EMG    & SICI paired-pulse, 3 $\times$ 70 trials, EMG from FDI muscle \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -884,32 +884,33 @@ MEGA-PRESS cannot separate without additional editing
 \label{fig:mrs-mega}
 \end{figure}
 
-\subsection{TMS-EEG processing}
+\subsection{TMS-EMG processing}
 
 TMS data from ses-08 used the short-interval intracortical inhibition
 (SICI) paired-pulse protocol with the Magstim BiStim$^2$ system.
-SICI pairs a subthreshold conditioning stimulus (80\% RMT, 2\,ms ISI)
-with a suprathreshold test stimulus to probe GABAergic inhibition in
-motor cortex. Three runs were acquired per subject.
+SICI pairs a subthreshold conditioning stimulus ($\sim$80\% RMT,
+$\sim$2\,ms ISI) with a suprathreshold test stimulus to probe
+GABA$_A$-mediated intracortical inhibition in motor cortex. Three
+runs of 70 trials each were acquired per subject, with EMG recorded
+from the right first dorsal interosseous via a Digitimer D440-4
+amplifier at 10\,kHz sampling.
 
-Analysis extracts TMS-evoked potentials (TEPs) from the
-CED-recorded EEG/EMG data, time-locked to the TMS pulse.
-After artifact rejection (TMS pulse artifact blanking, muscle
-artifact ICA removal), the TEP waveform is epoched
-($-$100 to +500\,ms) and baseline-corrected. Key TEP components
-(N15, P30, N45, P60, N100, P180) index successive stages of cortical
-processing: early components ($<$50\,ms) reflect local excitability
-while late components ($>$100\,ms) reflect network propagation through
-long-range connections.
+Analysis extracts motor evoked potentials (MEPs) from the EMG
+recording, time-locked to the TMS pulse. After rejection of trials
+with pre-stimulus EMG activity ($>$50\,$\mu$V in the 100\,ms
+pre-TMS window), MEP peak-to-peak amplitude is measured in the
+15--50\,ms post-TMS window. MEP onset latency ($\sim$20\,ms for
+hand muscles) reflects corticospinal conduction time.
 
-The SICI ratio (conditioned MEP amplitude / unconditioned MEP
-amplitude) provides a functional readout of GABAergic inhibition that
-complements the MRS GABA concentration, linking neurochemistry to
-cortical excitability. In the NeuroJAX framework, TEP waveforms serve
-as fitting targets: the whole-brain model receives a simulated TMS
-impulse at the stimulation site and the predicted network response is
-compared to the measured TEP, enabling gradient-based optimisation of
-connection-specific parameters.
+The SICI ratio (conditioned MEP / unconditioned test MEP) provides
+a functional readout of GABAergic inhibition that directly
+complements the MRS GABA concentration from ses-04/05, linking
+neurochemistry to cortical excitability at the individual level.
+In the NeuroJAX framework, the model predicts cortical excitability
+at M1 from the structural connectome and regional E/I balance
+parameters (constrained by MRS GABA/Glu); the predicted excitability
+maps to MEP amplitude via a corticospinal transfer function, enabling
+gradient-based fitting of the neural mass model to the TMS outcome.
 
 % ============================================================================
 \section{Results}
@@ -1081,6 +1082,93 @@ acquired) would provide direct validation. The differentiable nature of
 JAX enables coupling mechanical deformation fields with neural dynamics
 --- for example, predicting how traumatic brain injury alters
 connectome-level conduction delays.
+
+\subsection{Head model comparison: tissue segmentation to forward models}
+
+The electromagnetic forward model (leadfield matrix $\mathbf{L}$) that
+maps cortical sources to MEG/EEG sensors depends critically on the head
+geometry and tissue conductivities. Three complementary approaches
+generate head models from the WAND structural data, each operating on
+different segmentation inputs:
+
+\begin{table}[htbp]
+\centering
+\caption{Head modelling pipeline comparison. All approaches use the
+same underlying WAND structural data but different segmentation and
+meshing strategies.}
+\label{tab:headmodel}
+\begin{tabular}{p{2.5cm}p{2cm}p{2cm}p{2.5cm}p{3cm}}
+\toprule
+Method & Tissues & Seg.\ input & Mesh type & Strengths \\
+\midrule
+MNE BEM & 3 shells (brain, skull, scalp) & FreeSurfer watershed & BEM triangular surfaces &
+  Standard for MEG, fast, well-validated \\
+FSL BET+betsurf & 4 surfaces (brain, inner/outer skull, scalp) & T1w (no FreeSurfer) &
+  BEM triangular surfaces & Fast ($\sim$5\,min), no FreeSurfer needed, FSL-native \\
+brain2mesh (iso2mesh) & 5 tissues (CSF, GM, WM, bone, scalp) & FreeSurfer \texttt{aparc+aseg} + morphological dilation &
+  FEM tetrahedral volume & Customisable, open source, EEG 10--20 landmarks \\
+SimNIBS charm & 10 tissues incl.\ compact/spongy bone & T1w + T2w (DL atlas) &
+  FEM tetrahedral volume & TMS-optimised, best skull model, no FreeSurfer needed \\
+BabelBrain & 5+ tissues & Pseudo-CT from T1w (Plymouth DL) + atlas &
+  FEM volume & FUS/TMS planning, skull conductivity from pseudo-CT \\
+sbi4dwi PINN & Continuous $\sigma(\mathbf{x})$ & Any tissue map &
+  Meshless (neural field) & Differentiable, no mesh generation, GPU-native \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Segmentation inputs.}
+The choice of tissue segmentation determines the head model fidelity.
+WAND provides multiple options from the same subject:
+
+\begin{itemize}
+  \item \textbf{FreeSurfer \texttt{aparc+aseg}} (completed): 68 cortical +
+    19 subcortical labels. Standard for MNE BEM and brain2mesh.
+    Does not segment skull or scalp.
+  \item \textbf{SAMSEG} (completed): Joint T1w+T2w Bayesian segmentation
+    including non-brain tissue (skull label visible in Table~5). Provides
+    a skull estimate from the joint model.
+  \item \textbf{FSL FAST} (completed): Tissue probability maps
+    (CSF/GM/WM) for voxelwise partial volume estimation. Used by
+    brain2mesh for the brain compartments.
+  \item \textbf{SimNIBS charm}: DL-based 10-tissue segmentation
+    including separate compact and spongy bone --- critical for
+    accurate TMS E-field modelling through the skull. Not yet run
+    (requires SimNIBS installation).
+  \item \textbf{Pseudo-CT} (sbi4dwi \texttt{PseudoCTMapper}): T1w $\to$
+    Hounsfield units via Plymouth DL model, then Archie's Law for
+    skull conductivity. WAND's QMT bone density provides ground-truth
+    validation.
+\end{itemize}
+
+\paragraph{Interaction with voxelwise quantitative maps.}
+The WAND qMRI data enables \emph{subject-specific conductivity
+assignment} rather than population-average values:
+\begin{itemize}
+  \item \textbf{QMT BPF} $\to$ myelin volume fraction $\to$ WM anisotropic
+    conductivity (more myelin = lower transverse conductivity)
+  \item \textbf{T1w/T2w ratio} $\to$ cortical hierarchy proxy $\to$
+    depth-dependent conductivity via LAYNII layer profiles
+  \item \textbf{Pseudo-CT from QMT} $\to$ bone mineral density $\to$
+    skull conductivity via Archie's Law (porosity $\to$ $\sigma$)
+  \item \textbf{FA/diffusion tensor} $\to$ WM anisotropic conductivity
+    tensor (Tuch 2001: $\sigma_{ij} \propto d_{ij}^s$ where $d_{ij}$
+    is the diffusion tensor and $s \approx 1$)
+\end{itemize}
+
+This is the critical link between the qMRI processing (Section~3)
+and the electromagnetic forward model: the tissue property maps
+we computed are not just descriptive --- they directly parameterise
+the conductivity model that determines how cortical sources project
+to sensors.
+
+\paragraph{Meshless alternative.}
+The sbi4dwi \texttt{ConductivityPDELoss} PINN
+(Eq.~\ref{eq:poisson}) avoids mesh generation entirely by learning
+a continuous conductivity field $\sigma(\mathbf{x})$ from the
+segmentation, then solving the Poisson equation via neural network.
+This is fully differentiable, enabling end-to-end gradient flow from
+the forward model through to neural mass parameters.
 
 \subsection{Relaxometry signal models}
 
@@ -1276,144 +1364,6 @@ cortical depth-resolved analysis using LAYNII~v2.10.0:
 Deep layers (V--VI, feedforward, higher iron) vs.\ superficial
 (I--III, feedback, heavier myelination) maps to the
 $\xi$-$\alpha$NET hierarchy~\citep{ValdesSosa2026xialphanet}.
-
-\subsection{Resting-state functional connectivity gradients}
-
-Resting-state BOLD fMRI (ses-03, Prisma 3T, TR\,=\,2\,s,
-2\,mm isotropic, 300~volumes, 10~minutes) was analysed using the
-\texttt{jaxoccoli} library within \texttt{hippy-feat}, a JAX-native
-functional connectivity toolkit that reimplements essential algorithms
-from hypercoil~\citep{Ciric2022hypercoil} in vbjax-style pure
-functional form.
-
-\paragraph{Fieldmap distortion correction.}
-Dual-echo GRE fieldmaps ($\Delta$TE\,=\,2.46\,ms) were used for
-B\textsubscript{0} distortion correction via FSL
-\texttt{fsl\_prepare\_fieldmap} and \texttt{fugue}. The fieldmap was
-brain-extracted, smoothed, registered to EPI space (FLIRT 6-DOF),
-and applied to the motion-corrected BOLD timeseries. The corrected
-and uncorrected FC matrices correlated at $r = 0.970$, but individual
-edges differed by up to 0.79 and higher-order gradients showed
-increasing sensitivity to correction (Gradient~5 alignment
-$r = 0.893$; Fig.~\ref{fig:fieldmap}).
-
-\paragraph{Multi-atlas parcellation.}
-The distortion-corrected BOLD was parcellated with four atlases:
-Schaefer 400 (Yeo 7 networks), Schaefer 100, Harvard-Oxford cortical
-(48~ROIs), and DiFuMo 64. All parcellations included bandpass
-filtering (0.01--0.1\,Hz), linear detrending, and z-score
-normalisation via \texttt{nilearn.maskers.NiftiLabelsMasker}.
-
-\paragraph{Connectivity measures.}
-Twenty connectivity measures were computed on the Schaefer 400
-parcellation using \texttt{jaxoccoli}: full Pearson correlation,
-partial correlation, precision matrix, covariance (with and without
-L2 regularisation), Laplacian eigenmaps, diffusion map embedding,
-spectral features (algebraic connectivity, spectral gap, spectral
-radius), relaxed modularity, Chebyshev spectral filtering, dynamic
-FC (sliding window, $w = 30$~TRs), phase-locking value, signal
-envelope, Wasserstein and Gromov-Wasserstein FC distance, and
-Bayesian variance-aware FC via the conjugate normal-inverse-gamma
-GLM.
-
-\paragraph{Dimensionality estimation.}
-MELODIC identified 67 independent components, retaining 61.7\% of
-variance at the PCA stage. Parallel analysis on the Schaefer 400
-parcellation estimated 16 significant components, while broken stick
-also yielded 16. The Schaefer 100 parcellation gave 6--8 components,
-consistent with the 7 canonical Yeo networks.
-
-\paragraph{FC gradient analysis.}
-Diffusion map embedding~\citep{Coifman2006diffusion} of the
-absolute-value FC matrix (Schaefer 400, $\alpha = 0.5$) produced a
-principal gradient (Gradient~1) aligned with the Margulies et
-al.~\citep{Margulies2016situated} unimodal-to-transmodal hierarchy
-($\rho = 0.333$, $p < 10^{-4}$) and the Sydnor et
-al.~\citep{Sydnor2021axis} sensorimotor-association axis
-($\rho = 0.213$, $p < 10^{-4}$).  Gradient~1 also showed the
-expected negative correlation with HCP T1w/T2w myelination
-($\rho = -0.166$, $p < 0.001$) and Neurosynth cognitive PC1
-($\rho = -0.379$, $p < 10^{-4}$; Fig.~\ref{fig:neuromaps}).
-
-\paragraph{Neurotransmitter receptor architecture.}
-Comparison with 9 PET-derived receptor density maps from
-\texttt{neuromaps}~\citep{Markello2022neuromaps} revealed that
-Gradient~1 correlated significantly with serotonin 5-HT2A receptor
-density ($\rho = 0.217$, $p < 10^{-4}$), 5-HT1A ($\rho = 0.181$,
-$p < 0.001$), and negatively with histamine H3 ($\rho = -0.159$,
-$p < 0.01$). Gradient~2 was dominated by neuromodulatory receptor
-distributions: histamine H3 ($\rho = 0.331$), mu-opioid
-($\rho = 0.281$), serotonin transporter ($\rho = 0.251$), and D1
-($\rho = 0.217$; all $p < 10^{-4}$;
-Fig.~\ref{fig:receptor_scatter}). These findings are consistent with
-the neurotransmitter landscape reported by Hansen et
-al.~\citep{Hansen2022neurotransmitter}, linking the principal FC
-gradient to hierarchical cortical organisation and the second
-gradient to monoaminergic neuromodulation.
-
-\paragraph{Dynamic FC.}
-Sliding-window correlation (60\,s windows) revealed substantial
-temporal variability in FC (mean edge SD\,=\,0.247, max\,=\,0.489),
-with modularity fluctuating between $Q = 0.005$ and $Q = 0.014$
-across windows. This temporal structure provides the FCD targets for
-whole-brain model fitting.
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_fc_gradients.png}
-\caption{Resting-state FC gradients (Gradient 1--3) from diffusion
-map embedding of the Schaefer 400 FC matrix, projected onto cortical
-volume slices. Gradient~1 captures the unimodal (blue) to transmodal
-(red) axis; Gradient~2 separates visual from somatomotor cortex;
-Gradient~3 distinguishes temporal from prefrontal regions. Data from
-WAND sub-08033 ses-03, distortion-corrected.}
-\label{fig:fc_gradients}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_neuromaps_correlations.png}
-\caption{Spearman correlations between FC gradients and neuromaps
-reference maps (17 structural, functional, and PET maps). Gradient~1
-is anchored by Neurosynth cognitive PC1 and Margulies FC gradients.
-Gradient~2 is dominated by neuromodulatory receptor densities
-(H3, mu-opioid, SERT, D1). Red: $p < 0.001$; orange: $p < 0.01$;
-yellow: $p < 0.05$. Uncorrected for spatial autocorrelation.}
-\label{fig:neuromaps}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=\textwidth]{figures/fig_spectral_embedding.png}
-\caption{Diffusion map embedding of the Schaefer 400 FC matrix
-coloured by Yeo 7 network assignment. Left: Gradient~1 vs Gradient~2
-separates default mode and frontoparietal networks from visual and
-somatomotor. Right: eigenspectrum showing a smooth decay consistent
-with the cortical gradient hierarchy. Spectral gap $\lambda_2 = 0.729$.}
-\label{fig:spectral_embedding}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig_receptor_scatter.png}
-\caption{Scatter plots of FC gradient values vs selected neuromaps
-reference maps (Schaefer 400 parcels, Yeo 7 network colours).
-Top row: Gradient~1 vs Margulies reference, Neurosynth cognitive PC1,
-myelin, and SA axis. Bottom row: Gradient~2 vs H3, mu-opioid, SERT,
-and D1 receptor densities.}
-\label{fig:receptor_scatter}
-\end{figure}
-
-\begin{figure}[htbp]
-\centering
-\includegraphics[width=0.85\textwidth]{figures/fig_fieldmap_correction.png}
-\caption{Effect of fieldmap distortion correction on FC gradients.
-Top row: gradient values across parcels. Bottom row: corrected vs
-uncorrected scatter ($r$ values shown). Gradients 1--3 are robust to
-correction ($r > 0.95$), but higher-order gradients show increasing
-sensitivity.}
-\label{fig:fieldmap}
-\end{figure}
 
 % ============================================================================
 \section{Discussion}
@@ -1658,15 +1608,20 @@ state analysis~\citep{Gohil2023dynemo}: time-delay embedding + PCA
 preparation, state spectral decomposition, and summary statistics
 (fractional occupancy, lifetime, switching rate).
 
-\subsection{TMS-EEG}
+\subsection{TMS-EMG}
 
-ses-08 SICI (short-interval intracortical inhibition) data were
-acquired with a Magstim BiStim$^2$ (D70 Alpha Flat coil,
-BrainSight neuronavigation, Polaris optical tracking). Three runs
-per subject provide test-pulse and conditioned-pulse TMS-evoked
-potentials (TEPs) for extraction of the N15, P30, N45, P60, N100,
-P180 components. TEP waveforms and global field power serve as
-fitting targets for the whole-brain neural mass model.
+ses-08 SICI data were acquired with a Magstim BiStim$^2$ (D70 Alpha
+Flat coil, BrainSight neuronavigation, Polaris optical tracking).
+EMG was recorded from the right first dorsal interosseous muscle via
+a Digitimer D440-4 amplifier with pre-gelled Ag/AgCl electrodes at
+10\,kHz sampling (CED 1401 + Signal v6.04a). Note: this session
+records motor evoked potentials (MEPs) only --- there is no concurrent
+scalp EEG. Three runs of 70 trials each provide test-pulse and
+conditioned-pulse MEPs. MEP peak-to-peak amplitudes (Run~1:
+$13.7 \pm 1.6$\,mV; Run~2: $20.3 \pm 1.8$\,mV; Run~3:
+$25.5 \pm 2.5$\,mV) and SICI ratios serve as fitting targets for
+the whole-brain neural mass model's prediction of cortical
+excitability at M1.
 
 \section{CUBRIC protocol questions}
 \label{app:cubric}
