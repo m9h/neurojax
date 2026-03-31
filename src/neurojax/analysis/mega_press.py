@@ -151,6 +151,68 @@ def apply_correction(
     return fid * np.exp(2j * np.pi * freq_shift * t + 1j * phase_shift)
 
 
+def align_edit_pairs(
+    edit_on: np.ndarray,
+    edit_off: np.ndarray,
+    dwell_time: float,
+    centre_freq: float = 123.0e6,
+    freq_range: tuple[float, float] = (1.8, 4.2),
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    """Frequency-and-phase correction per edit pair.
+
+    Estimates the correction from each OFF transient (more stable peaks)
+    and applies the SAME correction to both ON[i] and OFF[i], preserving
+    their relative phase relationship for clean subtraction.
+
+    Parameters
+    ----------
+    edit_on : ndarray, shape (n_spec, n_dyn)
+        Edit-ON FIDs.
+    edit_off : ndarray, shape (n_spec, n_dyn)
+        Edit-OFF FIDs.
+    dwell_time : float
+        Dwell time in seconds.
+    centre_freq : float
+        Spectrometer frequency in Hz.
+    freq_range : tuple
+        PPM range for alignment.
+
+    Returns
+    -------
+    edit_on_aligned : ndarray, shape (n_spec, n_dyn)
+    edit_off_aligned : ndarray, shape (n_spec, n_dyn)
+    freq_shifts : ndarray, shape (n_dyn,)
+        Per-pair frequency corrections in Hz.
+    phase_shifts : ndarray, shape (n_dyn,)
+        Per-pair phase corrections in radians.
+    """
+    n_spec, n_dyn = edit_off.shape
+
+    # Reference: mean of all edit-OFF transients
+    ref = edit_off.mean(axis=1)
+
+    freq_shifts = np.zeros(n_dyn)
+    phase_shifts = np.zeros(n_dyn)
+
+    edit_on_out = edit_on.copy()
+    edit_off_out = edit_off.copy()
+
+    for i in range(n_dyn):
+        # Estimate correction from OFF (more stable peaks)
+        df, dp = spectral_registration(
+            edit_off[:, i], ref, dwell_time,
+            freq_range=freq_range, centre_freq=centre_freq,
+        )
+        freq_shifts[i] = df
+        phase_shifts[i] = dp
+
+        # Apply SAME correction to both ON and OFF
+        edit_off_out[:, i] = apply_correction(edit_off[:, i], df, dp, dwell_time)
+        edit_on_out[:, i] = apply_correction(edit_on[:, i], df, dp, dwell_time)
+
+    return edit_on_out, edit_off_out, freq_shifts, phase_shifts
+
+
 def reject_outliers(
     fids: np.ndarray,
     dwell_time: float,
@@ -187,6 +249,7 @@ def process_mega_press(
     align: bool = True,
     reject: bool = True,
     reject_threshold: float = 3.0,
+    paired_alignment: bool = False,
 ) -> MegaPressResult:
     """Process MEGA-PRESS data from raw multi-coil to difference spectrum.
 
@@ -204,6 +267,11 @@ def process_mega_press(
         Whether to reject outlier transients.
     reject_threshold : float
         Z-score threshold for outlier rejection.
+    paired_alignment : bool
+        If True, use paired frequency-and-phase correction (FPC):
+        estimate correction from OFF transients and apply the same
+        correction to both ON and OFF for each dynamic. This preserves
+        the relative phase relationship for clean subtraction.
 
     Returns
     -------
@@ -230,8 +298,19 @@ def process_mega_press(
     freq_shifts = np.zeros(2 * n_dyn)
     phase_shifts = np.zeros(2 * n_dyn)
 
-    if align:
-        # Use mean of edit-OFF as reference (more stable peaks)
+    if align and paired_alignment:
+        # Paired FPC: estimate from OFF, apply same to both ON and OFF
+        edit_on, edit_off, pair_freqs, pair_phases = align_edit_pairs(
+            edit_on, edit_off, dwell_time, centre_freq=centre_freq,
+        )
+        # Store: OFF shifts in [:n_dyn], ON shifts in [n_dyn:] (same values)
+        freq_shifts[:n_dyn] = pair_freqs
+        freq_shifts[n_dyn:] = pair_freqs
+        phase_shifts[:n_dyn] = pair_phases
+        phase_shifts[n_dyn:] = pair_phases
+
+    elif align:
+        # Independent alignment (original behaviour)
         ref = edit_off.mean(axis=1)
 
         for i in range(n_dyn):
