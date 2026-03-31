@@ -739,6 +739,73 @@ Currently numpy-based with python loops (slow for 100K+ streamlines). Future: JA
 
 ---
 
+## Implementation Status (sub-08033 validation)
+
+### qMRI Relaxometry Pipeline
+
+| Fit | Tool | Result | Status |
+|-----|------|--------|--------|
+| VFA T1 (DESPOT1) | Python linear + QUIT NLLS | WM 906ms (Python), 1131ms (QUIT) | Validated, both agree |
+| DESPOT1-HIFI (T1+B1) | JAX + QUIT | B1=1.31 (both agree), T1 corrected +277ms | B1 field confirmed |
+| QMT BPF | Python delta-MTR proxy | 0.12 (semi-quantitative) | Needs pulse param calibration for absolute |
+| QMT BPF (Ramani) | JAX (qMRLab port) | Model works, BPF=0.24 (high — pulse params need CUBRIC calibration) | Architecture ready |
+| Multi-echo T2*/R2* | Python WLS + QUIT | 32.6ms / 32.2ms (0.4ms agreement) | Validated |
+| MP2RAGE | QUIT | UNI image produced | Quantitative T1 needs correct sequence timing from Siemens headers |
+| mcDESPOT MWF | JAX (classical) | MWF=0.30, 26% valid — degenerate | Known limitation |
+| mcDESPOT MWF | JAX MultiCompartmentNODE | Recovers MWF with DESPOT1-initialized start | Mixing net must be frozen |
+
+### Perfusion Pipeline
+
+| Measure | Tool | Result | Status |
+|---------|------|--------|--------|
+| Blood T1 | Block-averaged IR (16 blocks × 60 TIs) | 1548ms fitted, 1594ms null-point | Fixed (was 460ms/default) |
+| CBF | FSL oxford_asl | 32.3 ml/100g/min | Working |
+| TRUST OEF | Structural-guided SSS ROI + voxel-wise T2 QC | T2=76ms, OEF=14% | Real measurement, protocol sensitivity limited |
+| CMRO₂ | CBF × OEF × CaO₂ | 41 µmol/100g/min (low, follows OEF) | Working |
+| qBOLD OEF | JAX R2/R2' separation | R2=23.8Hz, R2'=10.1Hz | Fitting works, DBV calibration needed |
+
+### PINN / Neural ODE
+
+| Module | Result | Status |
+|--------|--------|--------|
+| RelaxometryPINN (B1) | Spatial B1 extremely smooth (nn-diff std=0.0006) | Works, but CUBRIC small-FA protocol prevents M0/B1 disentanglement |
+| BlochNeuralODE | Forward pass + gradients verified | 7/7 tests pass |
+| MultiCompartmentNODE | bSSFP forward + joint loss + MWF recovery | 6/6 tests pass |
+| qBOLD module | Signal model + R2/R2' fitting + OEF conversion | 10/10 tests pass |
+| Ramani QMT (qMRLab port) | Sf table + Bloch ODE + Ramani signal + fitting | 10/10 tests pass |
+
+### Vascular Modeling (VMTK)
+
+| Step | Tool | Result |
+|------|------|--------|
+| Frangi vesselness | scikit-image | 693K vessel voxels from 384×512×60 angio |
+| Surface extraction | VTK marching cubes | 9.8K points after cleanup |
+| Centerlines | VMTK Voronoi-based | 3 paths, vessel radius 0.21-0.94mm |
+| VMTK on ARM64 | Built from source (VTK 9.3 + ITK 5.4) | All 7 Python modules working |
+
+### Tools on DGX Spark (ARM64)
+
+| Tool | Status | Install |
+|------|--------|---------|
+| QUIT | Built from source, working | `~/.local/bin/qi` |
+| qMRLab | Loads in Octave, too slow for production | Native Octave 8.4 |
+| VMTK | Built from source, Python wrapping working | Fork m9h/vmtk |
+| FSL 6.0.7 | Pre-installed | oxford_asl, bet, flirt |
+| FreeSurfer | Available for ses-03 | recon-all outputs |
+| neurojax | JAX 0.4 (CPU fallback) | `.venv/` |
+
+### Key Findings
+
+1. **B1 field at CUBRIC 3T:** median B1=1.31 across the brain. The CUBRIC mcDESPOT protocol (FA 2-18°, IR FA=5°) has weak B1 sensitivity — S ∝ M0×B1 in the small-angle regime, making M0 and B1 degenerate. Both JAX HIFI and QUIT HIFI agree on B1=1.31.
+
+2. **InvRec is multi-block:** 16 discrete IR blocks of 60 readouts (not continuous Look-Locker). Block-averaged fitting gives T1_blood=1548ms with null-point cross-validation at 1594ms.
+
+3. **Phase-contrast angio at labeling plane:** z=[-105,-28]mm covers the neck (feeding arteries), not the TRUST/InvRec slice (z≈+10mm). Used for vessel modeling and total CBF validation, not SSS ROI guidance.
+
+4. **qMRLab models are better but slow:** The Ramani QMT model with full pulse shape characterization (Gauss-Hanning, super-Lorentzian lineshape) is ported to JAX (`neurojax.qmri.qmt_ramani`) but needs CUBRIC-specific pulse parameter calibration for absolute BPF.
+
+---
+
 ## Quantitative MRI Available in WAND
 
 WAND ses-02 and ses-06 contain rich qMRI data beyond standard T1w:
