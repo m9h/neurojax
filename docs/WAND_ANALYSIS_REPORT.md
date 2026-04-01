@@ -871,6 +871,42 @@ Currently numpy-based with python loops (slow for 100K+ streamlines). Future: JA
 | qBOLD module | Signal model + R2/R2' fitting + OEF conversion | 10/10 tests pass |
 | Ramani QMT (qMRLab port) | Sf table + Bloch ODE + Ramani signal + fitting | 10/10 tests pass |
 
+### MEG Processing Pipeline (sub-08033 validated)
+
+**Container:** `neurojax/meg:latest` (NGC JAX 26.03 + MNE 1.11 + coffeine + specparam 2.0 + picard + jaxctrl)
+
+| Stage | Tool | Result | Time |
+|-------|------|--------|------|
+| **MEGqc** | neurojax megqc | GQI=0.930, 6 noisy ch, 50Hz clean, ECG 93bpm (corr=0.046), 1.6% muscle | 5 min |
+| **Adversarial eval** | 9 pipelines × 6 SNR × 3 freqs | ICA preserves signal (corr=1.000), SSP distorts (corr=0.958-0.997) | 15 min |
+| **Sensor features** | coffeine filterbank covs | 7 bands × (274, 274) covariance matrices | 55s |
+| **GPU entropy** | JAX vmap (4 measures) | 274 ch × 59 epochs, 600x faster than mne-features | 204s |
+| **Source recon** | MNE sLORETA, fsaverage sphere oct5 | (150019, 68) parcellated timeseries (full 600s) | 108s |
+| **HMM** | neurojax GaussianHMM (8 states, 20 epochs, 3 inits) | Lifetimes 49-117ms, switching 17.6 Hz | 39s |
+| **DyNeMo** | neurojax DyNeMo VAE (8 modes, 15 epochs) | ELBO 10.3→1.8, converged | 355s |
+| **TuckerTDE** | HOSVD (rank_ch=10, rank_lag=8) + HMM | Lifetimes 45-130ms, switching 18.3 Hz | 133s |
+| **Windowed SINDy** | jaxctrl SINDyOptimizer, 119 windows | Jacobian eigenvalues [-0.66, 10.4] | 8s |
+| **Windowed DMD** | jaxctrl KoopmanEstimator, 119 windows | Freq range [0, 27.4] Hz | 3s |
+| **Log-signatures** | signax depth=3, 119 windows | 8 change points, sig_dim=91 | 8s |
+| **specparam** | specparam 2.0 on Welch PSD (0.49 Hz resolution) | R²=0.81-0.90, exponents 0.27-0.64, IAF 16-22 Hz | ~2 min |
+| **VARETA vs sLORETA** | Fixed-orientation comparison | Running (sphere forward model, 274×1467 sources) | TBD |
+
+**MEG Key Findings:**
+
+1. **Preprocessing:** ICA (Picard) preserves neural signal perfectly (corr=1.000) while SSP distorts 3-12%. For sub-08033 (clean data, GQI=0.93), filter-only is equivalent to ICA. Recommended: 1-45 Hz bandpass + ICA ECG removal.
+
+2. **Brain states:** HMM identifies 8 states with physiological lifetimes (49-117ms) and switching rate (17.6 Hz). TuckerTDE (HOSVD alternative) finds similar but not identical state structure (18.3 Hz switching).
+
+3. **Spectral decomposition (specparam):** State 3 has steepest aperiodic slope (0.64 ± 0.33) — most inhibition-dominated. States 1,2,6,7 have shallow slopes (~0.27-0.29). IAF values higher than typical alpha, suggesting dominant peaks in beta range for many parcels.
+
+4. **Decomposition comparison:** SINDy eigenvalue sign changes, DMD dominant frequencies, and log-signature change points provide independent measures of dynamics that can be compared against HMM state transitions.
+
+5. **Dimensionality:** neurojax Laplace estimation on real parcellated data confirms PCA rank=80 is sufficient for 68 parcels × 15 lags.
+
+6. **Forward model limitation:** Current sphere model (single-shell, fixed origin) gives crude leadfields. Need multi-layer BEM (Brainstorm/OpenMEEG) for accurate VARETA vs sLORETA comparison. FreeSurfer surfaces available for sub-08033.
+
+**Test coverage:** 92 tests across 8 test files (entropy 21, adversarial 21, megqc 13, specparam 9, ICA comparison 12, VARETA 9, dimensionality 9).
+
 ### Vascular Modeling (VMTK)
 
 | Step | Tool | Result |
