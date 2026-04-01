@@ -5,7 +5,9 @@
 **WAND** (Welsh Advanced Neuroimaging Database) — 170 healthy volunteers, CUBRIC Cardiff.
 Ultra-strong gradient (300 mT/m) Connectom scanner + CTF 275-channel MEG + TMS-EEG.
 
-**Reference subject:** sub-08033 (all modalities confirmed, downloaded locally: 10.24 GB)
+**Reference subject:** sub-08033 (all modalities confirmed, all raw data at `/data/raw/wand/`)
+**Full dataset:** 170 subjects, all sessions, available at `/data/raw/wand/` on DGX Spark
+**CUBRIC pre-computed derivatives:** eddy_qc (169 subjects), mriqc (~1783 scans), hd-bet (~1304 files)
 
 | Session | Modalities | Key Data |
 |---------|-----------|----------|
@@ -43,7 +45,19 @@ Build a digital twin per subject using all available modalities.
 - QMT → bound pool fraction (myelin content)
 - T1w/T2w ratio → myelination proxy (validated against QMT)
 
-**Status:** neurojax code complete (loaders, models, analysis). Processing scripts ready. Need to run on WAND data.
+**Status:** Processing running on DGX Spark for sub-08033:
+- FreeSurfer recon-all: **Complete** (both T1ws + T2w)
+- T1Prep (v0.3.1): **Complete** ses-02 (10m52s) + ses-03 (11m35s) — 3 upstream bugs found and patched
+- fsl_anat: **Complete** ses-02, ses-03, ses-06
+- bedpostx_gpu (3 fibers): **Complete** on CUBRIC CHARMED
+- dtifit: **Complete** on CUBRIC eddy output
+- MMORF T1w → Oxford-MM-1: **Complete** (147s)
+- MMORF T1w+DTI → Oxford-MM-1: **Complete** (923s) — flagship multimodal registration
+- QSMxT (MEGRE 6-echo): **Complete** — QSM Chimap, T2*/R2* maps at 0.67mm
+- T2* fitting (7-echo GRE): **Complete**
+- MRS sLASER fitting (fsl_mrs): **Complete** — 4 VOIs, NAA=15.8mM CRLB 2.1%
+- MRS MEGA-PRESS editing: **Complete** — 4 VOIs, GABA/NAA 0.73-1.30
+- DWI eddy (AxCaliber, local): Running
 
 ### Phase 2: TMS-EEG Fitting
 Fit whole-brain model to each subject's TMS-evoked potentials.
@@ -449,14 +463,38 @@ Each tool has a distinct strength for WAND:
 
 All transforms stored in `fsl-reg/` for comparison. The registration comparison across 170 subjects (which tool gives best cortical alignment? best subcortical? best white matter tract overlap?) is itself a methods contribution.
 
-### 4. MRS Quantification via fsl_mrs
-WAND MRS is sLASER acquisitions (`.dat` format) with water references in 4 brain regions per session:
+### 4. MRS Quantification via fsl_mrs + mrs-jax
+
+WAND MRS: sLASER (ses-04, 7T TE=78ms) + MEGA-PRESS (ses-05, 3T TE=68ms) with water references in 4 brain regions per session:
 - Anterior cingulate cortex (ACC) — prefrontal GABA/glutamate
 - Occipital cortex — visual area baseline
 - Right auditory cortex — sensory processing
 - Left sensorimotor cortex — motor excitability
 
-Pipeline: `svs_segment` creates voxel mask in T1 space → FAST tissue fractions (GM/WM/CSF) → `fsl_mrs` with Newton fitting and water-scaled absolute quantification. Two sessions (ses-04, ses-05) enable test-retest reliability.
+**Pipeline (validated on DGX Spark for sub-08033):**
+
+1. **TWIX → NIfTI-MRS**: `spec2nii` (PatientName bug fixed upstream) or native `mrs-jax.read_twix()`
+2. **Preprocessing**: SVD coil combination (32 coils → 1), spectral registration alignment, MAD outlier rejection
+3. **sLASER fitting** (ses-04): `fsl_mrs` with WIN-MRS-Basis-Sets sLASER basis (GOIA-WURST, TE=78ms, 19 metabolites simulated via `fsl_mrs_sim`)
+4. **MEGA-PRESS editing** (ses-05): `mrs-jax` MEGA-PRESS pipeline — paired FPC alignment, edit-ON/OFF subtraction, GABA Gaussian fitting at 3.0 ppm
+5. **Quantification**: Water-referenced tissue-corrected concentrations (Gasparovic 2006)
+
+**Results (sub-08033):**
+
+| Session | Sequence | VOI | NAA (mM) | GABA | GABA/NAA | CRLB |
+|---------|----------|-----|----------|------|----------|------|
+| ses-04 | sLASER 7T | ACC | 15.8 | 3.7 mM | — | 2.1% |
+| ses-04 | sLASER 7T | Occ | 26.6 | 24.3 mM* | — | 1.3% |
+| ses-05 | MEGA 3T | ACC | — | — | 0.73 | — |
+| ses-05 | MEGA 3T | Occ | — | — | 1.30 | — |
+| ses-05 | MEGA 3T | Aud | — | — | 1.08 | — |
+| ses-05 | MEGA 3T | SM | — | — | 0.94 | — |
+
+*sLASER absolute concentrations for non-ACC VOIs need sub-echo timing calibration.
+
+**mrs-jax** (github.com/m9h/mrs-jax): Standalone package extracted from neurojax — 97 tests, validated on Big GABA (12 Siemens subjects), ISMRM Fitting Challenge (28 spectra), NIfTI-MRS standard, and WAND. Features: MEGA-PRESS + HERMES editing, JAX backend (jit/vmap/grad), Philips SDAT + LCModel I/O, QC reports, and a differentiable MRSI simulator for whole-brain metabolic mapping.
+
+Two sessions (ses-04, ses-05) enable test-retest reliability of metabolite quantification.
 
 ### 5. Microstructure-Informed Connectome (Not Just Streamline Counts)
 Standard connectomes use streamline count for weights and fiber_length/7 m/s for delays. WAND enables a better approach:
@@ -536,14 +574,65 @@ Both tools standardize the parcellation step — same atlas, same registration �
 ### 11. BIDS Derivatives Compliance
 Each processing stage produces its own derivatives directory with `dataset_description.json` recording tool versions and provenance. Outputs follow BIDS naming conventions so neurojax loaders (BIDSConnectomeLoader, WANDMEGLoader) can discover them automatically. Full specification in `docs/BIDS_DERIVATIVES_STRUCTURE.md`.
 
-### 10. Parallel Processing Strategy
-The dependency graph allows significant parallelism:
-- **Independent** (run simultaneously): fsl_anat, FreeSurfer recon-all, DWI preprocessing, qMRI fitting
-- **After DWI**: bedpostx (bottleneck: ~12-24h CPU, ~1h GPU) → xtract, TRACULA, connectome
-- **After FreeSurfer**: advanced segmentations, surface projections, TRACULA
-- **After both**: MEG source reconstruction, TMS fitting
+### 10. Parallel Processing Strategy (DGX Spark)
 
-On a multi-core workstation or cluster, total wall time for one subject is ~24h (dominated by bedpostx and recon-all running in parallel).
+Processing validated on DGX Spark (Grace ARM64 + GB10 GPU, 20 CPUs, 120GB unified memory). Jobs managed via SLURM (`sbatch`) with named log files in `derivatives/logs/`.
+
+**Measured runtimes for sub-08033:**
+
+| Pipeline | GPU? | Time | Notes |
+|----------|------|------|-------|
+| fsl_anat (per session) | No | ~10 min | Bias corr + FAST + MNI reg |
+| T1Prep (per session) | Yes | ~11 min | AMAP seg + surfaces + thickness (NGC PyTorch 26.03 container or uv venv) |
+| FreeSurfer recon-all | No | ~8 h | Both T1ws + T2w pial refinement |
+| BET | No | 4.5 min | Quick skull strip |
+| FLIRT (per pair) | No | 20 s | 6-DOF rigid |
+| dtifit | No | 25 s | On CUBRIC eddy output |
+| bedpostx_gpu (3 fibers) | Yes | ~20 min | CUBRIC CHARMED, fsl_sub shell fallback |
+| MMORF T1w → Oxford-MM-1 | Yes | 147 s | Unimodal baseline |
+| MMORF T1w+DTI → Oxford-MM-1 | Yes | 923 s | Flagship multimodal with tensor reorientation |
+| QSMxT (6-echo MEGRE) | No | ~50 min | ROMEO + PDF + TGV (Julia, 3 ARM64 bugs fixed) |
+| T2* fitting (7-echo GRE) | No | 1.5 min | Log-linear least squares |
+| MRS sLASER fitting | No | ~2 min | spec2nii + fsl_mrs (per VOI) |
+| MRS MEGA-PRESS editing | No | ~3 min | mrs-jax pipeline (per VOI) |
+
+**Dependency chain:**
+```
+Independent (run simultaneously):
+  fsl_anat ─────────────────────────── ✓
+  FreeSurfer recon-all ─────────────── ✓
+  T1Prep ───────────────────────────── ✓ (needs NGC container or uv venv)
+  BET ──────────────────────────────── ✓
+  DWI eddy (AxCaliber, local) ──────── running
+  MRS spec2nii + fitting ───────────── ✓
+
+After fsl_anat:
+  FLIRT cross-session ──────────────── ✓
+  FLIRT struct → Oxford-MM-1 ───────── ✓
+
+After eddy (CUBRIC CHARMED):
+  dtifit ───────────────────────────── ✓
+  bedpostx_gpu ─────────────────────── ✓
+  → probtrackx2 / TRACULA
+
+After FLIRT + dtifit:
+  MMORF T1w → Oxford-MM-1 ─────────── ✓
+  MMORF T1w+DTI → Oxford-MM-1 ──────── ✓
+
+After QSMxT:
+  QSM + R2* + T2* maps ────────────── ✓
+  → Cortical layer analysis (LAYNII)
+
+After bedpostx + FreeSurfer:
+  → xtract, connectome, MEG source recon, TMS fitting
+```
+
+**Issues encountered and resolved:**
+- T1Prep: 3 bugs patched (deterministic CUDA, version string, case-sensitive atlas) — bug report at `docs/t1prep_bug_report.md`
+- QSMxT/Julia: 3 ARM64 bugs (FFTW FakeLazyLibrary, Polyester cfunction, threadlocal in LSMR) — fixed in forked QSM.jl
+- bedpostx: fsl_sub parallel env config for single-node SLURM — `map_ram: false` fix
+- spec2nii: PatientName numeric → string cast for WAND TWIX data
+- fsl_sub SLURM config: added `parallel_envs` and `large_job_split_pe` for map_ram queues
 
 ---
 
@@ -551,17 +640,25 @@ On a multi-core workstation or cluster, total wall time for one subject is ~24h 
 
 All scripts in `scripts/wand_processing/`:
 
-| Script | Stage | Runtime |
-|--------|-------|---------|
-| `00_setup_env.sh` | Environment (FSL 6.0.7, FreeSurfer 8.2.0) | — |
-| `01_freesurfer_recon.sh` | recon-all + T2 pial refinement | ~6-8h |
-| `02_dwi_preproc.sh` | topup + eddy for AxCaliber/CHARMED | ~30-60min |
-| `03_bedpostx_xtract.sh` | Crossing fibers + xtract tract segmentation | ~12-24h |
-| `04_tracula.sh` | FreeSurfer+FSL tract-specific analysis | ~2-4h |
-| `05_connectome.sh` | probtrackx2 → Cmat/Lmat CSV | ~4-8h |
-| `06_run_all.sh` | Master script (all above) | ~24-48h |
-| `07_microstructure_comparison.sh` | DIPY/FSL/sbi4dwi/DMI.jl AxCaliber | varies |
-| `08_advanced_freesurfer.sh` | T1w/T2w, SAMSEG, thalamic nuclei, SynthSeg | ~2-4h |
+| Script | Stage | Runtime | Status |
+|--------|-------|---------|--------|
+| `00_setup_env.sh` | Environment (FSL, paths for DGX Spark) | — | Updated for DGX |
+| `01_freesurfer_recon.sh` | recon-all + T2 pial refinement | ~6-8h | ✓ sub-08033 |
+| `02_dwi_preproc.sh` | topup + eddy for AxCaliber/CHARMED | ~24h (AxCaliber) | Running |
+| `09_submit_sub08033.sh` | sbatch parallel submission for sub-08033 | — | ✓ |
+| `21_dtifit.sh` | dtifit on CUBRIC CHARMED | 25s | ✓ |
+| `22_flirt_diff2struct.sh` | DWI→T1w affine | 9s | ✓ |
+| `23_flirt_struct2omm1.sh` | T1w→Oxford-MM-1 affine init | 34s | ✓ |
+| `24_mmorf_t1w.sh` | MMORF T1w-only → Oxford-MM-1 | 147s | ✓ |
+| `25_mmorf_t1w_dti.sh` | MMORF T1w+DTI → Oxford-MM-1 (flagship) | 923s | ✓ |
+| `36_mrs_fslmrs.sh` | spec2nii + fsl_mrs sLASER fitting | ~2min/VOI | ✓ |
+| `39_mrs_validation.py` | MRS validation (ISMRM + Big GABA + WAND) | ~1min | ✓ |
+| `run_t1prep.sh` | T1Prep via uv venv on DGX | ~11min | ✓ |
+| `03_bedpostx_xtract.sh` | Crossing fibers + xtract tract segmentation | ~20min GPU | ✓ (bedpostx) |
+| `04_tracula.sh` | FreeSurfer+FSL tract-specific analysis | ~2-4h | Needs FreeSurfer |
+| `05_connectome.sh` | probtrackx2 → Cmat/Lmat CSV | ~4-8h | After bedpostx |
+| `07_microstructure_comparison.sh` | DIPY/FSL/sbi4dwi/DMI.jl AxCaliber | varies | After AxCaliber eddy |
+| `08_advanced_freesurfer.sh` | T1w/T2w, SAMSEG, thalamic nuclei, SynthSeg | ~2-4h | Needs FreeSurfer |
 
 ---
 
