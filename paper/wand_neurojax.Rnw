@@ -1840,6 +1840,112 @@ state analysis~\citep{Gohil2023dynemo}: time-delay embedding + PCA
 preparation, state spectral decomposition, and summary statistics
 (fractional occupancy, lifetime, switching rate).
 
+\subsubsection{Source imaging methods}
+\label{app:source-imaging}
+
+The MEG inverse problem --- estimating neural current density $\mathbf{J}$
+from sensor measurements $\mathbf{Y} = \mathbf{L}\mathbf{J} + \mathbf{n}$
+--- is ill-posed ($n_{\text{sources}} \gg n_{\text{sensors}}$) and requires
+regularisation. Methods are conventionally grouped by their regularisation
+strategy, though they also differ in how they represent dipole orientation,
+spatial extent (point vs.~patch), and surface smoothing. Below we summarise
+the principal families, followed by the neurojax implementations.
+
+\paragraph{Minimum-norm family.}
+The foundational approach~\citep{Hamalainen1994mne} minimises
+$\|\mathbf{J}\|^2$ subject to $\mathbf{Y} = \mathbf{L}\mathbf{J}$,
+yielding the minimum $L_2$-norm solution.
+Dynamic statistical parametric mapping
+(dSPM)~\citep{Dale2000dspm} normalises by estimated noise to produce
+$F$-statistic maps. Standardised LORETA
+(sLORETA)~\citep{PascualMarqui2002sloreta} instead normalises by
+the resolution matrix diagonal, achieving zero localisation bias for
+single dipoles. Exact LORETA (eLORETA) extends this with exact,
+zero-bias normalisation.
+
+\paragraph{Biophysical spatial priors.}
+LORETA~\citep{PascualMarqui1994loreta} uses a discrete Laplacian on the
+cortical mesh as a smoothness prior. LAURA~\citep{GraveDePeralta2001laura,
+GraveDePeralta2004laura} replaces the Laplacian with a biophysically
+motivated $1/d^3$ weight matrix encoding dipole field decay, yielding
+sharper reconstructions. VARETA incorporates data-driven adaptive resolution,
+varying the degree of spatial smoothing across the cortex.
+
+\paragraph{Beamformers.}
+Spatial filtering approaches, notably linearly constrained minimum variance
+(LCMV)~\citep{VanVeen1997lcmv} and its variants SAM and DICS, construct
+adaptive spatial filters that pass activity from a target location while
+suppressing interference. Unlike distributed methods, beamformers are
+typically applied location-by-location and assume uncorrelated sources.
+
+\paragraph{Bayesian sparse methods.}
+Sparse Bayesian Learning (CHAMPAGNE)~\citep{Wipf2010champagne} uses
+a type-II maximum likelihood framework with source-specific precision
+hyperparameters, automatically inducing sparsity. HIGGS~\citep{ValdesSosa2023higgs}
+extends this to joint source imaging and connectivity estimation via a
+hidden Gaussian graphical spectral model.
+
+\paragraph{Deep learning approaches.}
+Recent work applies neural networks to learn nonlinear mappings from sensor
+data to source space. ESINet/ConvDip~\citep{Hecker2021esinet,Hecker2022esinet}
+uses convolutional architectures trained on simulated data. Physics-informed
+approaches~\citep{Bore2024pignn} combine neural network flexibility with
+biophysical constraints (e.g., the forward model) as differentiable loss
+terms.
+
+\paragraph{Dipole orientation and patch representation.}
+Orientation constraint modes include: \emph{fixed} (normal to cortical
+surface --- single scalar per source), \emph{loose} (allowing $\pm 30°$
+deviation from normal~\citep{Lin2006loose}), and \emph{free} (three
+unconstrained components). Patch extent varies from point sources
+(single vertex) to smooth patches (Laplacian/Gaussian smoothing) to
+data-driven variable patches (GNN receptive fields).
+
+Table~\ref{tab:source-methods} compares the methods implemented in
+neurojax alongside established software.
+
+\begin{table}[h]
+\centering
+\small
+\caption{Source imaging method comparison.}
+\label{tab:source-methods}
+\begin{tabular}{llllll}
+\hline
+\textbf{Method} & \textbf{Family} & \textbf{Orient.} & \textbf{Patch} & \textbf{Smoothing} & \textbf{Software} \\
+\hline
+MNE             & $L_2$ norm       & fix/loose/free & point   & none        & MNE-Python, neurojax \\
+dSPM            & $L_2$ norm       & fix/loose      & point   & none        & MNE-Python, neurojax \\
+sLORETA         & $L_2$ norm       & fix/loose      & smooth  & resolution  & MNE-Python, neurojax \\
+eLORETA         & $L_2$ norm       & fix/loose      & smooth  & exact       & MNE-Python, neurojax \\
+LORETA          & Laplacian        & fixed          & smooth  & Laplacian   & sLORETA/KEY \\
+LAURA           & biophysical      & fixed          & smooth  & $1/d^3$     & Cartool, neurojax \\
+VARETA          & adaptive         & fixed          & variable& data-driven & HIGGS-MATLAB, neurojax \\
+LCMV            & beamformer       & fix/free       & point   & none        & MNE-Python, neurojax \\
+SAM             & beamformer       & optimised      & point   & none        & CTF, neurojax \\
+DICS            & beamformer       & fix/free       & point   & none        & MNE-Python, neurojax \\
+CHAMPAGNE       & Bayesian sparse  & free           & point   & none        & NUTMEG, neurojax \\
+HIGGS           & Bayesian graph   & free           & variable& graphical   & BC-VARETA, neurojax \\
+ADMM            & $L_1$/TV         & fixed          & variable& TV/wavelet  & neurojax \\
+ESINet          & deep learning    & fixed          & learned & CNN         & ESINet \\
+PI-GNN          & deep learning    & fix/loose/free & variable& graph conv  & neurojax \\
+\hline
+\end{tabular}
+\end{table}
+
+\paragraph{Physics-Informed GNN (PI-GNN).}
+The neurojax PI-GNN module combines a physics-informed initialisation
+(truncated SVD pseudo-inverse of the leadfield) with graph neural network
+message-passing on the cortical mesh topology. Multimodal vertex features
+--- surface normals, curvature, myelin maps, and sulcal depth --- are
+concatenated with the initial source estimate and refined through $K$
+rounds of graph convolution using equinox modules and jraph. The composite
+loss function balances data fidelity
+$\|\mathbf{Y} - \mathbf{L}\hat{\mathbf{J}}\|^2$, graph Laplacian
+smoothness $\text{tr}(\hat{\mathbf{J}}^\top \mathbf{L}_G \hat{\mathbf{J}})$,
+orientation constraint penalties, and $L_1$ sparsity. The entire pipeline
+is end-to-end differentiable via JAX automatic differentiation, enabling
+gradient-based optimisation of all hyperparameters.
+
 \subsection{TMS-EMG}
 
 ses-08 SICI data were acquired with a Magstim BiStim$^2$ (D70 Alpha

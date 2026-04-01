@@ -1406,7 +1406,6 @@ name = "jaxctrl"
 version = "0.1.0"
 source = { editable = "../jaxctrl" }
 dependencies = [
-    { name = "diffrax" },
     { name = "equinox" },
     { name = "jax" },
     { name = "jaxlib" },
@@ -1415,11 +1414,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "beartype", marker = "extra == 'tests'" },
-    { name = "diffrax", specifier = ">=0.7.2" },
     { name = "diffrax", marker = "extra == 'diffrax'", specifier = ">=0.6.0" },
-    { name = "dysts", marker = "extra == 'benchmarks'", specifier = ">=0.95" },
     { name = "equinox", specifier = ">=0.11.0" },
-    { name = "gymnax", marker = "extra == 'benchmarks'", specifier = ">=0.0.9" },
     { name = "hgx", marker = "extra == 'hypergraph'", specifier = ">=0.1.0" },
     { name = "jax", specifier = ">=0.4.20,<0.5" },
     { name = "jaxlib", specifier = ">=0.4.20,<0.5" },
@@ -1429,7 +1425,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'tests'" },
     { name = "ruff", marker = "extra == 'dev'" },
 ]
-provides-extras = ["solvers", "hypergraph", "diffrax", "dev", "tests", "benchmarks"]
+provides-extras = ["solvers", "hypergraph", "diffrax", "dev", "tests"]
 
 [[package]]
 name = "jaxlib"
@@ -2084,6 +2080,7 @@ dependencies = [
     { name = "mne" },
     { name = "nibabel" },
     { name = "numpy" },
+    { name = "openmeeg" },
     { name = "optax" },
     { name = "optimistix" },
     { name = "pynwb" },
@@ -2151,6 +2148,7 @@ requires-dist = [
     { name = "myst-parser", marker = "extra == 'doc'" },
     { name = "nibabel", specifier = ">=5.4.2" },
     { name = "numpy", specifier = ">=1.26.0" },
+    { name = "openmeeg", specifier = ">=2.5.16" },
     { name = "openneuro-py", marker = "extra == 'test'" },
     { name = "optax", specifier = ">=0.1.9" },
     { name = "optimistix", specifier = ">=0.0.1" },
@@ -2313,6 +2311,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/c6/a1/a303104dc55fc546a3f6914c842d3da471c64eec92043aef8f652eb6c524/openai-1.109.1.tar.gz", hash = "sha256:d173ed8dbca665892a6db099b4a2dfac624f94d20a93f46eb0b56aae940ed869", size = 564133, upload-time = "2025-09-24T13:00:53.075Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1d/2a/7dd3d207ec669cacc1f186fd856a0f61dbc255d24f6fdc1a6715d6051b0f/openai-1.109.1-py3-none-any.whl", hash = "sha256:6bcaf57086cf59159b8e27447e4e7dd019db5d29a438072fbd49c290c7e65315", size = 948627, upload-time = "2025-09-24T13:00:50.754Z" },
+]
+
+[[package]]
+name = "openmeeg"
+version = "2.5.16"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/59/1e/7016386798ac54c65e8601fb98061dc4f2aef965d9f5c07245a666020f9e/openmeeg-2.5.16-cp310-abi3-macosx_10_15_x86_64.whl", hash = "sha256:83437ecf3a74590bf3daf891219261ac6255b6d3e3680c9e58d0af8b59c29b18", size = 12940443, upload-time = "2026-02-03T14:37:35.439Z" },
+    { url = "https://files.pythonhosted.org/packages/d0/96/f355843b05134f13cba0b6e62cc4f52d35fbdfcd2f69a94b0ae73daa8484/openmeeg-2.5.16-cp310-abi3-macosx_11_0_arm64.whl", hash = "sha256:7b7d7fe670f9534886a522dd7c04b113fc5d499b770bb686e78974f251733c4b", size = 11951656, upload-time = "2026-02-03T14:37:37.841Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/e5/8751969c32517cb9bb6c48377589da61eba7ec5c1965f1752fd4389a0c7a/openmeeg-2.5.16-cp310-abi3-manylinux_2_28_aarch64.whl", hash = "sha256:44706461935eedab9e9209b5d2e1de4350221e305f659c153387e7ccc4f18276", size = 17580856, upload-time = "2026-02-03T14:37:40.051Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/51/2d2201713850f8f882450a22b90ac76275b8e734e4a86abadcd35f682923/openmeeg-2.5.16-cp310-abi3-manylinux_2_28_x86_64.whl", hash = "sha256:55b5ecd35bdb013e0fe1863835ac12095c0159a9128d0b6831540ff3b3660d8e", size = 17265986, upload-time = "2026-02-03T14:37:43.003Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/4e/25a1503926aad82e8e4526947bb4043f5cb315157ae64661dd97824d229b/openmeeg-2.5.16-cp310-abi3-win_amd64.whl", hash = "sha256:8b3ac420561c8e9ddf8073486da22327b68e40b1c77cc88378dad2b504d03b17", size = 8886770, upload-time = "2026-02-03T14:37:45.041Z" },
 ]
 
 [[package]]
