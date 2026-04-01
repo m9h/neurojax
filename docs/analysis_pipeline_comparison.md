@@ -120,6 +120,103 @@ Three ecosystems for MEG/EEG dynamic brain state analysis, applied to the same d
 
 ---
 
+## FreeSurfer Processing: WAND T1w/T2w Strategy
+
+### Literature & Dataset Review (2026-03-29)
+
+The WAND team (McNabb et al. 2025, *Scientific Data* 12:220) **does not distribute FreeSurfer derivatives**. Their provided derivatives are limited to HD-BET brain extraction, eddy QC, and MRIQC. Only one published study (Stylianopoulou et al. 2025, *Scientific Reports*) has run FreeSurfer on WAND data (126 subjects, Desikan-Killiany atlas), but does not specify which T1w session was used.
+
+### The Two T1w Acquisitions
+
+| Parameter | ses-02 (Connectom 3T, 300mT/m) | ses-03 (Prisma 3T) |
+|---|---|---|
+| Matrix | 192 × 256 × 256 | 176 × 256 × 256 |
+| FOV | 256 × 256 × 192 mm | 256 × 288 × 176 mm |
+| Voxel size | 1 × 1 × 1 mm | 1 × 1 × 1 mm |
+| TR / TE / TI | 2300 / 2 / 857 ms | 2250 / 3.06 / 850 ms |
+| Flip angle | 9° | 9° |
+| Data type | FLOAT | SHORT |
+
+**Key findings:**
+- Different scanners, different TR/TE/TI → cannot average via `mri_robust_template`
+- Different matrix sizes → recon-all rejects multiple `-i` inputs ("mismatched dimensions")
+- ses-03 T2w (1×1×2 mm, 256×256×88) is not co-registered with either T1w; recon-all `-T2pial` handles registration internally via BBR
+- ses-03 Prisma protocol is closest to HCP/ADNI standard MPRAGE
+- ses-03 has 288mm FOV on one axis → requires `-cw256` flag
+- ses-02 Connectom T1w is co-registered with DWI session (important for TRACULA)
+
+### Processing Strategy
+
+Run **two separate recon-all** pipelines per subject to compare and serve different downstream needs:
+
+1. **`sub-XXXXX_ses-02`** — Connectom 3T T1w only
+   - Best for DWI integration (TRACULA, tractography, connectomics)
+   - Same-session coregistration with AxCaliber/CHARMED diffusion data
+2. **`sub-XXXXX_ses-03`** — Prisma 3T T1w + gradient-corrected T2w (`-T2pial -cw256`)
+   - Best for cortical morphometry (T2w improves pial surface accuracy)
+   - Standard MPRAGE protocol, comparable to HCP/ADNI
+   - T1w/T2w ratio available for myelin mapping (Glasser & Van Essen 2011)
+3. **`sub-XXXXX_ses-04`** — 7T 0.7mm iso T1w MPRAGE (`-hires`)
+   - Sub-millimeter cortical surface reconstruction
+   - Best for laminar/columnar analysis, fine-grained parcellation
+   - 7T also has MP2RAGE (ses-06, 0.7mm) and multi-echo GRE (0.67mm) for quantitative mapping
+
+Both runs include advanced FreeSurfer 8.2.0 segmentations:
+- Hippocampal subfields + amygdala nuclei
+- Thalamic nuclei
+- Hypothalamic subunits
+- Brainstem substructures
+- SynthSeg contrast-invariant parcellation
+
+If longitudinal-style within-subject template is needed later, use `recon-all -base` + `recon-all -long` across the two sessions.
+
+### Thalamic Connectivity-Based Segmentation (2026-03-31)
+
+Implemented Johansen-Berg & Behrens probtrackx2 thalamic parcellation using CUBRIC-preprocessed CHARMED data + bedpostx_gpu + FreeSurfer aparc+aseg cortical targets.
+
+**Method**: Seed from thalamus (aseg labels 10/49), 7 cortical targets per hemisphere (prefrontal, premotor, M1, somatosensory, posterior parietal, temporal, occipital). Hybrid target definition: Desikan-Killiany for most regions, BA4/BA6 exvivo labels for motor/premotor split. 5000 samples per voxel via probtrackx2_gpu, winner-takes-all classification via find_the_biggest.
+
+**Containers**: freesurfer-tracula (FS 7.4.1) for TRACULA/probtrackx2, freesurfer (FS 8.2.0) for recon-all.
+
+**Results (sub-08033, lh/rh voxel counts at 2mm):**
+
+| Region | lh | rh | Expected Nucleus |
+|---|---|---|---|
+| Somatosensory | 471 | 475 | VPL/VPM |
+| Occipital | 213 | 129 | LGN |
+| Premotor | 185 | 171 | VA |
+| Primary Motor | 152 | 195 | VL |
+| Post. Parietal | 121 | 147 | Pulvinar/LP |
+| Temporal | 52 | 21 | MGN |
+| Prefrontal | 20 | 34 | MD |
+
+**7T Validation — T2* Iron Mapping (ses-06 multi-echo GRE, 0.67mm)**
+
+Cross-session registration chain: ses-06 MEGRE → ses-04 7T T1w (rigid, same scanner) → ses-02 3T T1w (rigid, cross-scanner). T2* fitted from 7 echoes (5-35ms) via log-linear monoexponential.
+
+| Region | lh T2* (ms) | rh T2* (ms) | Iron interpretation |
+|---|---|---|---|
+| Prefrontal | 24.2 ± 5.9 | 25.0 ± 5.4 | Highest iron |
+| Premotor | 24.3 ± 7.1 | 25.2 ± 5.7 | High |
+| Primary Motor | 25.1 ± 4.2 | 25.1 ± 3.7 | Moderate |
+| Somatosensory | 26.0 ± 3.6 | 24.8 ± 3.2 | Variable |
+| Post. Parietal | 26.4 ± 3.6 | 25.2 ± 3.4 | Lower |
+| Temporal | 27.0 ± 4.9 | 25.6 ± 3.9 | Low |
+| Occipital | 27.9 ± 3.2 | 24.6 ± 2.8 | Lowest (lh) |
+
+T2* range is narrow (24-28ms). Anterior-to-posterior gradient broadly consistent with known iron distribution but the prefrontal (MD) showing shortest T2* is unexpected — may reflect registration imprecision or spatial blur from the 2mm→1mm warping chain. Laterality differences in occipital/somatosensory warrant investigation.
+
+**TODO**: Improve registration quality (see below), repeat with subject-specific FNIRT nonlinear warp, sample T2* in native 7T space using inverse transforms.
+
+### References
+- McNabb CB et al. (2025) WAND: A multi-modal dataset. *Scientific Data* 12:220. DOI:10.1038/s41597-024-04154-7
+- Stylianopoulou et al. (2025) Decoding brain structure-function dynamics. *Scientific Reports*. DOI:10.1038/s41598-025-24232-z
+- Behrens et al. (2003) Non-invasive mapping of connections between human thalamus and cortex. *Nature Neuroscience* 6(7):750-757
+- Johansen-Berg et al. (2005) Functional-anatomical validation of diffusion tractography-based segmentation of the human thalamus. *Cerebral Cortex* 15(1):31-39
+- WAND GIN repository: https://gin.g-node.org/CUBRIC/WAND
+
+---
+
 ## Planned Additions
 
 - [ ] SPM-Python DCM oracle container

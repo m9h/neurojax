@@ -1107,6 +1107,80 @@ This is implementable in JAX: the surface mesh defines a sparse adjacency, the o
 
 ---
 
+## FreeSurfer & Thalamic Connectivity Processing (2026-03-28 → 2026-03-31)
+
+### Infrastructure
+
+Podman container pipeline for FreeSurfer 8.2.0 (recon-all, advanced segmentations) and FreeSurfer 7.4.1 (TRACULA — dmri_ binaries dropped from 8.x). GPU-accelerated via RTX 2080: CUDA PyTorch for SynthStrip/SynthSeg/SynthMorph, bedpostx_gpu for ball-and-stick fitting, probtrackx2_gpu for tractography.
+
+WAND team does not distribute FreeSurfer derivatives (McNabb et al. 2025). Only Stylianopoulou et al. 2025 has published FS on WAND (126 subjects, DK atlas).
+
+### Three recon-all Runs per Subject
+
+| Run | Scanner | Resolution | Flags | Purpose |
+|---|---|---|---|---|
+| `sub-XXXXX_ses-02` | Connectom 3T (300mT/m) | 1mm iso, 192×256×256 | `-all` | DWI/TRACULA integration |
+| `sub-XXXXX_ses-03` | Prisma 3T | 1mm iso, 176×256×256 | `-all -T2pial -cw256` | Cortical morphometry (T2w pial refinement) |
+| `sub-XXXXX_ses-04` | 7T | 0.7mm iso, 224×320×320 | `-all -hires` | Sub-millimeter parcellation |
+
+All include advanced segmentations: hippocampal subfields + amygdala nuclei, thalamic nuclei (25/hemisphere), hypothalamic subunits, brainstem substructures. MCR R2019b installed for Bayesian segmentation tools.
+
+**Key finding:** ses-02 and ses-03 T1w cannot be averaged (different scanners, TR/TE/TI, matrix sizes). ses-03 needs `-cw256` for 288mm FOV.
+
+### TRACULA (42-Tract Reconstruction)
+
+Uses CUBRIC-preprocessed CHARMED data (eddy_cuda + topup + s2v, from `derivatives/eddy_qc/preprocessed/`). Registered to ses-02 FreeSurfer recon via BBR. bedpostx_gpu with 3-fiber model, followed by `dmri_paths` MCMC pathway reconstruction. 42 tracts including bilateral CST, AF, SLF1-3, ILF, UF, ATR, OR, fornix, and corpus callosum segments.
+
+### Thalamic Connectivity-Based Segmentation (Johansen-Berg & Behrens)
+
+**Method:** probtrackx2_gpu seeding from thalamus (aseg labels 10/49) to 7 cortical targets per hemisphere. Hybrid target definition: Desikan-Killiany parcellation for most regions, BA4/BA6 exvivo labels for motor/premotor split. 5000 samples/voxel, winner-takes-all via `find_the_biggest`.
+
+**sub-08033 Results (lh/rh voxel counts at 2mm):**
+
+| Region | Expected Nucleus | lh | rh |
+|---|---|---|---|
+| Somatosensory | VPL/VPM | 471 | 475 |
+| Occipital | LGN | 213 | 129 |
+| Premotor | VA | 185 | 171 |
+| Primary Motor | VL | 152 | 195 |
+| Post. Parietal | Pulvinar/LP | 121 | 147 |
+| Temporal | MGN | 52 | 21 |
+| Prefrontal | MD | 20 | 34 |
+
+### 7T T2* Iron Validation
+
+T2* fitted from ses-06 multi-echo GRE (7 echoes, 5-35ms, 0.67mm iso). Cross-session registration: ses-06 → ses-04 (rigid, same 7T scanner) → ses-02 (rigid, cross-scanner). Thalamus registration Dice = 0.94. Tissue sanity: thalamus 25.3ms, WM 30.1ms (expected at 7T).
+
+| Region | lh T2* (ms) | rh T2* (ms) |
+|---|---|---|
+| Prefrontal (MD) | 24.2 ± 5.9 | 25.0 ± 5.4 |
+| Premotor (VA) | 24.3 ± 7.1 | 25.2 ± 5.7 |
+| Primary Motor (VL) | 25.1 ± 4.2 | 25.1 ± 3.7 |
+| Somatosensory (VPL) | 26.0 ± 3.6 | 24.8 ± 3.2 |
+| Post. Parietal (Pu) | 26.4 ± 3.6 | 25.2 ± 3.4 |
+| Temporal (MGN) | 27.0 ± 4.9 | 25.6 ± 3.9 |
+| Occipital (LGN) | 27.9 ± 3.2 | 24.6 ± 2.8 |
+
+LH shows anterior(short T2*)→posterior(long T2*) gradient. RH range is narrower. LH/RH occipital asymmetry (27.9 vs 24.6ms) likely reflects small sample size (129 rh voxels).
+
+**Limitation:** 27x resolution mismatch between connectivity labels (2mm) and T2* (0.67mm). Next step: run connectivity segmentation from ses-04 7T hires recon — same scanner as MEGRE, eliminates cross-scanner registration, 3x more thalamic voxels.
+
+### Processing Scripts
+
+All at `scripts/wand_processing/`:
+- `fs_recon_container.sh` — recon-all per session (runs in FS 8.2.0 container)
+- `tracula_container.sh` — TRACULA pipeline (runs in FS 7.4.1 container)
+- `slurm_freesurfer.sh` — Slurm array job for 177-subject batch
+- `29_thalamic_connectivity_seg.sh` — Johansen-Berg thalamic parcellation
+- `30_thalamic_7T_validation.py` — T2* iron validation
+
+### Containers
+- `localhost/freesurfer:8.2.0` — recon-all, advanced segs, CUDA PyTorch
+- `docker.io/freesurfer/freesurfer:7.4.1` — TRACULA (full dmri_* tools)
+- Both with GPU passthrough, FSL mounted at `/home/mhough/fsl/`
+
+---
+
 ## Key References
 
 1. Momi D et al. (2023). TMS-evoked responses are driven by recurrent large-scale network dynamics. *eLife* 12:e83232.
