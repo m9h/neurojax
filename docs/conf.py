@@ -15,9 +15,66 @@ extensions = [
     'sphinx.ext.napoleon',  # Support for Google-style docstrings
     'sphinx.ext.viewcode',
     'sphinx.ext.mathjax',
+    'sphinx_autodoc_typehints',
     'myst_parser',          # Markdown support
     'sphinx_copybutton',
     'sphinxcontrib.bibtex',
+]
+
+# -- Mock imports for ReadTheDocs ------------------------------------------------
+# These packages contain compiled C/CUDA extensions or heavy native dependencies
+# that are not available in the ReadTheDocs build environment. Mocking them
+# allows autodoc to introspect the Python source without actually importing them.
+autodoc_mock_imports = [
+    # JAX ecosystem
+    "jax",
+    "jaxlib",
+    "equinox",
+    "diffrax",
+    "optax",
+    "distrax",
+    "lineax",
+    "optimistix",
+    "jaxtyping",
+    "jraph",
+    "jaxctrl",
+    "chex",
+    "signax",
+    "jinns",
+    "scico",
+    "tensorstore",
+    "vbjax",
+    # Numerical / scientific
+    "numpy",
+    "scipy",
+    "sklearn",
+    "pandas",
+    "h5py",
+    # Neuroimaging
+    "mne",
+    "nibabel",
+    "nilearn",
+    "pynwb",
+    "specparam",
+    "surfplot",
+    "brainspace",
+    # Plotting
+    "matplotlib",
+    "seaborn",
+    # Data access
+    "dandi",
+    "fsspec",
+    "s3fs",
+    "openneuro",
+    "pyxdf",
+    # Misc
+    "requests",
+    "tqdm",
+    "click",
+    "anthropic",
+    # Bench extras
+    "cma",
+    "llamea",
 ]
 
 bibtex_bibfiles = ['references.bib']

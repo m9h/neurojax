@@ -69,6 +69,7 @@ doc = [
     "myst-parser",
     "sphinx-copybutton",
     "sphinxcontrib-bibtex",
+    "sphinx-autodoc-typehints",
 ]
 
 [tool.pytest.ini_options]

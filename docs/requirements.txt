@@ -4,3 +4,4 @@ myst-parser
 sphinx-autobuild
 sphinx-copybutton
 sphinxcontrib-bibtex
+sphinx-autodoc-typehints
