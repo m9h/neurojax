@@ -27,7 +27,8 @@ RUN pip install --no-cache-dir \
     nibabel>=5.0 \
     pandas>=2.0 \
     signax>=0.1 \
-    python-picard>=0.7
+    python-picard>=0.7 \
+    specparam>=2.0
 
 # Patch coffeine for pyriemann >= 0.7 (CospCovariances → CoSpectra)
 RUN python -c "\
