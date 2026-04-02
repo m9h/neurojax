@@ -1163,7 +1163,32 @@ T2* fitted from ses-06 multi-echo GRE (7 echoes, 5-35ms, 0.67mm iso). Cross-sess
 
 LH shows anterior(short T2*)→posterior(long T2*) gradient. RH range is narrower. LH/RH occipital asymmetry (27.9 vs 24.6ms) likely reflects small sample size (129 rh voxels).
 
-**Limitation:** 27x resolution mismatch between connectivity labels (2mm) and T2* (0.67mm). Next step: run connectivity segmentation from ses-04 7T hires recon — same scanner as MEGRE, eliminates cross-scanner registration, 3x more thalamic voxels.
+**Limitation:** 27x resolution mismatch between connectivity labels (2mm) and T2* (0.67mm).
+
+### 7T Hires Connectivity Segmentation (ses-04 parcellation)
+
+Repeated thalamic connectivity parcellation using ses-04 7T 0.7mm FreeSurfer aparc+aseg and BA labels as cortical targets, registered to the same ses-02 bedpostX data via ses-04→ses-02→diff FLIRT chain. ses-04 and ses-06 MEGRE are the same 7T scanner — eliminates the cross-scanner step.
+
+**T2* comparison — 3T vs 7T parcellation (lh, sorted by T2*):**
+
+| Region | 3T T2* (ms) | 7T T2* (ms) | Expected Nucleus |
+|---|---|---|---|
+| Premotor (VA) | 24.3 ± 7.1 | **23.2 ± 7.0** | VA — iron-rich |
+| Prefrontal (MD) | 24.2 ± 5.9 | 24.2 ± 7.0 | MD |
+| Primary Motor (VL) | 25.1 ± 4.2 | 25.3 ± 4.3 | VL |
+| Somatosensory (VPL) | 26.0 ± 3.6 | 26.3 ± 3.5 | VPL/VPM |
+| Post. Parietal (Pu) | 26.4 ± 3.6 | 26.7 ± 3.6 | Pulvinar |
+| Temporal (MGN) | 27.0 ± 4.9 | 27.0 ± 4.7 | MGN |
+| Occipital (LGN) | 27.9 ± 3.2 | 27.2 ± 3.7 | LGN — iron-poor |
+
+**Key findings:**
+- Rank order nearly identical between 3T and 7T parcellations — the connectivity-iron gradient is robust
+- Clear anterior (iron-rich, short T2*) → posterior (iron-poor, long T2*) gradient
+- Premotor/VA clearly has shortest T2* in the 7T run (23.2ms)
+- 7T parcellation gives more balanced voxel counts (fewer tiny regions)
+- ~4ms T2* range across thalamic regions, consistent with known iron distribution
+- RH shows narrower differentiation (25.0–25.6ms) — may reflect true laterality or registration quality
+- Registration quality: thalamus Dice = 0.94 (ses-04→ses-02), tissue T2* sanity confirmed (thalamus 25.3ms, WM 30.1ms)
 
 ### Processing Scripts
 
