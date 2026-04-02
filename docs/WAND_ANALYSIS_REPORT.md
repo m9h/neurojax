@@ -1190,6 +1190,40 @@ Repeated thalamic connectivity parcellation using ses-04 7T 0.7mm FreeSurfer apa
 - RH shows narrower differentiation (25.0–25.6ms) — may reflect true laterality or registration quality
 - Registration quality: thalamus Dice = 0.94 (ses-04→ses-02), tissue T2* sanity confirmed (thalamus 25.3ms, WM 30.1ms)
 
+### Planned: Brainstem & Cerebellar Segmentation Pipeline
+
+WAND is uniquely suited for multi-modal brainstem mapping: 7T quantitative imaging for structural identification + 300mT/m diffusion for connectivity + fMRI for functional localization.
+
+**Brainstem nuclei — three convergent approaches:**
+
+1. **mICA (masked ICA)** — Beissner group, Hannover MHH
+   - Restricts FSL MELODIC ICA to brainstem mask → functional components map to individual nuclei
+   - Toolbox: https://gitlab.com/insula-institute/mica-toolbox (GPLv3, built on FSL)
+   - Input: brainstem-masked resting-state fMRI from WAND
+   - Key: CSF denoising is critical (Miedema et al. 2024 bioRxiv, 7T validation)
+   - Refs: Moher Alsady et al. (2016) HBM; Beissner et al. (2014) NeuroImage
+
+2. **Bianciardi atlas** — Harvard/MGH Martinos Center
+   - Most comprehensive in vivo brainstem atlas (>50 structures at 7T)
+   - Includes LC, raphe, VTA, SN, PPN, PAG, cranial nerve nuclei
+   - Input: ses-06 7T multi-echo GRE T2* + MP2RAGE → register to MNI → apply atlas
+
+3. **MASSP** (via Nighres) — Bazin group
+   - Multi-contrast Anatomical Subcortical Structures Parcellation
+   - Designed for 7T multi-contrast input (T1 + T2* + QSM as channels)
+   - Input: ses-06 MP2RAGE + MEGRE-derived T2*/QSM maps
+
+**Cross-validation pipeline:**
+- mICA functional components ↔ Bianciardi structural nuclei ↔ MASSP multi-contrast parcellation
+- probtrackx2 from validated nuclei → cortical connectivity profiles
+- T2* iron content per nucleus as independent validation
+- Unique to WAND: structural + functional + connectivity brainstem mapping in the same subjects
+
+**Cerebellum:**
+- SUIT (Diedrichsen) for lobular parcellation + flatmap
+- Peduncle tractography (SCP/MCP/ICP) with 300mT/m diffusion — better angular resolution for crossing fibers
+- Cerebellar connectivity to cortex and brainstem via probtrackx2
+
 ### Processing Scripts
 
 All at `scripts/wand_processing/`:
