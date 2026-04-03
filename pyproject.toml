@@ -45,6 +45,12 @@ dependencies = [
     "openmeeg>=2.5.16",
     "scikit-image>=0.26.0",
     "meshio>=5.3.5",
+    "jax-fem>=0.0.11",
+    "pyfiglet>=1.0.4",
+    "gmsh>=4.15.2",
+    "basix>=0.0.13",
+    "petsc4py>=3.25.0",
+    "fenics-basix>=0.7",
 ]
 
 [project.scripts]
