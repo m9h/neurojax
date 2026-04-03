@@ -44,6 +44,7 @@ dependencies = [
     "specparam>=2.0.0rc6",
     "openmeeg>=2.5.16",
     "scikit-image>=0.26.0",
+    "meshio>=5.3.5",
 ]
 
 [project.scripts]
