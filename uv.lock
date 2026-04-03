@@ -2218,6 +2218,18 @@ test = [
     { name = "tqdm" },
 ]
 
+[package.dev-dependencies]
+doc = [
+    { name = "furo" },
+    { name = "myst-parser" },
+    { name = "sphinx", version = "9.0.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "sphinx", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "sphinx-autodoc-typehints", version = "3.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "sphinx-autodoc-typehints", version = "3.9.11", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+    { name = "sphinx-copybutton" },
+    { name = "sphinxcontrib-bibtex" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "anthropic", specifier = ">=0.86.0" },
@@ -2281,6 +2293,16 @@ requires-dist = [
     { name = "vbjax", git = "https://github.com/ins-amu/vbjax" },
 ]
 provides-extras = ["bench", "test", "doc"]
+
+[package.metadata.requires-dev]
+doc = [
+    { name = "furo", specifier = ">=2025.12.19" },
+    { name = "myst-parser", specifier = ">=5.0.0" },
+    { name = "sphinx", specifier = ">=9.0.4" },
+    { name = "sphinx-autodoc-typehints", specifier = ">=3.6.1" },
+    { name = "sphinx-copybutton", specifier = ">=0.5.2" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.6.5" },
+]
 
 [[package]]
 name = "nibabel"
