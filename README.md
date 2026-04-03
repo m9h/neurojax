@@ -110,8 +110,9 @@ NeuroJAX draws on several research lineages:
 - **Fijee** (github.com/m9h/Fijee-Project) --- the predecessor C++/FEniCS
   project implementing the EEG source connectivity pipeline from
   **Fabrice Wendling's group** at LTSI/INSERM Rennes (Hassan, Dufor,
-  Merlet, Berrou & Wendling 2014, PLOS ONE). The pipeline couples FEM
-  forward modeling with neural mass dynamics (Wendling et al. 2002;
+  Merlet, Berrou & Wendling 2014, PLOS ONE), programmed by
+  **Yann Cobigo** (now at UCSF). The pipeline couples FEM forward
+  modeling with neural mass dynamics (Wendling et al. 2002;
   Molaee-Ardekani & Wendling 2009) and dense-array EEG source
   reconstruction for brain network analysis. The FEM solver uses the
   subtraction method and INRIA mesh format from the **INRIA Rennes**
