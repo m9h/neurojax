@@ -28,7 +28,38 @@ surface+volume analysis. FreeSurfer 7+ and MNE both read/write GIFTI.
 neurojax should target CIFTI-compatible output for interoperability
 with Connectome Workbench and HCP tools.
 
-## Meshing backends
+## Mesh generation engines
+
+Before discussing the tools, it helps to understand the underlying mesh
+generators they depend on. Most neuroimaging tools do not implement
+meshing from scratch --- they wrap one of a handful of computational
+geometry libraries:
+
+| Engine | Type | License | Used by |
+|--------|------|---------|---------|
+| **CGAL** (Computational Geometry Algorithms Library) | Delaunay tet, surface meshing, mesh optimization | GPL/LGPL | Fijee, iso2mesh (optional), FreeSurfer (internal) |
+| **Gmsh** | Structured/unstructured tet/hex, scripted | GPL | SimNIBS, JAX-FEM, DUNEuro (optional) |
+| **TetGen** | Constrained Delaunay tetrahedralization | AGPLv3 | iso2mesh (primary), brain2mesh, EIDORS |
+| **NETGEN** | Advancing-front tet meshing | LGPL | EIDORS, NGSolve, DUNEuro (optional) |
+| **Triangle** (Shewchuk) | 2D constrained Delaunay | Free (non-commercial) | iso2mesh (surface), many tools |
+| **FreeSurfer deformable mesh** | Active surface model (not Delaunay) | Custom | FreeSurfer recon-all (cortical surfaces) |
+| **Marching cubes** | Isosurface from voxel grid | Public domain | scikit-image, VTK, neurojax (CHARM surface extraction) |
+| **MNE icosahedron decimation** | Recursive subdivision of icosahedron | BSD | MNE (BEM surface decimation, source space) |
+| **DUNE grid** | Multi-resolution adaptive grid | GPL | DUNEuro |
+
+**Key distinction:** Surface meshing (triangles on boundaries) vs volume
+meshing (tetrahedra filling the interior). BEM only needs surface meshes;
+FEM needs volume meshes. Most volume meshers take surface meshes as input
+(boundary-constrained tetrahedralization).
+
+The practical consequence: your choice of forward solver constrains your
+mesher. SimNIBS uses Gmsh because GetDP (its FEM solver) reads Gmsh
+format natively. Fijee uses CGAL because FEniCS/dolfin imports CGAL
+meshes via DOLFIN-XML. DUNEuro can use Gmsh, NETGEN, or structured
+hex grids via DUNE's own grid manager. EIDORS defaults to NETGEN for
+its built-in mesh generation.
+
+## Tool-specific details
 
 ### FreeSurfer
 
@@ -39,6 +70,10 @@ head surfaces (brain, inner skull, outer skull, scalp) for forward
 modeling. SAMSEG with the CHARM atlas extends this to 60 tissue labels
 including differentiated skull layers.
 
+- **Mesher:** Custom deformable surface model (active contour on
+  tessellated sphere) for cortical surfaces; watershed algorithm
+  for BEM surfaces; icosahedron subdivision for decimation
+- **Solver:** None (surface generation only; forward solving delegated to MNE)
 - **Strengths:** Gold-standard cortical reconstruction, spherical
   registration, atlas parcellation, 30+ years of validation
 - **Mesh type:** Triangular surfaces (no volume meshing)
@@ -52,10 +87,13 @@ matrix. It handles decimation (ico-3 through ico-5), BEM matrix
 assembly (linear collocation), and forward solution computation for
 MEG/EEG. Also wraps OpenMEEG for symmetric BEM.
 
+- **Mesher:** Icosahedron recursive subdivision (ico-3 to ico-5) for
+  BEM surface decimation; octahedron subdivision for source spaces
+- **Solver:** Custom linear collocation BEM (C, wrapped in Python);
+  OpenMEEG symmetric BEM (optional backend)
 - **Strengths:** Complete MEG/EEG forward pipeline, sensor handling,
   coordinate transforms, extensive validation
 - **Mesh type:** Decimated triangular surfaces from FreeSurfer
-- **Solvers:** Linear collocation BEM, OpenMEEG symmetric BEM
 - **neurojax integration:** Used for all current leadfield computation
 
 ### OpenMEEG
@@ -65,6 +103,9 @@ Papadopoulo, Gramfort). More accurate than MNE's linear collocation
 for EEG (accounts for skull conductivity jumps correctly). Supports
 nested and non-nested geometries.
 
+- **Mesher:** None (consumes triangular surfaces from any source)
+- **Solver:** Symmetric BEM with Galerkin formulation (dense matrix,
+  LU factorization); C++ with BLAS/LAPACK, Python bindings via SWIG
 - **Strengths:** Mathematically rigorous symmetric formulation, EEG
   accuracy, same group that developed the subtraction method
 - **Mesh type:** Triangular surfaces (from any source)
@@ -78,6 +119,12 @@ from surface or volumetric data. `brain2mesh` specifically generates
 multi-tissue head meshes from FreeSurfer segmentations. Uses CGAL or
 TetGen for Delaunay tetrahedralization.
 
+- **Mesher:** TetGen (primary) or CGAL for Delaunay tetrahedralization;
+  Triangle (Shewchuk) for 2D surface remeshing; custom MATLAB/Octave
+  wrappers. `brain2mesh` adds tissue-aware mesh generation from
+  FreeSurfer segmentations with quality-controlled element sizes.
+- **Solver:** None (mesh generation only; forward solving via MCX for
+  photon transport, RedBird for DOT, or external FEM)
 - **Strengths:** Robust tet meshing, multi-tissue support, integrates
   with MCX (Monte Carlo photon transport) and RedBird (DOT)
 - **Mesh type:** Tetrahedral volume meshes
@@ -92,6 +139,12 @@ FreeSurfer SAMSEG) segments 21+ tissue types. SimNIBS then generates
 tetrahedral meshes and solves the Laplace equation using GetDP (a
 general-purpose FEM solver).
 
+- **Mesher:** Gmsh (Python API) for tetrahedral mesh generation from
+  CHARM tissue surfaces; mesh quality optimization via Gmsh's built-in
+  algorithms (Frontal-Delaunay, HXT)
+- **Solver:** GetDP (General environment for the Treatment of Discrete
+  Problems) --- a general-purpose FEM solver reading Gmsh format natively.
+  Solves Laplace equation for tDCS/TMS electric field.
 - **Strengths:** Complete TMS/tDCS pipeline, validated tissue
   segmentation, electric field optimization
 - **Mesh type:** Tetrahedral (Gmsh-based)
@@ -107,10 +160,16 @@ high-order FEM (P1, P2, and higher) for EEG/MEG forward modeling
 with full support for anisotropic conductivity from DTI. Uses the
 DUNE (Distributed and Unified Numerics Environment) framework.
 
-- **Strengths:** High-order elements (better accuracy per DOF than P1),
-  anisotropic conductivity, subtraction and partial integration
-  approaches for dipole singularity, validated against analytical
-  solutions. Actively maintained by the Wolters group.
+- **Mesher:** Flexible --- reads Gmsh, NETGEN, or uses DUNE's own
+  `ALUGrid` / `YaspGrid` for structured hexahedral grids. The DUNE
+  grid interface abstracts over multiple backends.
+- **Solver:** DUNE ISTL (Iterative Solver Template Library) with
+  algebraic multigrid (AMG) preconditioning; supports CG, BiCGSTAB,
+  GMRES. Also interfaces with direct solvers (UMFPACK, SuperLU).
+- **Strengths:** High-order elements (P1, P2, and higher --- better
+  accuracy per DOF than P1), anisotropic conductivity, subtraction
+  and partial integration approaches for dipole singularity, validated
+  against analytical solutions. Actively maintained by the Wolters group.
 - **Mesh type:** Tetrahedral or hexahedral, structured or unstructured
 - **Continuity with CAUCHY:** DUNEuro is the direct descendant of the
   CAUCHY/SimBio/NeuroFEM lineage (1993+), now using modern DUNE
@@ -126,6 +185,11 @@ stroke. Their tools include EIDORS (Electrical Impedance Tomography
 and Diffuse Optical Tomography Reconstruction Software) and custom
 fast EIT solvers optimised for the complete electrode model.
 
+- **Mesher:** NETGEN (primary, for EIDORS built-in mesh generation);
+  also supports Gmsh, Distmesh, and custom mesh import
+- **Solver:** EIDORS uses its own MATLAB-based FEM solver with the
+  complete electrode model (CEM); also interfaces with external
+  solvers. Fast matrix assembly optimised for real-time reconstruction.
 - **Strengths:** Real-time capable, complete electrode model, clinical
   validation (stroke detection via EIT), extensive forward model library
 - **Mesh type:** Tetrahedral (EIDORS/NETGEN), hexahedral
@@ -144,6 +208,12 @@ LTSI/INSERM Rennes). Couples FEM forward modeling with Wendling/
 Jansen-Rit neural mass dynamics for simulated EEG. Uses INRIA mesh
 format, CGAL meshing, FEniCS/dolfin solver with UFL formulations.
 
+- **Mesher:** CGAL 3D mesh generation from INRIA image format (`.inr`)
+  volume labels; surface meshing via CGAL surface mesh. Mesh written
+  in DOLFIN-XML for FEniCS import.
+- **Solver:** FEniCS/dolfin with PETSc backend; UFL variational
+  formulations compiled to C++ via FFC. Direct (MUMPS/LU) or
+  iterative (CG + AMG) solvers.
 - **Strengths:** Integrated forward + neural mass pipeline, tensor
   conductivity from DTI, tDCS complete electrode model, dipole
   subtraction method
@@ -160,11 +230,16 @@ large-scale problems. The key innovation over all tools above is
 function back through source imaging, leadfield, FEM assembly,
 and conductivity mapping into qMRI tissue parameters.
 
+- **Mesher:** Consumes meshes from any source via meshio; Gmsh via
+  JAX-FEM for generation; marching cubes (scikit-image) for surface
+  extraction from CHARM segmentations
+- **Solver:** Pure JAX conjugate gradient (small meshes, fully
+  JIT-compiled) or PETSc via JAX-FEM (large meshes, AMG
+  preconditioning, MPI parallel). Both are differentiable.
 - **Strengths:** Fully differentiable, GPU-accelerated, end-to-end
   optimisation of conductivity, natural integration with neural
   networks (PI-GNN, PINNs)
 - **Mesh type:** Tetrahedral P1 (pure JAX), or any element via JAX-FEM
-- **Solvers:** Conjugate gradient (pure JAX) or PETSc (JAX-FEM)
 - **Unique capability:** `sigma_from_qmri()` maps T1/BPF/tissue labels
   to conductivity with learnable parameters optimisable via `jax.grad`
 
