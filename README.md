@@ -109,8 +109,13 @@ NeuroJAX draws on several research lineages:
 
 - **Fijee** (github.com/m9h/Fijee-Project) --- the predecessor C++/FEniCS
   project for FEM-based EEG forward modeling with anisotropic
-  conductivity, dipole subtraction, and complete electrode model for
-  tDCS/EIT. NeuroJAX ports this to differentiable JAX.
+  conductivity, dipole subtraction method, complete electrode model for
+  tDCS/EIT, and Jansen-Rit / Wendling neural mass models. Fijee
+  implemented the FEM approaches developed by the **INRIA Rennes**
+  Athena/Odyssee team (Clerc, Papadopoulo, Kybic, Gramfort) ---
+  including the subtraction method for dipole singularity handling
+  and INRIA mesh format support. The same group created **OpenMEEG**
+  for symmetric BEM. NeuroJAX ports this lineage to differentiable JAX.
 
 - **SCI Head Model** (Utah, Warner et al. 2019) --- high-resolution
   tetrahedral head model used across EEG, EIT, and transcranial
