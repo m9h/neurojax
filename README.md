@@ -108,14 +108,17 @@ NeuroJAX draws on several research lineages:
   Laplacian-based LORETA.
 
 - **Fijee** (github.com/m9h/Fijee-Project) --- the predecessor C++/FEniCS
-  project for FEM-based EEG forward modeling with anisotropic
-  conductivity, dipole subtraction method, complete electrode model for
-  tDCS/EIT, and Jansen-Rit / Wendling neural mass models. Fijee
-  implemented the FEM approaches developed by the **INRIA Rennes**
-  Athena/Odyssee team (Clerc, Papadopoulo, Kybic, Gramfort) ---
-  including the subtraction method for dipole singularity handling
-  and INRIA mesh format support. The same group created **OpenMEEG**
-  for symmetric BEM. NeuroJAX ports this lineage to differentiable JAX.
+  project implementing the EEG source connectivity pipeline from
+  **Fabrice Wendling's group** at LTSI/INSERM Rennes (Hassan, Dufor,
+  Merlet, Berrou & Wendling 2014, PLOS ONE). The pipeline couples FEM
+  forward modeling with neural mass dynamics (Wendling et al. 2002;
+  Molaee-Ardekani & Wendling 2009) and dense-array EEG source
+  reconstruction for brain network analysis. The FEM solver uses the
+  subtraction method and INRIA mesh format from the **INRIA Rennes**
+  Athena/Odyssee team (Clerc, Papadopoulo, Kybic, Gramfort) --- the
+  same group that created **OpenMEEG**. Fijee also supports anisotropic
+  tensor conductivity from DTI and the complete electrode model for
+  tDCS/EIT. NeuroJAX ports this entire lineage to differentiable JAX.
 
 - **SCI Head Model** (Utah, Warner et al. 2019) --- high-resolution
   tetrahedral head model used across EEG, EIT, and transcranial
@@ -185,6 +188,15 @@ uv run pytest tests/test_qmri.py        # qMRI (22 tests)
 
 If you use NeuroJAX in your research, please cite the WAND dataset
 and the relevant method papers (see `paper/references.bib`).
+
+For computational modeling methodology, please also cite the Bayesian
+workflow framework that informs our approach to generative modeling
+and simulation-based inference:
+
+> Hess AJ, Iglesias S, Köchli L, Marino S, Müller-Schrader M, Rigoux L,
+> Mathys C, Harrison OK, Heinzle J, Frässle S, Stephan KE (2025).
+> Bayesian Workflow for Generative Modeling in Computational Psychiatry.
+> *Computational Psychiatry* 9(1):76--99. doi:10.5334/cpsy.116
 
 ## License
 
