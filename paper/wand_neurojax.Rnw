@@ -1946,6 +1946,41 @@ orientation constraint penalties, and $L_1$ sparsity. The entire pipeline
 is end-to-end differentiable via JAX automatic differentiation, enabling
 gradient-based optimisation of all hyperparameters.
 
+\subsubsection{Forward model comparison}
+\label{app:forward-model}
+
+The leadfield matrix $\mathbf{L}$ is the dominant input to every inverse
+method. We computed four leadfield variants for sub-08033 (CTF 275-channel
+MEG, 2052 cortical sources at oct-5 decimation) and compared their
+column-wise correlations (Table~\ref{tab:leadfield}).
+
+\begin{table}[h]
+\centering
+\small
+\caption{Leadfield sensitivity analysis for MEG. Column-wise Pearson
+correlations between leadfield variants, computed over all 6156 source
+components (2052 sources $\times$ 3 orientations).}
+\label{tab:leadfield}
+\begin{tabular}{llcc}
+\hline
+\textbf{Comparison} & \textbf{Change} & \textbf{Mean $r$} & \textbf{Min $r$} \\
+\hline
+ico-4 $\to$ ico-5 & BEM mesh 5120 $\to$ 20480 tri & 0.9999 & 0.976 \\
+$\sigma_\text{skull}$ 0.006 $\to$ 0.01 & 67\% conductivity increase & 0.9998 & 0.976 \\
+MNE $\to$ OpenMEEG & Linear collocation $\to$ symmetric BEM & 0.9999 & 0.989 \\
+\hline
+\end{tabular}
+\end{table}
+
+For MEG, all three factors (mesh resolution, skull conductivity, BEM solver
+formulation) produce sub-0.1\% differences. The dominant error source is
+surface geometry: the inner skull surface differs by 5.0\,mm mean
+(18.6\,mm Hausdorff) between MNE watershed and FSL betsurf, while the
+outer skull shows 20.1\,mm mean disagreement. This motivates the use of
+the SAMSEG+CHARM atlas~(FreeSurfer 8.2), which provides differentiated
+skull segmentation (cortical bone $\sigma = 0.006$\,S/m vs.\ cancellous
+bone $\sigma = 0.025$\,S/m) from a 60-label whole-head tissue model.
+
 \subsection{TMS-EMG}
 
 ses-08 SICI data were acquired with a Magstim BiStim$^2$ (D70 Alpha
