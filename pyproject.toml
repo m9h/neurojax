@@ -43,6 +43,7 @@ dependencies = [
     "brainspace>=0.1.22",
     "specparam>=2.0.0rc6",
     "openmeeg>=2.5.16",
+    "scikit-image>=0.26.0",
 ]
 
 [project.scripts]
