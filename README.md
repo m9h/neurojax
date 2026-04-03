@@ -119,7 +119,10 @@ NeuroJAX draws on several research lineages:
   Athena/Odyssee team (Clerc, Papadopoulo, Kybic, Gramfort) --- the
   same group that created **OpenMEEG**. Fijee also supports anisotropic
   tensor conductivity from DTI and the complete electrode model for
-  tDCS/EIT. NeuroJAX ports this entire lineage to differentiable JAX.
+  tDCS/EIT. The FEM approach to EEG traces back to the **CAUCHY project**
+  (1990s, INRIA Sophia-Antipolis/Odyssee) --- one of the earliest
+  applications of finite elements to the bioelectric forward problem.
+  NeuroJAX ports this entire lineage to differentiable JAX.
 
 - **SCI Head Model** (Utah, Warner et al. 2019) --- high-resolution
   tetrahedral head model used across EEG, EIT, and transcranial
