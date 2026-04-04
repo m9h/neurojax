@@ -275,3 +275,130 @@ def sigma_from_qmri(t1_values: jnp.ndarray,
                        0.25)))))  # other
 
     return jnp.clip(sigma, 0.001, 2.0)
+
+
+# ---------------------------------------------------------------------------
+# Tensor (anisotropic) conductivity from DTI
+# ---------------------------------------------------------------------------
+
+def conductivity_tensor_from_dti(e1: jnp.ndarray,
+                                  sigma_par: float,
+                                  sigma_perp: float) -> jnp.ndarray:
+    """Build conductivity tensor from DTI primary eigenvector.
+
+    sigma = sigma_par * e1 @ e1^T + sigma_perp * (I - e1 @ e1^T)
+
+    Args:
+        e1: (3,) primary eigenvector (fiber direction), unit vector
+        sigma_par: conductivity along fiber (S/m), typically ~1.7
+        sigma_perp: conductivity perpendicular (S/m), typically ~0.1
+
+    Returns:
+        (3, 3) symmetric positive-definite conductivity tensor
+    """
+    e1 = e1 / jnp.maximum(jnp.linalg.norm(e1), 1e-10)
+    proj = jnp.outer(e1, e1)
+    return sigma_par * proj + sigma_perp * (jnp.eye(3) - proj)
+
+
+def tet_stiffness_tensor(vertices: jnp.ndarray,
+                          sigma_tensor: jnp.ndarray) -> jnp.ndarray:
+    """Element stiffness matrix with anisotropic conductivity tensor.
+
+    K_ij = V * (∇N_i)^T @ σ @ (∇N_j)
+
+    Args:
+        vertices: (4, 3) tetrahedron vertex coordinates
+        sigma_tensor: (3, 3) conductivity tensor for this element
+
+    Returns:
+        (4, 4) element stiffness matrix
+    """
+    d = vertices[1:] - vertices[0]
+    det = jnp.linalg.det(d)
+    vol = jnp.abs(det) / 6.0
+
+    d_inv = jnp.linalg.inv(d)
+    grad_N = d_inv.T  # (3, 3)
+    grad_N0 = -jnp.sum(grad_N, axis=1)
+    grads = jnp.vstack([grad_N0[None, :], grad_N.T])  # (4, 3)
+
+    # K_ij = V * grads[i] @ sigma @ grads[j]
+    sigma_grads = grads @ sigma_tensor  # (4, 3)
+    K_e = vol * (sigma_grads @ grads.T)
+
+    return K_e
+
+
+# ---------------------------------------------------------------------------
+# Subtraction method for dipole singularity (Fijee heritage)
+# ---------------------------------------------------------------------------
+
+def analytical_dipole_potential(nodes: jnp.ndarray,
+                                dipole_pos: jnp.ndarray,
+                                dipole_mom: jnp.ndarray,
+                                sigma: float) -> jnp.ndarray:
+    """Analytical potential of a current dipole in a homogeneous conductor.
+
+    phi_0(r) = (1 / 4*pi*sigma) * (q · (r - r_d)) / |r - r_d|^3
+
+    This is the singular primary potential used in the subtraction method.
+
+    Args:
+        nodes: (n_nodes, 3) evaluation points
+        dipole_pos: (3,) dipole position
+        dipole_mom: (3,) dipole moment (nAm)
+        sigma: homogeneous conductivity (S/m)
+
+    Returns:
+        (n_nodes,) potential at each node
+    """
+    r = nodes - dipole_pos  # (n_nodes, 3)
+    dist = jnp.sqrt(jnp.sum(r ** 2, axis=1))  # (n_nodes,)
+    dist = jnp.maximum(dist, 1e-10)  # avoid division by zero
+
+    # q · (r - r_d) / |r - r_d|^3
+    qdotr = jnp.sum(r * dipole_mom, axis=1)  # (n_nodes,)
+    phi = qdotr / (4.0 * jnp.pi * sigma * dist ** 3)
+
+    return phi
+
+
+def subtraction_rhs(vertices: jnp.ndarray,
+                    elements: jnp.ndarray,
+                    sigma: jnp.ndarray,
+                    sigma_hom: float,
+                    dipole_pos: jnp.ndarray,
+                    dipole_mom: jnp.ndarray) -> jnp.ndarray:
+    """Right-hand side for the correction equation in the subtraction method.
+
+    The total potential is phi = phi_0 + phi_corr, where phi_0 is the
+    analytical solution in a homogeneous conductor with sigma_hom. The
+    correction phi_corr satisfies:
+
+        K(sigma) @ phi_corr = -K(sigma - sigma_hom) @ phi_0
+
+    This RHS is zero when sigma is uniform (no correction needed).
+
+    Args:
+        vertices: (n_vertices, 3)
+        elements: (n_elements, 4)
+        sigma: (n_elements,) per-element conductivity
+        sigma_hom: reference homogeneous conductivity
+        dipole_pos: (3,) dipole position
+        dipole_mom: (3,) dipole moment
+
+    Returns:
+        (n_vertices,) right-hand side for correction equation
+    """
+    n_verts = vertices.shape[0]
+
+    # Compute phi_0 at all nodes
+    phi_0 = analytical_dipole_potential(vertices, dipole_pos, dipole_mom, sigma_hom)
+
+    # Assemble K(sigma - sigma_hom)
+    sigma_diff = sigma - sigma_hom
+    K_diff = assemble_stiffness(vertices, elements, sigma_diff)
+
+    # RHS = -K_diff @ phi_0
+    return -K_diff @ phi_0
