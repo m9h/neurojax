@@ -2229,6 +2229,10 @@ doc = [
     { name = "sphinx-copybutton" },
     { name = "sphinxcontrib-bibtex" },
 ]
+test = [
+    { name = "pytest" },
+    { name = "pytest-cov" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2302,6 +2306,10 @@ doc = [
     { name = "sphinx-autodoc-typehints", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
     { name = "sphinxcontrib-bibtex", specifier = ">=2.6.5" },
+]
+test = [
+    { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-cov", specifier = ">=7.0.0" },
 ]
 
 [[package]]

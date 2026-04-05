@@ -64,3 +64,7 @@ SHA256SUMS
 octave-workspace
 tests/data/mrs/ismrm_fitting_challenge/repo
 tests/data/mrs/nifti_mrs_standard
+docs/_build/
+
+autoresearch/results.tsv
+autoresearch/run.log
