@@ -244,25 +244,79 @@ entirely new rules. The function must use only jnp operations.
 # LLaMEA adapter
 # ---------------------------------------------------------------------------
 
+def _make_gemini_llm(model: str = "gemini-2.5-flash",
+                     api_key: Optional[str] = None):
+    """Create a LLaMEA-compatible LLM using the Google GenAI SDK."""
+    from llamea import LLM
+    import os
+
+    try:
+        from google import genai
+        from google.genai import types as genai_types
+    except ImportError:
+        raise ImportError("google-genai required. Install: uv add google-genai")
+
+    class Gemini_LLM(LLM):
+        def __init__(self, api_key, model="gemini-2.5-flash"):
+            super().__init__(api_key, model, None)
+            self.client = genai.Client(api_key=api_key)
+            self.genai_model = model
+
+        def query(self, session, max_tokens=4096):
+            # Build single prompt from session (Gemini prefers simple prompts)
+            parts = []
+            for msg in session:
+                role = msg["role"]
+                content = msg["content"]
+                if role == "system":
+                    parts.append(f"[System instruction]: {content}\n")
+                elif role == "assistant":
+                    parts.append(f"[Previous response]: {content}\n")
+                else:
+                    parts.append(content + "\n")
+
+            response = self.client.models.generate_content(
+                model=self.genai_model,
+                contents="\n".join(parts),
+                config=genai_types.GenerateContentConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=0.8,
+                ),
+            )
+            return response.text
+
+    key = api_key or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise ValueError("GEMINI_API_KEY not set")
+    return Gemini_LLM(api_key=key, model=model)
+
+
 class ChampagneLLaMEA:
     """Evolve CHAMPAGNE update rules via LLaMEA.
+
+    Supports both Anthropic Claude and Google Gemini as LLM backends.
 
     Usage:
         adapter = ChampagneLLaMEA(
             gain=L, data_cov=C, noise_cov=N,
-            true_active=[20, 35], positions=positions
+            true_active=[20, 35], positions=positions,
+            backend='gemini'  # or 'anthropic'
         )
         best_rule, best_score = adapter.evolve(llm_budget=10)
         gamma, weights = run_sbl_with_rule(best_rule, C, L, N)
     """
 
     def __init__(self, gain, data_cov, noise_cov, true_active, positions,
-                 model="claude-sonnet-4-20250514", api_key=None):
+                 backend: str = "gemini",
+                 model: Optional[str] = None,
+                 api_key: Optional[str] = None):
         self.evaluator = SourceLocalizationEvaluator(
             gain=gain, data_cov=data_cov, noise_cov=noise_cov,
             true_active=true_active, positions=positions
         )
-        self.model = model
+        self.backend = backend
+        self.model = model or ("gemini-2.5-flash" if backend == "gemini"
+                                else "claude-sonnet-4-20250514")
         self.api_key = api_key
 
     def evolve(self, llm_budget: int = 10) -> Tuple[Optional[UpdateRule], float]:
@@ -276,12 +330,14 @@ class ChampagneLLaMEA:
         """
         try:
             from llamea import LLaMEA, Solution
-            from neurojax.bench.optimizers.llamea_wrapper import _make_anthropic_llm
         except ImportError:
-            # Fallback: just return the standard Wipf rule
             return self._wipf_rule, self.evaluator.score_update_rule(self._wipf_rule)
 
-        llm = _make_anthropic_llm(model=self.model, api_key=self.api_key)
+        if self.backend == "gemini":
+            llm = _make_gemini_llm(model=self.model, api_key=self.api_key)
+        else:
+            from neurojax.bench.optimizers.llamea_wrapper import _make_anthropic_llm
+            llm = _make_anthropic_llm(model=self.model, api_key=self.api_key)
 
         best_fn = None
         best_score = 0.0
@@ -290,7 +346,8 @@ class ChampagneLLaMEA:
             nonlocal best_fn, best_score
             fn = execute_update_rule(solution.code)
             if fn is None:
-                solution.set_scores(fitness=0.0, feedback="Code did not produce a valid update_gamma function")
+                solution.set_scores(fitness=0.0,
+                    feedback="Code did not produce a valid update_gamma function")
                 return solution
 
             score = self.evaluator.score_update_rule(fn)

@@ -51,6 +51,9 @@ dependencies = [
     "basix>=0.0.13",
     "petsc4py>=3.25.0",
     "fenics-basix>=0.7",
+    "llamea>=1.2.0",
+    "google-generativeai>=0.8.6",
+    "google-genai>=1.68.0",
 ]
 
 [project.scripts]
