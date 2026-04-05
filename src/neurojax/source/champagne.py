@@ -16,24 +16,19 @@ from jax import jit, lax
 def champagne_solver(cov: jnp.ndarray, gain: jnp.ndarray, noise_cov: jnp.ndarray = None, max_iter: int = 20, tol: float = 1e-4) -> jnp.ndarray:
     """
     Solve for Source Powers (Gamma) using SBL / CHAMPAGNE rules.
-    
+
     Y = G X + E
     Cov_y = G Gamma G.T + Cov_noise
-    
-    Update rules (MacKay / Wipf):
-    Gamma_new = Gamma * sqrt( diag( G.T @ C_y^-1 @ G ) ) / ...?
-    Actually, simpler EM form:
-    gamma_i_new = gamma_i * || w_i^T y ||^2 / (1 - gamma_i * w_i^T G_i) ... no.
-    
+
     Using the Convex Bounding rule (Wipf 2008):
     gamma_new = gamma * sqrt( diag( G.T @ C_inv @ C_data @ C_inv @ G ) / diag( G.T @ C_inv @ G ) )
-    
+
     Parameters
     ----------
     cov: (n_chan, n_chan) Data covariance.
     gain: (n_chan, n_sources) Leadfield.
     noise_cov: (n_chan, n_chan) Noise covariance. If None, Identity.
-    
+
     Returns
     -------
     gamma: (n_sources,) Estimated source powers.
@@ -42,59 +37,60 @@ def champagne_solver(cov: jnp.ndarray, gain: jnp.ndarray, noise_cov: jnp.ndarray
     n_chan, n_src = gain.shape
     if noise_cov is None:
         noise_cov = jnp.eye(n_chan)
-        
-    # Init Gamma (ones? or beamformer power?)
-    gamma = jnp.ones(n_src)
-    
+
+    # Regularise noise covariance for stable inversion
+    noise_reg = noise_cov + jnp.eye(n_chan) * jnp.trace(noise_cov) * 1e-6
+
+    # Initialise gamma from data: use diagonal of beamformer power
+    # This is much more stable than ones initialisation
+    C_inv_init = jnp.linalg.inv(cov + noise_reg)
+    Z_init = C_inv_init @ gain
+    init_power = jnp.sum((cov @ Z_init) * Z_init, axis=0)
+    init_denom = jnp.sum(gain * Z_init, axis=0)
+    gamma = jnp.maximum(init_power / jnp.maximum(init_denom, 1e-20), 1e-20)
+    # Normalise to reasonable scale
+    gamma = gamma / jnp.maximum(jnp.median(gamma), 1e-20)
+
     def body(val):
         i, gam, diff = val
-        
-        # 1. Model Covariance: Sigma_y = G Gamma G.T + Sigma_noise
-        # Gamma is diag. G @ diag(gam) @ G.T = (G * gam) @ G.T
-        Sigma_y = jnp.dot(gain * gam[None, :], gain.T) + noise_cov
-        
-        # Invert Sigma_y
+
+        # 1. Model Covariance with regularisation
+        Sigma_y = jnp.dot(gain * gam[None, :], gain.T) + noise_reg
+
+        # Regularised inverse
         Sigma_inv = jnp.linalg.inv(Sigma_y)
-        
-        # 2. Compute auxiliary terms
-        # W = Gamma G.T Sigma_inv
-        # Posterior Mean X_bar = W Y.
-        # But we work with covariances.
-        # We need term: diag( G.T @ Sigma_inv @ C_data @ Sigma_inv @ G )
-        # Let Z = Sigma_inv @ G
-        Z = jnp.dot(Sigma_inv, gain) # (n_chan, n_src)
-        
-        # Numerator Term: diag( Z.T @ C_data @ Z )
-        # Z.T @ C @ Z -> (n_src, n_src). We only need diag.
-        # diag( A.T @ B @ A ) = sum( (B @ A) * A, axis=0 )
-        C_Z = jnp.dot(cov, Z) # (n_chan, n_src)
-        numer_diag = jnp.sum(C_Z * Z, axis=0) # (n_src,)
-        
-        # Denominator Term: diag( G.T @ Sigma_inv @ G ) = diag( G.T @ Z )
-        denom_diag = jnp.sum(gain * Z, axis=0) # (n_src,)
-        
-        # Update Rule (Convex Bounding):
-        # gam_new = gam * sqrt( numer / denom )
-        gam_new = gam * jnp.sqrt(numer_diag / (denom_diag + 1e-12))
-        
-        # Change
-        d = jnp.max(jnp.abs(gam - gam_new))
-        
+
+        # 2. Compute update terms
+        Z = jnp.dot(Sigma_inv, gain)
+
+        # Numerator: diag(Z.T @ C_data @ Z)
+        C_Z = jnp.dot(cov, Z)
+        numer_diag = jnp.sum(C_Z * Z, axis=0)
+
+        # Denominator: diag(G.T @ Sigma_inv @ G)
+        denom_diag = jnp.sum(gain * Z, axis=0)
+
+        # Convex bounding update with clipping for stability
+        ratio = jnp.clip(numer_diag / jnp.maximum(denom_diag, 1e-20), 0.0, 1e6)
+        gam_new = gam * jnp.sqrt(ratio)
+
+        # Clip gamma to prevent divergence
+        gam_new = jnp.clip(gam_new, 1e-20, 1e10)
+
+        d = jnp.max(jnp.abs(gam - gam_new) / jnp.maximum(gam, 1e-20))
         return i + 1, gam_new, d
-        
+
     def cond(val):
-        i, _, d = val
-        return (i < max_iter) & (d > tol)
-        
+        i, gam, d = val
+        return (i < max_iter) & (d > tol) & jnp.all(jnp.isfinite(gam))
+
     _, gamma_final, _ = lax.while_loop(cond, body, (0, gamma, 1.0))
-    
-    # Compute Final Weights
-    # W = Gamma G.T Sigma_inv
-    # Recompute Sigma
-    Sigma_y = jnp.dot(gain * gamma_final[None, :], gain.T) + noise_cov
+
+    # Final weights: W = Gamma G.T Sigma_inv
+    Sigma_y = jnp.dot(gain * gamma_final[None, :], gain.T) + noise_reg
     Sigma_inv = jnp.linalg.inv(Sigma_y)
     weights = jnp.dot(gamma_final[:, None] * gain.T, Sigma_inv)
-    
+
     return gamma_final, weights
 
 @jit

@@ -56,15 +56,19 @@ def estimate_tikhonov_reg(L: jnp.ndarray) -> float:
 
 def tikhonov_inverse(Y: jnp.ndarray,
                      L: jnp.ndarray,
-                     reg: float = 1e-3) -> jnp.ndarray:
-    """Tikhonov-regularised pseudo-inverse via SVD.
+                     reg: float = 1e-3,
+                     depth: float = 0.8) -> jnp.ndarray:
+    """Tikhonov-regularised pseudo-inverse via SVD with depth weighting.
 
     Applies continuous regularisation:
 
-        J = V @ diag(s_i / (s_i² + λ²)) @ U^T @ Y
+        J = W @ V @ diag(s_i / (s_i² + λ²)) @ U^T @ Y
 
-    This smoothly downweights small singular values rather than discarding
-    them entirely, avoiding the cliff-edge sensitivity of truncated SVD.
+    where W is a diagonal depth-weighting matrix that compensates for
+    the geometric bias toward superficial sources (deeper sources have
+    smaller leadfield column norms).
+
+    W_jj = ||L_j||^(-depth)  (depth=0.8 is the MNE default)
 
     IMPORTANT: The reg parameter must always be provided explicitly.
     Use estimate_tikhonov_reg(L) to compute a data-driven value, then
@@ -75,17 +79,31 @@ def tikhonov_inverse(Y: jnp.ndarray,
         Y: (n_sensors, n_times) sensor data
         L: (n_sensors, n_sources) leadfield/gain matrix
         reg: Tikhonov parameter λ (must be concrete, not None)
+        depth: depth weighting exponent (0 = none, 0.8 = MNE default)
 
     Returns:
         (n_sources, n_times) initial source estimate
     """
-    U, s, Vt = jnp.linalg.svd(L, full_matrices=False)
+    # Depth weighting: compensate for geometric bias toward surface sources
+    # W_j = ||L_j||^(-depth) normalises columns by their norm
+    if depth > 0:
+        col_norms = jnp.sqrt(jnp.sum(L ** 2, axis=0))
+        col_norms = jnp.maximum(col_norms, 1e-20)
+        W = col_norms ** (-depth)
+        # Limit to prevent extreme amplification of deep sources
+        W = jnp.minimum(W, jnp.median(W) * 10.0)
+        L_weighted = L * W[None, :]
+    else:
+        W = jnp.ones(L.shape[1])
+        L_weighted = L
+
+    U, s, Vt = jnp.linalg.svd(L_weighted, full_matrices=False)
 
     # Tikhonov filter factors: f_i = s_i / (s_i² + λ²)
     filter_factors = s / (s ** 2 + reg ** 2)
 
-    # J = V @ diag(f) @ U^T @ Y
-    J = Vt.T @ (filter_factors[:, None] * (U.T @ Y))
+    # J = W @ V @ diag(f) @ U^T @ Y
+    J = W[:, None] * (Vt.T @ (filter_factors[:, None] * (U.T @ Y)))
     return J
 
 

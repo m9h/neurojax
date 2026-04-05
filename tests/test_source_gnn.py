@@ -214,7 +214,8 @@ class TestPhysicsInit:
         from neurojax.source.source_gnn import tikhonov_inverse, estimate_tikhonov_reg
         p = _make_forward_problem(n_sources=50, n_sensors=32)
         reg = estimate_tikhonov_reg(p['L'])
-        J0 = np.asarray(tikhonov_inverse(p['Y'], p['L'], reg=reg))
+        # depth=0 for synthetic data (random geometry has no depth structure)
+        J0 = np.asarray(tikhonov_inverse(p['Y'], p['L'], reg=reg, depth=0.0))
         power = np.sum(J0 ** 2, axis=1)
         peak = int(np.argmax(power))
         top10 = set(np.argsort(power)[-10:])
