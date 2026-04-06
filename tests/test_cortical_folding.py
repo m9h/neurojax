@@ -143,6 +143,54 @@ class TestFoldingWavelength:
 # WAND FreeSurfer surface tests (skip if data missing)
 # ===========================================================================
 
+class TestCurvatureStatistics:
+    """Distribution statistics from Ronan, Voets, Hough et al. (2012)."""
+
+    def test_statistics_keys(self):
+        from neurojax.geometry.curvature import curvature_statistics
+        vertices, faces = _make_icosphere(radius=50.0, subdivisions=2)
+        stats = curvature_statistics(vertices, faces)
+        assert 'K_skew' in stats
+        assert 'K_negative_fraction' in stats
+        assert 'H_skew' in stats
+        assert 'SI_mean' in stats
+
+    def test_sphere_K_positive(self):
+        """Sphere should have K > 0 everywhere (all elliptic)."""
+        from neurojax.geometry.curvature import curvature_statistics
+        vertices, faces = _make_icosphere(radius=50.0, subdivisions=3)
+        stats = curvature_statistics(vertices, faces)
+        assert stats['K_positive_fraction'] > 0.95
+        assert stats['K_negative_fraction'] < 0.05
+
+    def test_sphere_K_skew_finite(self):
+        """Sphere K skewness should be finite (original ico vertices create outliers)."""
+        from neurojax.geometry.curvature import curvature_statistics
+        vertices, faces = _make_icosphere(radius=50.0, subdivisions=3)
+        stats = curvature_statistics(vertices, faces)
+        assert np.isfinite(stats['K_skew'])
+
+
+class TestPialWhiteRatio:
+    """Pial-to-white curvature ratio (Ronan, Voets, Hough et al. 2012)."""
+
+    def test_same_surface_ratio_one(self):
+        """Same surface for pial and white → ratio ≈ 1."""
+        from neurojax.geometry.curvature import pial_white_curvature_ratio
+        v, f = _make_icosphere(radius=50.0, subdivisions=2)
+        result = pial_white_curvature_ratio(v, f, v, f)
+        np.testing.assert_allclose(result['K_ratio_mean'], 1.0, atol=0.01)
+
+    def test_expanded_pial_higher_K(self):
+        """Expanded pial surface should have lower K than white (K ∝ 1/R²)."""
+        from neurojax.geometry.curvature import pial_white_curvature_ratio
+        v_white, f = _make_icosphere(radius=50.0, subdivisions=2)
+        v_pial = v_white * 1.05  # 5% expansion
+        result = pial_white_curvature_ratio(v_pial, f, v_white, f)
+        # K_pial/K_white = (R_white/R_pial)² = (1/1.05)² ≈ 0.907
+        assert result['K_ratio_mean'] < 1.0
+
+
 @pytest.mark.skipif(not HAS_FS, reason="WAND FreeSurfer surfaces not available")
 class TestWANDCorticalGeometry:
     """Run on real WAND sub-08033 FreeSurfer surfaces."""

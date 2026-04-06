@@ -199,6 +199,95 @@ def shape_index(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return np.clip(SI, -1.0, 1.0)
 
 
+def curvature_statistics(vertices: np.ndarray, faces: np.ndarray) -> dict:
+    """Summary statistics of the curvature distribution.
+
+    Computes the measures from Ronan, Voets, Hough et al. (2012)
+    NeuroImage: intrinsic curvature skewness, negative K fraction,
+    and distribution moments that detect cortical changes missed by
+    extrinsic measures.
+
+    Args:
+        vertices: (N, 3)
+        faces: (F, 3)
+
+    Returns:
+        dict with keys:
+          H_mean, H_std, H_skew: mean curvature statistics
+          K_mean, K_std, K_skew: Gaussian curvature statistics
+          K_negative_fraction: fraction of vertices with K < 0 (hyperbolic)
+          K_positive_fraction: fraction with K > 0 (elliptic)
+          SI_mean, SI_std: shape index statistics
+    """
+    from scipy.stats import skew as scipy_skew
+
+    H = mean_curvature(vertices, faces)
+    K = gaussian_curvature(vertices, faces)
+    SI = shape_index(vertices, faces)
+
+    valid_H = H[np.isfinite(H)]
+    valid_K = K[np.isfinite(K)]
+    valid_SI = SI[np.isfinite(SI)]
+
+    return {
+        'H_mean': float(np.mean(valid_H)),
+        'H_std': float(np.std(valid_H)),
+        'H_skew': float(scipy_skew(valid_H)),
+        'K_mean': float(np.mean(valid_K)),
+        'K_std': float(np.std(valid_K)),
+        'K_skew': float(scipy_skew(valid_K)),
+        'K_negative_fraction': float((valid_K < 0).mean()),
+        'K_positive_fraction': float((valid_K > 0).mean()),
+        'SI_mean': float(np.mean(valid_SI)),
+        'SI_std': float(np.std(valid_SI)),
+        'n_vertices': len(vertices),
+    }
+
+
+def pial_white_curvature_ratio(pial_vertices: np.ndarray,
+                                pial_faces: np.ndarray,
+                                white_vertices: np.ndarray,
+                                white_faces: np.ndarray) -> dict:
+    """Ratio of pial to white matter intrinsic curvature.
+
+    From Ronan, Voets, Hough et al. (2012): the pial/white Gaussian
+    curvature ratio indexes differential expansion of cortical layers.
+    Reduced ratio indicates under-expansion of superficial layers,
+    associated with reduced short-range connectivity.
+
+    Args:
+        pial_vertices, pial_faces: pial surface mesh
+        white_vertices, white_faces: white matter surface mesh
+
+    Returns:
+        dict with K_ratio_mean, K_ratio_median, and per-vertex ratio
+    """
+    K_pial = gaussian_curvature(pial_vertices, pial_faces)
+    K_white = gaussian_curvature(white_vertices, white_faces)
+
+    # Vertex correspondence assumed (same topology, FreeSurfer convention)
+    assert len(K_pial) == len(K_white), \
+        f"Surfaces must have same vertex count: {len(K_pial)} vs {len(K_white)}"
+
+    # Ratio of absolute K (avoids sign issues)
+    abs_K_pial = np.abs(K_pial)
+    abs_K_white = np.abs(K_white)
+    valid = (abs_K_white > 1e-10) & np.isfinite(K_pial) & np.isfinite(K_white)
+
+    ratio = np.full(len(K_pial), np.nan)
+    ratio[valid] = abs_K_pial[valid] / abs_K_white[valid]
+
+    return {
+        'K_ratio_mean': float(np.nanmean(ratio)),
+        'K_ratio_median': float(np.nanmedian(ratio)),
+        'K_ratio_per_vertex': ratio,
+        'K_pial_skew': float(np.nan) if len(K_pial[np.isfinite(K_pial)]) == 0
+                        else float(__import__('scipy.stats', fromlist=['skew']).skew(K_pial[np.isfinite(K_pial)])),
+        'K_white_skew': float(np.nan) if len(K_white[np.isfinite(K_white)]) == 0
+                        else float(__import__('scipy.stats', fromlist=['skew']).skew(K_white[np.isfinite(K_white)])),
+    }
+
+
 def folding_wavelength(vertices: np.ndarray, faces: np.ndarray,
                        n_bins: int = 50) -> float:
     """Estimate dominant folding wavelength from curvature power spectrum.
