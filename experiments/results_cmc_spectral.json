@@ -1,0 +1,210 @@
+{
+  "CMA-ES": [
+    {
+      "optimizer_name": "CMA-ES",
+      "best_params": {
+        "g_ss_sp": 254.90918963951103,
+        "g_sp_ii": 102.4566051508718,
+        "g_sp_dp": 254.48613700836006,
+        "g_dp_ii": 102.73777611785381,
+        "g_dp_sp": 255.3188387482586,
+        "g_ii_ss": 102.05775410062938,
+        "g_ii_sp": 103.11715887699499,
+        "g_ii_dp": 101.9973744595155,
+        "I": 275.422978812556
+      },
+      "best_fc": -0.9685280323028564,
+      "best_fcd": 0.8972050175070763,
+      "raw_objectives": {
+        "amplitude": 0.015429411083459854,
+        "stable": 1.0,
+        "alpha_power_frac": 0.10279498249292374,
+        "peak_freq": 3.90625,
+        "amplitude_score": 0.15308124940906795,
+        "bounded": 1.0,
+        "fc_correlation": -0.9685280323028564
+      },
+      "total_evaluations": 100,
+      "wall_time": 5.781018364010379,
+      "history": [
+        {
+          "gen": 1,
+          "best_fc": -0.968529224395752,
+          "mean_fc": -0.9685318231582641,
+          "n_evals": 10,
+          "sigma": 0.2817889396293073
+        },
+        {
+          "gen": 2,
+          "best_fc": -0.9685285091400146,
+          "mean_fc": -0.9685317754745484,
+          "n_evals": 20,
+          "sigma": 0.2867476092966236
+        },
+        {
+          "gen": 3,
+          "best_fc": -0.9685285091400146,
+          "mean_fc": -0.9685310006141663,
+          "n_evals": 30,
+          "sigma": 0.27678359430784366
+        },
+        {
+          "gen": 4,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.9685312271118164,
+          "n_evals": 40,
+          "sigma": 0.26609725913038573
+        },
+        {
+          "gen": 5,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.9685312032699585,
+          "n_evals": 50,
+          "sigma": 0.24893419211190754
+        },
+        {
+          "gen": 6,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.9685315430164337,
+          "n_evals": 60,
+          "sigma": 0.24004841826989556
+        },
+        {
+          "gen": 7,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.9685315251350403,
+          "n_evals": 70,
+          "sigma": 0.23797169743211874
+        },
+        {
+          "gen": 8,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.968532121181488,
+          "n_evals": 80,
+          "sigma": 0.2505307277907905
+        },
+        {
+          "gen": 9,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.9685310304164887,
+          "n_evals": 90,
+          "sigma": 0.23986998930783146
+        },
+        {
+          "gen": 10,
+          "best_fc": -0.9685280323028564,
+          "mean_fc": -0.9685316920280457,
+          "n_evals": 100,
+          "sigma": 0.23605135086173276
+        }
+      ],
+      "metadata": {}
+    }
+  ],
+  "LLaMEA-Claude": [
+    {
+      "optimizer_name": "LLaMEA-Claude",
+      "best_params": {
+        "g_ss_sp": 48.57652096475613,
+        "g_sp_ii": 34.35050748951869,
+        "g_sp_dp": 90.77692658913423,
+        "g_dp_ii": 200.0,
+        "g_dp_sp": 370.8698481616745,
+        "g_ii_ss": 47.057893086435,
+        "g_ii_sp": 100.16714513584746,
+        "g_ii_dp": 172.43984597600542,
+        "I": 252.62808418742944
+      },
+      "best_fc": 0.9071497917175293,
+      "best_fcd": 0.04642510414123535,
+      "raw_objectives": {
+        "amplitude": 2.7701315879821777,
+        "stable": 1.0,
+        "alpha_power_frac": 0.9535748958587646,
+        "peak_freq": 11.71875,
+        "amplitude_score": 1.0,
+        "bounded": 1.0,
+        "fc_correlation": 0.9071497917175293
+      },
+      "total_evaluations": 100,
+      "wall_time": 198.654388848925,
+      "history": [
+        {
+          "gen": 1,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 2,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 3,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 4,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 5,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 6,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 7,
+          "best_fc": -Infinity,
+          "gen_evals": 0,
+          "n_evals": 0,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 8,
+          "best_fc": 0.9071497917175293,
+          "gen_evals": 100,
+          "n_evals": 100,
+          "evolved_fitness": 0.9071497917175293
+        },
+        {
+          "gen": 9,
+          "best_fc": 0.9071497917175293,
+          "gen_evals": 0,
+          "n_evals": 100,
+          "evolved_fitness": 0.0
+        },
+        {
+          "gen": 10,
+          "best_fc": 0.9071497917175293,
+          "gen_evals": 0,
+          "n_evals": 100,
+          "evolved_fitness": 0.0
+        }
+      ],
+      "metadata": {
+        "evolved_code": "import numpy as np\n\ndef optimize(evaluate, parameter_space, budget):\n    param_names = list(parameter_space.keys())\n    bounds_array = np.array(list(parameter_space.values()))\n    lower_bounds = bounds_array[:, 0]\n    upper_bounds = bounds_array[:, 1]\n    num_params = len(param_names)\n\n    # Differential Evolution parameters\n    # Population size (NP) is chosen to be at least 20 and at least 4 times the number of parameters.\n    # This helps ensure enough diversity for exploration in multimodal landscapes.\n    # For a fixed budget, NP is set once based on problem size rather than dynamically adapted.\n    NP = max(20, 4 * num_params)\n\n    # Mutation factor F: controls the differential weight, typically between 0.5 and 1.0.\n    F = 0.8\n\n    # Crossover rate CR: controls the probability of a trial vector inheriting parameters from the mutant,\n    # typically between 0.7 and 0.9.\n    CR = 0.7\n\n    # Initialize population\n    # Each row is a candidate solution (vector of parameters)\n    population = np.random.uniform(lower_bounds, upper_bounds, (NP, num_params))\n    scores = np.full(NP, -np.inf)  # Initialize scores to negative infinity for maximization\n\n    best_score = -np.inf\n    best_params_dict = {}\n    eval_count = 0\n\n    # Evaluate initial population\n    for i in range(NP):\n        if eval_count >= budget:\n            break\n        \n        # Convert numpy array solution to dictionary for the evaluate function\n        params_dict = {param_names[j]: population[i, j] for j in range(num_params)}\n        scores[i] = evaluate(params_dict)\n        eval_count += 1\n\n        if scores[i] > best_score:\n            best_score = scores[i]\n            best_params_dict = params_dict.copy()\n\n    # Main DE optimization loop (generations)\n    while eval_count < budget:\n        for i in range(NP):  # Iterate through each target vector in the population\n            if eval_count >= budget:\n                break\n\n            # Select three distinct random indices (a, b, c) from the population, different from the current target vector's index (i)\n            # This implements the DE/rand/1 strategy\n            indices = [idx for idx in range(NP) if idx != i]\n            if len(indices) < 3: # Handle case where NP is too small for 3 distinct indices\n                # This should not happen with NP = max(20, 4*num_params) for num_params = 9 (NP=36)\n                # But as a safeguard: if not enough distinct indices, just skip this generation or pick non-distinct.\n                # For robustness, we ensure enough population size upfront.\n                a, b, c = np.random.choice(NP, 3, replace=True) # Fallback to replacement\n                while a == i or b == i or c == i or a == b or a == c or b == c:\n                    a, b, c = np.random.choice(NP, 3, replace=True)\n            else:\n                a, b, c = np.random.choice(indices, 3, replace=False)\n\n            # Mutation: Create a mutant vector\n            mutant = population[a] + F * (population[b] - population[c])\n\n            # Apply bounds to the mutant vector to keep it within the search space\n            mutant = np.clip(mutant, lower_bounds, upper_bounds)\n\n            # Crossover (Binomial Crossover)\n            trial = np.copy(population[i])  # Initialize trial vector with the target vector\n            j_rand = np.random.randint(num_params)  # Ensure at least one parameter comes from the mutant\n\n            for j in range(num_params):\n                if np.random.rand() < CR or j == j_rand:\n                    trial[j] = mutant[j]\n            \n            # Evaluate the trial vector\n            params_dict_trial = {param_names[j]: trial[j] for j in range(num_params)}\n            trial_score = evaluate(params_dict_trial)\n            eval_count += 1\n\n            # Selection: If the trial vector is better than the target vector, replace it\n            if trial_score > scores[i]:\n                scores[i] = trial_score\n                population[i] = trial\n\n                # Update the overall best solution found so far\n                if trial_score > best_score:\n                    best_score = trial_score\n                    best_params_dict = params_dict_trial.copy()\n    \n    return best_params_dict, best_score",
+        "llm_budget": 10,
+        "model": "gemini-2.5-flash"
+      }
+    }
+  ]
+}

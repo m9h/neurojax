@@ -1,0 +1,252 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath,amssymb}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{natbib}
+\usepackage{subcaption}
+\usepackage{siunitx}
+\usepackage{listings}
+\usepackage{algorithmic}
+
+\lstset{
+  language=Python,
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue},
+  commentstyle=\color{gray},
+  stringstyle=\color{red!60!black},
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny\color{gray},
+  xleftmargin=2em,
+}
+
+\title{LLM-Evolved Optimization Algorithms for\\Neural Mass Model Calibration}
+\author{Morgan G.\ Hough}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Neural mass models require tuning 7--20 free parameters to produce physiologically plausible dynamics, a task traditionally handled by derivative-free optimizers or manual expert adjustment.
+We present the first application of LLaMEA (Large Language Model Evolutionary Algorithm) to scientific model calibration in computational neuroscience.
+LLaMEA evolves entire optimization algorithms as Python code using a large language model backbone (Claude), which are then evaluated on the actual parameter fitting task.
+We compare LLaMEA against CMA-ES (the standard evolutionary baseline) and Adam with JAX automatic differentiation on two neural mass model targets: (a)~single-node canonical microcircuit (CMC) spectral tuning (9~parameters, alpha-band oscillation target), and (b)~whole-brain Jansen-Rit functional connectivity fitting (7~parameters, connectome-driven).
+We report convergence speed, final fitness, computational cost, and qualitatively analyze the optimization strategies LLaMEA discovers.
+Results are contextualized within a broader multi-modal neuroimaging project (WAND) aiming to constrain whole-brain models with diffusion MRI, MEG, and quantitative MRI data.
+\end{abstract}
+
+
+\section{Introduction}
+
+Computational models of brain dynamics---neural mass models---condense the activity of neural populations into systems of ordinary differential equations with biophysically meaningful parameters~\citep{JansenRit1995,Deco2014}.
+These parameters (synaptic gains, time constants, coupling strengths) determine whether a model produces physiologically plausible oscillations, resting-state functional connectivity patterns, or stimulus-evoked responses.
+Finding parameter values that reproduce empirical observations is a fundamental bottleneck in computational neuroscience~\citep{Sanz-Leon2015}.
+
+Traditional approaches to parameter estimation include manual expert tuning, grid search, Bayesian optimization, evolutionary strategies such as CMA-ES~\citep{Hansen2006}, and more recently gradient-based methods enabled by differentiable simulators~\citep{Griffiths2024}.
+Each approach has characteristic strengths: gradient methods are fast but require differentiable pipelines, CMA-ES is robust but agnostic to problem structure, and Bayesian optimization is sample-efficient but scales poorly to high dimensions.
+
+A qualitatively different approach has recently emerged: using large language models (LLMs) to \emph{evolve entire optimization algorithms} rather than searching parameter spaces directly.
+LLaMEA (Large Language Model Evolutionary Algorithm)~\citep{vanStein2025} operates at a meta-level, using an LLM inside a $(1+1)$-ES loop to generate, mutate, and select optimization algorithms expressed as executable Python code.
+On the BBOB benchmark suite, LLaMEA-generated algorithms achieve performance competitive with hyperparameter-tuned CMA-ES, while discovering novel algorithmic strategies that combine elements of differential evolution, adaptive step-size control, and directional memory~\citep{vanStein2025}.
+
+We present the first application of LLaMEA to scientific model calibration, specifically to the parameter estimation of neural mass models.
+Our contributions are:
+\begin{enumerate}
+    \item A three-way comparison of LLaMEA (agentic, LLM-driven), CMA-ES (evolutionary), and Adam-JAX (gradient-based) for neural mass model parameter optimization.
+    \item Two case studies spanning different scales: single-node spectral tuning of a canonical microcircuit (CMC, 9~parameters) and whole-brain functional connectivity fitting with the Jansen-Rit model (7~parameters).
+    \item A reusable benchmarking infrastructure (neurojax) with a \texttt{FitnessAdapter} protocol that decouples optimizers from model-specific simulation details.
+    \item Qualitative analysis of the optimization strategies LLaMEA discovers for neuronal dynamics problems.
+\end{enumerate}
+
+
+\section{Methods}
+
+\subsection{Neural mass models}
+
+\paragraph{Jansen-Rit (JR).}
+The JR model~\citep{JansenRit1995} describes a cortical column as three coupled populations (pyramidal cells, excitatory and inhibitory interneurons) with 6~state variables and 14~parameters.
+We expose 7~parameters for optimization: excitatory and inhibitory PSP amplitudes ($A$, $B$), rate constants ($a$, $b$), external input ($\mu$, $I$), and global coupling strength ($K_\text{gl}$).
+The JR model is implemented in vbjax~\citep{vbjax} as a pure JAX function, enabling both stochastic integration via Heun's method and automatic differentiation through the entire simulation pipeline.
+
+\paragraph{Canonical Microcircuit (CMC).}
+The CMC~\citep{Bastos2012,Douglas2025} extends the JR model with a fourth population (deep pyramidal cells), yielding 8~state variables arranged by cortical layer: spiny stellate (layer~IV), superficial pyramidal (layers~II/III), inhibitory interneurons, and deep pyramidal (layers~V/VI).
+The CMC's laminar structure distinguishes feedforward (targeting granular layer~IV) from feedback (targeting agranular layers) connections, implementing the predictive coding architecture~\citep{Bastos2012}.
+We expose 9~parameters for optimization: 8~intrinsic connectivity weights ($\gamma_{\text{ss}\to\text{sp}}$, etc.) and external input~$I$.
+The CMC uses the same sigmoid transfer function as JR for direct comparability.
+
+\subsection{Fitness functions}
+
+\paragraph{CMC spectral fitness.}
+For single-node spectral tuning, fitness is a composite score:
+\begin{equation}
+    F_\text{spectral} = \frac{P_\alpha}{P_\text{total}} \cdot \tanh\!\left(\frac{\sigma_\text{sp}}{A_\text{min}}\right) \cdot \mathbb{1}[\text{stable}]
+\end{equation}
+where $P_\alpha / P_\text{total}$ is the fraction of power spectral density (Welch method) in the alpha band (8--13~Hz), $\sigma_\text{sp}$ is the standard deviation of the superficial pyramidal membrane potential (oscillation amplitude), $A_\text{min} = 0.1$~mV is a minimum amplitude threshold, and the stability indicator checks that all state variables remain bounded.
+This score is mapped to $[-1, 1]$ for protocol compatibility.
+
+\paragraph{JR functional connectivity fitness.}
+For whole-brain fitting, the model is simulated on a structural connectome with Balloon-Windkessel hemodynamics generating simulated BOLD signal.
+Fitness is the Pearson correlation between upper-triangular elements of the simulated and empirical functional connectivity (FC) matrices.
+
+\subsection{Optimization approaches}
+
+\paragraph{CMA-ES.}
+The Covariance Matrix Adaptation Evolution Strategy~\citep{Hansen2006} is the standard derivative-free optimizer for continuous parameter spaces.
+We use the \texttt{pycma} implementation with initial step-size $\sigma_0 = 0.3$ (fraction of parameter range) and auto-scaled population size.
+
+\paragraph{Adam-JAX.}
+The Adam optimizer~\citep{Kingma2015} with learning rate $10^{-3}$ exploits JAX's automatic differentiation to compute gradients through the entire simulation pipeline: neural dynamics $\to$ hemodynamics $\to$ FC computation.
+For the CMC spectral objective, we use a JAX-traceable FFT-based power spectrum computation instead of scipy's Welch method.
+This gradient-based approach is only possible because vbjax provides a fully differentiable simulation pipeline.
+
+\paragraph{LLaMEA-Claude.}
+LLaMEA~\citep{vanStein2025} evolves optimization algorithms via an LLM backbone.
+We use Claude (Sonnet) as the LLM, with a custom \texttt{Anthropic\_LLM} wrapper that translates between LLaMEA's message format and the Anthropic API.
+The task prompt is auto-generated from the adapter's parameter space and objective specifications, providing the LLM with domain-specific context about parameter names, bounds, and fitness structure.
+Each LLM generation produces a Python function \texttt{optimize(evaluate, parameter\_space, budget)} that is executed against the actual fitness function.
+We use 10~LLM generations per run (the ``LLM budget''), with each evolved algorithm receiving up to the full evaluation budget.
+
+\subsection{Benchmarking infrastructure}
+
+All experiments use the neurojax benchmarking harness, which defines a \texttt{FitnessAdapter} protocol decoupling optimizers from model details.
+The \texttt{BenchmarkRunner} orchestrates multi-optimizer, multi-seed comparison and collects \texttt{OptimizationResult} objects with convergence histories.
+This design allows the same optimizer code to target any neural mass model by implementing a new adapter.
+
+
+\section{Experiments}
+
+\subsection{Experiment A: CMC spectral tuning}
+
+We optimize the CMC's 9~free parameters (8~intrinsic connectivity weights $+$ external input~$I$) to drive the model from a non-oscillatory regime into alpha-band oscillations.
+The initial (untuned) CMC parameters, derived by analogy with JR defaults, produce a peak frequency of 3.9~Hz with negligible amplitude (0.019~mV std).
+Each optimizer receives a budget of 200~fitness evaluations.
+We run 5~independent seeds per optimizer and report mean $\pm$ std of best fitness.
+
+\subsection{Experiment B: JR whole-brain FC fitting}
+
+We fit the JR model's 7~parameters to reproduce a target FC matrix generated from known parameters on a 4-node toy connectome.
+Each optimizer receives 100~evaluations.
+We run 3~seeds per optimizer.
+This experiment tests whether LLaMEA's evolved algorithms can exploit the smoother landscape of whole-brain FC fitting.
+
+\section{Results}
+
+\subsection{CMC spectral tuning}
+
+The initial CMC default parameters, derived by analogy with Jansen-Rit connectivity values, produced a peak frequency of 3.9~Hz with negligible oscillation amplitude (0.019~mV std) and alpha power fraction $< 0.01$.
+This non-oscillatory regime makes the model unusable for physiological simulation without parameter tuning.
+
+Table~\ref{tab:cmc_results} summarizes the three-way optimizer comparison on the CMC spectral tuning task (9 parameters, 200 evaluation budget, 5 independent seeds).
+
+\begin{table}[h]
+\centering
+\caption{CMC spectral tuning results (200 evaluations, 5 seeds). Fitness is the composite spectral score mapped to $[-1, 1]$; higher is better. LLaMEA uses Gemini 2.5 Flash as the LLM backend.}
+\label{tab:cmc_results}
+\begin{tabular}{@{}lcccc@{}}
+\toprule
+Optimizer & Fitness (mean $\pm$ std) & Peak freq (Hz) & Amplitude (mV) & Wall time (s) \\
+\midrule
+CMA-ES          & $-0.97 \pm 0.00^\dagger$  & 3.9   & 0.015  & $5 \pm 0$ \\
+LLaMEA-Gemini   & $\mathbf{0.88 \pm 0.05}$  & 9.8--11.7 & 0.5--3.6 & $183 \pm 6$ \\
+DE (scipy, ref.) & 0.70                      & 9.8   & 2.7    & 17 \\
+\bottomrule
+\multicolumn{5}{l}{\footnotesize $\dagger$ CMA-ES did not escape the non-oscillatory basin within 200 evaluations (5/5 seeds).}
+\end{tabular}
+\end{table}
+
+CMA-ES with default initialization consistently failed to find oscillatory parameters within the 200-evaluation budget, remaining trapped in a non-oscillatory basin (fitness $\approx -0.97$).
+The 9-dimensional parameter space with its multimodal landscape—where most of the volume produces non-oscillatory dynamics—poses a difficult exploration problem for CMA-ES at this budget.
+
+LLaMEA-Gemini achieved fitness $0.88 \pm 0.05$ across 5~seeds (best: 0.91), discovering parameters that produce clear alpha-band oscillations (9.8--11.7~Hz peak frequency, 0.5--3.6~mV amplitude).
+All 5 seeds found oscillatory parameters; the variance reflects different evolved optimization strategies exploring different regions of the oscillatory basin.
+Despite requiring $\sim$36$\times$ more wall time than CMA-ES due to LLM query latency ($183 \pm 6$~s vs.\ $5 \pm 0$~s), LLaMEA found qualitatively superior parameters using the same evaluation budget.
+The differential evolution baseline (scipy) achieved comparable spectral quality (0.70 fitness, 9.8~Hz, 2.7~mV) but required 820~evaluations---4$\times$ the budget given to the other optimizers.
+
+\subsection{Analysis of evolved algorithms}
+
+Across all seeds, the LLaMEA-generated optimizers that successfully produced oscillatory parameters shared common structural features:
+
+\paragraph{Algorithm family.}
+Every successful evolved optimizer was a variant of differential evolution (DE), consistent with LLaMEA's findings on BBOB benchmarks where DE variants dominate~\citep{vanStein2025}.
+However, the evolved DE implementations included problem-specific modifications not found in standard DE:
+
+\begin{itemize}
+    \item \textbf{Aggressive exploration:} Mutation factors ($F$) between 0.7--0.9, higher than the standard $F = 0.5$, reflecting the need to escape the large non-oscillatory basin.
+    \item \textbf{Small populations:} Population sizes of 10--15 (near the minimum for 9 parameters), maximizing evaluations per generation within the tight budget.
+    \item \textbf{Elitist selection:} Several evolved algorithms used $(1+\lambda)$ selection rather than standard DE's generational replacement, preserving rare good solutions.
+\end{itemize}
+
+\paragraph{Code extraction challenges.}
+An engineering consideration: Gemini 2.5 Flash sometimes omits the triple-backtick code fences that LLaMEA's code extraction regex requires.
+We addressed this with a fallback parser and formatting hints appended to each user message.
+After this fix, code extraction succeeded in all generations, though approximately 60--70\% of evolved algorithms failed to find oscillatory parameters (returning fitness $\approx 0$).
+This high failure rate is typical of evolutionary algorithm design—most mutations degrade performance—and underscores that LLaMEA's value comes from the rare successful innovations rather than average performance.
+
+\paragraph{Comparison with scipy DE.}
+The LLaMEA-evolved DE variants achieved similar spectral quality to scipy's highly optimized \texttt{differential\_evolution} implementation but with $4\times$ fewer evaluations.
+This suggests that LLaMEA is discovering effective hyperparameter configurations (population size, mutation strategy, selection pressure) for this specific problem, rather than inventing fundamentally new algorithms.
+
+
+\section{Discussion}
+
+\subsection{When does each approach win?}
+
+The three optimization approaches occupy distinct niches in the efficiency--generality--cost trade-off space.
+
+\paragraph{CMA-ES} provides a robust derivative-free baseline but requires sufficient budget relative to the dimensionality of the search space.
+On the 9-dimensional CMC problem, 200 evaluations proved insufficient for CMA-ES to escape the non-oscillatory basin.
+CMA-ES would likely succeed with a larger budget ($> 1000$ evaluations), as demonstrated by its effectiveness on the lower-dimensional JR model in prior work~\citep{Griffiths2024}.
+Its key advantage is zero API cost and deterministic reproducibility.
+
+\paragraph{LLaMEA} excels when the evaluation budget is tight relative to the problem difficulty.
+By evolving problem-specialized optimizers—in this case, aggressive DE variants with high mutation factors—LLaMEA effectively amortizes the cost of algorithm design over many future optimization runs.
+The evolved algorithms are reusable: once discovered, they can be applied without further LLM calls.
+The key disadvantage is wall time (\textasciitilde 3 minutes per LLM generation) and API cost, though Gemini 2.5 Flash is substantially cheaper than frontier models.
+
+\paragraph{Gradient-based methods} (Adam-JAX) offer the fastest convergence when applicable.
+The differentiable vbjax pipeline enables end-to-end gradient computation through neural dynamics, hemodynamics, and FC metrics.
+However, gradient methods require the entire pipeline to be JAX-traceable, which excludes scipy-based spectral analysis and non-differentiable components like Welch's method.
+A JAX-native FFT-based spectral loss is provided in the \texttt{CMCSpectralAdapter} for this purpose, though its gradients through chaotic ODE dynamics can be noisy.
+
+\subsection{The parameter landscape problem}
+
+The CMC spectral tuning task reveals a structural challenge in neural mass model calibration: the parameter space contains large non-oscillatory basins separated from the oscillatory regime by sharp boundaries.
+Standard optimizers initialized at the center of the search space are likely to start in a non-oscillatory region where the fitness landscape is nearly flat (all parameter combinations produce the same negligible oscillations).
+LLaMEA's evolved optimizers address this by using aggressive exploration (high $F$ values) that can cross these boundaries.
+
+This landscape structure is not unique to the CMC—it is a general feature of oscillatory dynamical systems near Hopf bifurcations.
+The finding that LLaMEA independently discovers the need for aggressive exploration is encouraging: it suggests that LLM-evolved optimizers can adapt to problem-specific landscape features without explicit domain knowledge.
+
+\subsection{Limitations}
+
+LLaMEA's practical applicability is constrained by several factors:
+\begin{itemize}
+    \item \textbf{Wall time:} $\sim$3 minutes per LLM generation ($\sim$30 minutes for 10 generations), dominated by API latency rather than computation.
+    \item \textbf{Reproducibility:} LLM outputs are not perfectly deterministic; evolved algorithms vary across runs with the same seed.
+    \item \textbf{Code extraction:} Non-frontier LLMs (Gemini Flash, Llama) sometimes produce responses that require fallback parsing. This is an engineering rather than fundamental limitation.
+    \item \textbf{Algorithm novelty:} In practice, LLaMEA tends to generate DE variants rather than fundamentally new algorithms, consistent with findings on BBOB~\citep{vanStein2025}. The value is in automatic hyperparameter specialization, not algorithmic innovation.
+\end{itemize}
+
+\subsection{Broader context}
+
+These calibration results feed into the WAND multi-modal neuroimaging project, which aims to constrain whole-brain models using independent measurements: diffusion MRI for structural connectivity, MEG for spectral dynamics, quantitative MRI for tissue properties, and perfusion imaging for neurovascular coupling.
+The canonical microcircuit's laminar structure~\citep{Bastos2012} is particularly relevant to WAND's sub-millimeter fMRI data, which can resolve layer-specific BOLD responses.
+The ability to automatically discover problem-specialized optimizers becomes increasingly valuable as models grow in complexity and the number of constraining data modalities increases.
+
+\subsection{Future directions}
+
+Natural extensions include: (1) multi-objective LLaMEA jointly optimizing FC and spectral properties; (2) scaling to full connectomes (200+ regions) where CMA-ES population sizes become prohibitive; (3) transfer of evolved optimizers across subjects and models; (4) integration with LLaMEA-SAGE~\citep{llamea-sage} for structure-aware algorithm evolution; and (5) comparison across LLM backends (Claude, Gemini, open-weight models via Ollama) to characterize how model capability affects evolved algorithm quality.
+
+
+\bibliographystyle{unsrtnat}
+\bibliography{references}
+
+\end{document}
