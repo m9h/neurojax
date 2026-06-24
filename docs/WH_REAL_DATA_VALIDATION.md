@@ -5,39 +5,45 @@ Wakeman-Henson face-recognition dataset (OpenNeuro `ds000117`) — the
 "elekta_task" data in the osl-dynamics toolbox paper (Gohil et al. 2024).
 
 ## Setup
-- Subject sub-05, run-01 (491 s, 102 magnetometers @ 1100 Hz).
-- Sensor-level (à la Gohil/Woolrich 2025 "Canonical HMM", no source recon).
-- Preparation via **osl-dynamics** `Data.prepare`: band-pass 1–45 Hz, resample
-  250 Hz, TDE (15 embeddings) + PCA (40 comps) + standardize → (122 736, 40).
+- Subject sub-05, **all 6 runs** (~49 min, 102 magnetometers @ 1100 Hz).
+- Sensor-level (a la Gohil/Woolrich 2025 "Canonical HMM", no source recon).
+- Preparation via **osl-dynamics** `Data.prepare`: band-pass 1-45 Hz, resample
+  250 Hz, TDE (15 embeddings) + PCA (40 comps) + standardize -> (741666, 40).
 - The *same* prepared array feeds both the osl-dynamics oracle and the JAX models.
 - Scripts: `scripts/real_data/wh_prep_oracle.py` (osl env) and
   `wh_jax_compare.py` (JAX/GPU env).
 
-## Results
-All three JAX models trained on real MEG **on the GB10 GPU**:
+## Results — multi-run (headline)
+All three JAX models trained on real MEG **on the GB10 GPU**. A 6-state
+covariance-only TDE-HMM was fit by both osl-dynamics (oracle) and the JAX
+Baum-Welch implementation on identical data, then states were matched by
+**network-map (covariance) similarity** — the standard osl-dynamics comparison.
 
-| Model | Outcome on real Wakeman-Henson MEG |
-|-------|-----------------------------------|
-| **GaussianHMM** | fit; vs osl-dynamics oracle — see below |
-| **DyNeMo** | ELBO 60.7 → 50.9 (trains); collapses toward 1 dominant mode |
-| **M-DyNeMo** | ELBO 56.6 → 45.0; **power/FC time-course corr = −0.10** — the defining decoupling holds on real MEG |
+| Metric (JAX HMM vs osl-dynamics oracle) | Value |
+|------------------------------------------|-------|
+| State network-map correlation (matched), mean | **0.859** |
+| per state | 0.992, 0.989, 0.988, 0.982, 0.727, 0.477 |
+| Per-timepoint segmentation agreement (cov-matched) | **0.951** |
+| Fractional occupancy — JAX | 0.005, 0.027, 0.16, 0.161, 0.323, 0.324 |
+| Fractional occupancy — oracle | 0.006, 0.023, 0.16, 0.16, 0.325, 0.325 |
 
-**HMM vs osl-dynamics oracle (identical prepared data):**
-- State-segmentation agreement **0.567**, against a **ceiling of 0.725** (the two
-  fits converged to different occupancy profiles, so 1.0 is unreachable).
-- Dominant-state timepoint overlap **0.649**; both find one dominant background
-  state (JAX 0.51, oracle 0.79) plus transients.
+Four of six state networks correlate **> 0.98**; the two weak ones (0.48, 0.73)
+are precisely the low-occupancy transient states (0.5%, 2.7%) where the
+covariance estimate is noisy. Occupancy profiles are near-identical.
+
+- **DyNeMo**: ELBO 701 -> 43 (trains).
+- **M-DyNeMo**: ELBO 54 -> 40; power/FC time-course corr = 0.25 — the defining
+  decoupling holds on real MEG.
+
+## Single-run (initial, for contrast)
+One 8-minute run gave a degenerate dominant-state HMM (one state at 0.78
+occupancy) and only **0.567** segmentation agreement (ceiling 0.725). More data
+removes the degeneracy — hence the multi-run result above.
 
 ## Interpretation
-The JAX models run and train on real Woolrich MEG on the GPU — the core result.
-The moderate HMM agreement reflects (1) the **Baum-Welch (closed-form) vs
-osl-dynamics SGD** estimator difference already documented on synthetic data and
-in the oracle parity tests, and (2) a single 8-minute run, which yields a
-degenerate dominant-state regime where the two algorithms partition the
-background differently. Both nonetheless localise the same dominant state.
-
-## Cleaner comparison (next step)
-For a stronger parity number: concatenate multiple runs/subjects (less
-degenerate), and compare **state network maps** (covariance matrices matched by
-similarity) — the standard osl-dynamics HMM comparison — rather than only
-per-timepoint segmentation, which is sensitive to label timing.
+On a stable, well-powered fit the JAX HMM **reproduces osl-dynamics' brain
+network states on real Woolrich MEG**: 95% temporal agreement, near-identical
+occupancy, and >0.98 network-map correlation for every well-occupied state.
+Residual differences sit in the lowest-occupancy transients and reflect the
+Baum-Welch (closed-form) vs osl-dynamics SGD estimator difference documented in
+the synthetic oracle parity tests.
