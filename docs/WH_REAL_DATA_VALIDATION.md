@@ -31,7 +31,12 @@ Four of six state networks correlate **> 0.98**; the two weak ones (0.48, 0.73)
 are precisely the low-occupancy transient states (0.5%, 2.7%) where the
 covariance estimate is noisy. Occupancy profiles are near-identical.
 
-- **DyNeMo**: ELBO 701 -> 43 (trains).
+- **DyNeMo vs osl-dynamics DyNeMo oracle** (both fit on the same data): mode
+  network-map (covariance) correlation **mean 0.857**, per-mode 0.99/0.97/0.88/
+  0.79/0.77/0.75 — all 6 modes matched; near-identical mode activations (JAX
+  0.34/0.29/0.19/0.16 vs oracle 0.39/0.22/0.21/0.16). On par with the HMM, and
+  notable because DyNeMo is a softer (overlapping-mode) variational model fit by
+  SGD in both libraries. ELBO 697 -> 43.
 - **M-DyNeMo**: ELBO 54 -> 40; power/FC time-course corr = 0.25 — the defining
   decoupling holds on real MEG.
 
