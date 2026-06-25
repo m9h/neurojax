@@ -154,6 +154,28 @@ validated against `mullerlab/wave-matlab` outputs, then run alongside TINDA on t
 same source data. Line-level fidelity to check when porting: GP's negative-
 frequency interpolation and the ρ-thresholds in `phase_correlation_*`.
 
+## 5. Implemented so far (2026-06-25)
+- **`src/neurojax/analysis/waves.py`** — JAX port of the Muller-lab wave methods:
+  `generalized_phase` (wideband analytic phase + negative-instantaneous-frequency
+  correction via running-max anchors), `phase_gradient` (wrap-free, complex
+  multiplication), `phase_gradient_directionality` (PGD), `wave_direction`,
+  `divergence`, `curl`, `singularity_location`. **11 TDD tests** (`tests/test_waves.py`)
+  on synthetic planar / rotating / radial fields — recovers wave vector & direction,
+  PGD≈1 for coherent vs <0.4 random, curl flags rotation, divergence flags radial
+  sources, singularity located at the rotation centre.
+- **TINDA reproduced** on our real WH sensor multi-run HMM states
+  (`scripts/real_data/wh_tinda_cycle.py`): both the osl-dynamics oracle and the JAX
+  HMM give **cycle strength S ≈ +0.006** (near-zero) — at this scale (1 subject,
+  K=6) there is no robust cycle, consistent with the paper needing K=12 and
+  hundreds of subjects (Cam-CAN n=612). Both implementations agreeing on S≈0 is
+  itself a parity check.
+
+**Next:** (a) mesh generalization of `phase_gradient`/`curl` using the
+`neurojax.geometry` discrete-diff-geometry operators so the wave analysis runs on
+the cortical surface, not a grid; (b) a K=12 multi-subject HMM to obtain a real
+TINDA cycle (S ≫ 0); then run the wave operators on the same source mesh and
+cross-test wave direction/rotation against the TINDA cycle order.
+
 ## Sources
 - Cycles: https://www.nature.com/articles/s41593-025-02052-8 · https://pmc.ncbi.nlm.nih.gov/articles/PMC12497652/ · code https://github.com/OHBA-analysis/Tinda · https://osl-dynamics.readthedocs.io/ (`analysis/tinda`)
 - Waves: Muller NRN 2018 https://www.nature.com/articles/nrn.2018.20 · Davis/Muller Nature 2020 https://www.nature.com/articles/s41586-020-2802-y · Bhattacharya/Miller PLoS CB 2022 https://journals.plos.org/ploscompbiol/article?id=10.1371/journal.pcbi.1009827 · Muller Science 2026 https://www.science.org/doi/10.1126/science.adx1369 · code https://github.com/mullerlab/wave-matlab · https://github.com/mullerlab/generalized-phase
