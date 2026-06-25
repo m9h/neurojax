@@ -65,32 +65,35 @@ def main():
 
     sessions = []
     for subj in SUBJECTS:
-        fwd = None
-        for run in RUNS:
-            fif = (
-                f"{BASE}/{subj}/ses-meg/meg/"
-                f"{subj}_ses-meg_task-facerecognition_run-{run:02d}_meg.fif"
-            )
-            raw = mne.io.read_raw_fif(fif, preload=True, verbose="ERROR")
-            raw.pick("mag")
-            raw.filter(1.0, 45.0, verbose="ERROR")
-            raw.resample(100.0, verbose="ERROR")  # 100 Hz keeps source recon tractable
-
-            if fwd is None:  # coreg + forward once per subject (head pos constant)
-                coreg = mne.coreg.Coregistration(
-                    raw.info, "fsaverage", subjects_dir, fiducials="estimated"
+        try:
+            fwd = None
+            for run in RUNS:
+                fif = (
+                    f"{BASE}/{subj}/ses-meg/meg/"
+                    f"{subj}_ses-meg_task-facerecognition_run-{run:02d}_meg.fif"
                 )
-                coreg.fit_fiducials(verbose="ERROR")
-                coreg.fit_icp(n_iterations=6, nasion_weight=2.0, verbose="ERROR")
-                fwd = mne.make_forward_solution(
-                    raw.info, coreg.trans, src_fname, bem,
-                    meg=True, eeg=False, verbose="ERROR",
-                )
-                print(f"{subj}: coreg+forward done", flush=True)
+                raw = mne.io.read_raw_fif(fif, preload=True, verbose="ERROR")
+                raw.pick("mag")
+                raw.filter(1.0, 45.0, verbose="ERROR")
+                raw.resample(100.0, verbose="ERROR")  # 100 Hz keeps source recon tractable
 
-            parcels = source_parcels(raw, fwd, src, labels)
-            sessions.append(parcels)
-            print(f"{subj} run-{run:02d}: source parcels {parcels.shape}", flush=True)
+                if fwd is None:  # coreg + forward once per subject (head pos constant)
+                    coreg = mne.coreg.Coregistration(
+                        raw.info, "fsaverage", subjects_dir, fiducials="estimated"
+                    )
+                    coreg.fit_fiducials(verbose="ERROR")
+                    coreg.fit_icp(n_iterations=6, nasion_weight=2.0, verbose="ERROR")
+                    fwd = mne.make_forward_solution(
+                        raw.info, coreg.trans, src_fname, bem,
+                        meg=True, eeg=False, verbose="ERROR",
+                    )
+                    print(f"{subj}: coreg+forward done", flush=True)
+
+                parcels = source_parcels(raw, fwd, src, labels)
+                sessions.append(parcels)
+                print(f"{subj} run-{run:02d}: source parcels {parcels.shape}", flush=True)
+        except Exception as e:  # skip a subject whose coreg/recon fails
+            print(f"{subj}: SKIPPED ({type(e).__name__}: {e})", flush=True)
 
     from osl_dynamics.data import Data
 
