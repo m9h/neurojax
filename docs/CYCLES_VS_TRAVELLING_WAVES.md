@@ -170,11 +170,25 @@ frequency interpolation and the ρ-thresholds in `phase_correlation_*`.
   hundreds of subjects (Cam-CAN n=612). Both implementations agreeing on S≈0 is
   itself a parity check.
 
-**Next:** (a) mesh generalization of `phase_gradient`/`curl` using the
-`neurojax.geometry` discrete-diff-geometry operators so the wave analysis runs on
-the cortical surface, not a grid; (b) a K=12 multi-subject HMM to obtain a real
-TINDA cycle (S ≫ 0); then run the wave operators on the same source mesh and
-cross-test wave direction/rotation against the TINDA cycle order.
+- **Mesh operators** (DONE) — `mesh_phase_gradient` (linear-FEM gradient with
+  wrap-free edge phase differences), `phase_singularity_charge` (per-face winding
+  number = mesh curl/rotation detector), `mesh_phase_gradient_directionality`
+  (area-weighted PGD). 4 more TDD tests (15 total) on a flat triangulated grid.
+- **Run on real MEG** (`scripts/real_data/wh_mesh_waves{_prep,}.py`): WH sub-05
+  source-localized to the fsaverage LH cortical mesh (10242 verts, 20480 faces),
+  alpha band (8-12 Hz), 60 s; mesh wave operators applied per frame on the GB10
+  GPU (6000 frames). Result: **PGD median 0.055** (no hemisphere-wide planar
+  wave), but **~294 phase singularities/frame** (every frame). The high
+  singularity count is the signature of a complex/turbulent phase field — at this
+  stage likely dominated by phase noise (each noisy patch spawns +-1 winding
+  pairs). Interpreting it requires (i) spatial phase smoothing / amplitude
+  thresholding and (ii) the source-leakage + two-dipole nulls. So: the pipeline
+  runs end-to-end on real MEG, but no travelling-wave *claim* — null-testing next.
+
+**Next:** (a) amplitude-thresholded / spatially-smoothed singularity detection +
+the two-dipole/leakage nulls before any wave claim; (b) a K=12 multi-subject HMM
+to obtain a real TINDA cycle (S >> 0); then cross-test wave direction/rotation
+against the TINDA cycle order on the same source mesh.
 
 ## Sources
 - Cycles: https://www.nature.com/articles/s41593-025-02052-8 · https://pmc.ncbi.nlm.nih.gov/articles/PMC12497652/ · code https://github.com/OHBA-analysis/Tinda · https://osl-dynamics.readthedocs.io/ (`analysis/tinda`)
