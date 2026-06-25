@@ -1,10 +1,13 @@
 #!/usr/bin/env python
-"""Fit a K=12 HMM on the real WH source-space data and run TINDA — to obtain a
-non-trivial structured network cycle (the paper used K=12).
+"""K=12 HMM + TINDA structured network cycle on real WH source-space MEG, with a
+block-shuffle significance null.  Reproduces Woolrich's "structured cycles" (van
+Es et al. 2025) on our data.
 
-Refits on the already-prepared (source TDE-PCA) data from
-wh_source_prep_oracle.py.  Run in the osl env:
-    .venv-oracle/bin/python -u scripts/real_data/wh_k12_cycle.py
+Uses an existing oracle_gamma.npy if it already has K states (e.g. produced by
+wh_source_prep_oracle.py with WH_N_STATES=12); otherwise refits the HMM on the
+prepared source data.
+
+    WH_OUT=/data/datasets/wh_src8 .venv-oracle/bin/python -u scripts/real_data/wh_k12_cycle.py
 """
 
 import os
@@ -19,47 +22,63 @@ sys.modules["fsl.wrappers"] = fsl.wrappers
 import numpy as np
 from osl_dynamics.analysis import tinda as T
 
-OUT = os.environ.get("WH_OUT", "/data/datasets/wh_src")
+OUT = os.environ.get("WH_OUT", "/data/datasets/wh_src8")
 K = int(os.environ.get("WH_N_STATES", "12"))
 
 
-def cycle_strength(states, k):
-    oh = np.zeros((len(states), k), float)
-    oh[np.arange(len(states)), states] = 1.0
+def cycle_S(seq, k):
+    oh = np.zeros((len(seq), k), float)
+    oh[np.arange(len(seq)), seq] = 1.0
     fo, _, _ = T.tinda(oh)
-    order = list(np.asarray(T.optimise_sequence(fo)).ravel())
-    angles = T.circle_angles(order)
+    order = np.asarray(T.optimise_sequence(fo)).ravel()
     asym = np.nanmean(fo[:, :, 0, :] - fo[:, :, 1, :], axis=-1)
-    return order, float(np.nanmean(T.compute_cycle_strength(angles, asym)))
+    S = float(np.nanmean(T.compute_cycle_strength(T.circle_angles(list(order)), asym)))
+    return list(order), S
 
 
-def main():
-    X = np.load(os.path.join(OUT, "prepared.npy")).astype(np.float32)
-    print(f"Prepared source data: {X.shape}", flush=True)
-
+def get_states():
+    g_path = os.path.join(OUT, "oracle_gamma.npy")
+    if os.path.exists(g_path):
+        g = np.load(g_path)
+        if g.shape[1] == K:
+            return g.argmax(1)
+    # else refit
     from osl_dynamics.data import Data
     from osl_dynamics.models.hmm import Config, Model
 
+    X = np.load(os.path.join(OUT, "prepared.npy")).astype(np.float32)
     data = Data([X])
-    config = Config(
-        n_states=K, n_channels=X.shape[1], sequence_length=200,
-        learn_means=False, learn_covariances=True, learn_trans_prob=True,
-        batch_size=32, learning_rate=0.01, n_epochs=40,
-    )
+    config = Config(n_states=K, n_channels=X.shape[1], sequence_length=200,
+                    learn_means=False, learn_covariances=True, learn_trans_prob=True,
+                    batch_size=32, learning_rate=0.01, n_epochs=40)
     model = Model(config)
     model.random_state_time_course_initialization(data, n_init=3, n_epochs=1)
-    print(f"Fitting K={K} HMM ...", flush=True)
     model.fit(data)
+    g = model.get_alpha(data)
+    g = np.concatenate([np.asarray(a) for a in g]) if isinstance(g, list) else np.asarray(g)
+    return g.argmax(1)
 
-    gamma = model.get_alpha(data)
-    gamma = np.concatenate([np.asarray(g) for g in gamma]) if isinstance(gamma, list) else np.asarray(gamma)
-    np.save(os.path.join(OUT, f"oracle_gamma_k{K}.npy"), gamma)
-    states = gamma.argmax(1)
-    order, S = cycle_strength(states, K)
-    print(f"\n=========  TINDA cycle on real WH source MEG, K={K}  =========", flush=True)
-    print(f"  fractional occupancy: {np.round(np.sort(gamma.mean(0))[::-1], 3)}", flush=True)
-    print(f"  cycle order : {order}", flush=True)
-    print(f"  cycle strength S = {S:+.4f}  (S>0 = consistent directional cycle)", flush=True)
+
+def main():
+    st = get_states()
+    order, real = cycle_S(st, K)
+
+    # Block-shuffle null: permute ~1000-sample blocks (kills long-range ordering).
+    rng = np.random.default_rng(0)
+    bs = 1000
+    nb = len(st) // bs
+    nulls = []
+    for _ in range(20):
+        perm = rng.permutation(nb)
+        nulls.append(cycle_S(st[: nb * bs].reshape(nb, bs)[perm].ravel(), K)[1])
+    nulls = np.array(nulls)
+    z = (real - nulls.mean()) / (nulls.std() + 1e-9)
+
+    print(f"\n=====  TINDA structured cycle on real WH source MEG (K={K})  =====")
+    print(f"  samples {len(st)} | cycle order {order}")
+    print(f"  cycle strength S = {real:+.4f}")
+    print(f"  block-shuffle null: {nulls.mean():+.4f} +- {nulls.std():.4f}")
+    print(f"  z vs null = {z:.1f}  -> {'SIGNIFICANT cycle' if z > 3 else 'not significant'}")
 
 
 if __name__ == "__main__":

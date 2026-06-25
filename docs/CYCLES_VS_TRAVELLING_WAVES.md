@@ -163,12 +163,19 @@ frequency interpolation and the ρ-thresholds in `phase_correlation_*`.
   on synthetic planar / rotating / radial fields — recovers wave vector & direction,
   PGD≈1 for coherent vs <0.4 random, curl flags rotation, divergence flags radial
   sources, singularity located at the rotation centre.
-- **TINDA reproduced** on our real WH sensor multi-run HMM states
-  (`scripts/real_data/wh_tinda_cycle.py`): both the osl-dynamics oracle and the JAX
-  HMM give **cycle strength S ≈ +0.006** (near-zero) — at this scale (1 subject,
-  K=6) there is no robust cycle, consistent with the paper needing K=12 and
-  hundreds of subjects (Cam-CAN n=612). Both implementations agreeing on S≈0 is
-  itself a parity check.
+- **TINDA reproduced** on our real WH HMM states (`scripts/real_data/wh_tinda_cycle.py`,
+  `wh_k12_cycle.py`). Scaling states + subjects reveals a genuine cycle:
+
+  | Setup (source-space WH MEG) | Cycle strength S |
+  |---|---|
+  | K=6, 1 subject (6 runs) | +0.006 (≈ null) |
+  | K=12, 3 subjects | +0.0128 |
+  | **K=12, 8 subjects (788k samples)** | **+0.065** |
+
+  The 8-subject K=12 cycle is highly significant vs a block-shuffle null
+  (null +0.008 ± 0.001 → **z = 56.6**) — a real structured directional cycle,
+  exactly as van Es et al. found (they needed K=12 and many subjects; small
+  setups give S≈0). Cycle order on 12 states: [0,8,7,10,9,2,6,4,11,5,3,1].
 
 - **Mesh operators** (DONE) — `mesh_phase_gradient` (linear-FEM gradient with
   wrap-free edge phase differences), `phase_singularity_charge` (per-face winding
