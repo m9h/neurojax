@@ -17,8 +17,11 @@ from neurojax.analysis.waves import (
     curl,
     divergence,
     generalized_phase,
+    mesh_phase_gradient,
+    mesh_phase_gradient_directionality,
     phase_gradient,
     phase_gradient_directionality,
+    phase_singularity_charge,
     singularity_location,
     wave_direction,
 )
@@ -122,3 +125,49 @@ class TestSingularities:
         d = divergence(gx, gy)
         # expanding wave -> positive divergence away from the center on average
         assert float(jnp.mean(d[5:16, 5:16])) > 0.1
+
+
+# --- Mesh (cortical-surface) wave operators --------------------------------
+
+def flat_mesh(n):
+    """A flat n x n triangulated grid in the z=0 plane (x=col, y=row), CCW."""
+    verts, faces = [], []
+    for i in range(n):
+        for j in range(n):
+            verts.append([float(j), float(i), 0.0])
+    idx = lambda i, j: i * n + j
+    for i in range(n - 1):
+        for j in range(n - 1):
+            faces.append([idx(i, j), idx(i, j + 1), idx(i + 1, j + 1)])
+            faces.append([idx(i, j), idx(i + 1, j + 1), idx(i + 1, j)])
+    return jnp.asarray(verts), jnp.asarray(faces, dtype=jnp.int32)
+
+
+class TestMeshWaves:
+    def test_planar_field_no_singularities(self):
+        v, f = flat_mesh(15)
+        V = jnp.exp(1j * (0.3 * v[:, 0] + 0.1 * v[:, 1]))
+        charge = phase_singularity_charge(V, f)
+        assert float(jnp.max(jnp.abs(charge))) < 0.1
+
+    def test_mesh_gradient_recovers_wavevector(self):
+        v, f = flat_mesh(15)
+        V = jnp.exp(1j * (0.3 * v[:, 0] + 0.1 * v[:, 1]))
+        g = mesh_phase_gradient(V, v, f)  # (n_faces, 3)
+        np.testing.assert_allclose(float(jnp.mean(g[:, 0])), 0.3, atol=0.02)
+        np.testing.assert_allclose(float(jnp.mean(g[:, 1])), 0.1, atol=0.02)
+        assert float(jnp.max(jnp.abs(g[:, 2]))) < 1e-3  # gradient is in-plane
+
+    def test_rotating_field_one_singularity(self):
+        v, f = flat_mesh(15)
+        cx = cy = 7.5  # off-vertex centre -> exactly one enclosing triangle
+        V = jnp.exp(1j * jnp.arctan2(v[:, 1] - cy, v[:, 0] - cx))
+        charge = phase_singularity_charge(V, f)
+        assert abs(float(jnp.sum(charge))) > 0.9     # net topological charge ~ +-1
+        assert float(jnp.max(jnp.abs(charge))) > 0.9  # carried by one face
+
+    def test_mesh_pgd_high_for_planar(self):
+        v, f = flat_mesh(15)
+        V = jnp.exp(1j * (0.3 * v[:, 0] + 0.1 * v[:, 1]))
+        g = mesh_phase_gradient(V, v, f)
+        assert float(mesh_phase_gradient_directionality(g, v, f)) > 0.95

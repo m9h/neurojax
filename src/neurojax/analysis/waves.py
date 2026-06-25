@@ -144,3 +144,74 @@ def singularity_location(gx: jnp.ndarray, gy: jnp.ndarray) -> Tuple[int, int]:
     c = jnp.abs(curl(gx, gy))
     iy, ix = jnp.unravel_index(jnp.argmax(c), c.shape)
     return int(iy), int(ix)
+
+
+# ---------------------------------------------------------------------------
+# Cortical-mesh operators (irregular triangle mesh, not a grid)
+# ---------------------------------------------------------------------------
+#
+# For MEG source space the analytic field lives on the cortical surface, an
+# irregular triangle mesh.  The grid operators above generalize to the mesh as:
+#   - per-face phase gradient via the linear-FEM basis, using wrap-free edge
+#     phase differences (arg(V_j conj(V_i))) for the vertex value differences;
+#   - phase singularities via the per-face winding number (topological charge),
+#     the sum of oriented wrapped edge phase differences around each triangle
+#     (= +-1 at a rotational-wave centre, 0 elsewhere) — the mesh analogue of curl.
+
+
+def mesh_phase_gradient(
+    V: jnp.ndarray, vertices: jnp.ndarray, faces: jnp.ndarray
+) -> jnp.ndarray:
+    """Per-face spatial phase gradient on a triangle mesh.
+
+    Parameters
+    ----------
+    V : (n_vertices,) complex analytic field on the mesh vertices.
+    vertices : (n_vertices, 3) vertex coordinates.
+    faces : (n_faces, 3) int vertex indices (consistently oriented).
+
+    Returns
+    -------
+    grad : (n_faces, 3) gradient vectors, tangent to each face.  Linear-FEM
+        gradient ``sum_i f_i (n x e_i) / (2A)`` with vertex values replaced by
+        wrap-free edge phase differences relative to corner 0.
+    """
+    p = vertices[faces]                       # (F, 3, 3)
+    p0, p1, p2 = p[:, 0], p[:, 1], p[:, 2]
+    f1 = jnp.angle(V[faces[:, 1]] * jnp.conj(V[faces[:, 0]]))
+    f2 = jnp.angle(V[faces[:, 2]] * jnp.conj(V[faces[:, 0]]))
+    e1 = p0 - p2                              # edge opposite vertex 1
+    e2 = p1 - p0                              # edge opposite vertex 2
+    N = jnp.cross(p1 - p0, p2 - p0)
+    two_a = jnp.linalg.norm(N, axis=1, keepdims=True) + 1e-12
+    n = N / two_a
+    grad = (f1[:, None] * jnp.cross(n, e1) + f2[:, None] * jnp.cross(n, e2)) / two_a
+    return grad
+
+
+def phase_singularity_charge(V: jnp.ndarray, faces: jnp.ndarray) -> jnp.ndarray:
+    """Per-face topological charge (winding number) — the mesh singularity /
+    rotation detector.
+
+    charge = (1/2pi) * sum of oriented wrap-free edge phase differences around
+    the triangle; ~ +-1 at a phase singularity (rotational-wave centre), ~ 0
+    where the phase field is smooth.
+    """
+    a, b, c = faces[:, 0], faces[:, 1], faces[:, 2]
+    d_ab = jnp.angle(V[b] * jnp.conj(V[a]))
+    d_bc = jnp.angle(V[c] * jnp.conj(V[b]))
+    d_ca = jnp.angle(V[a] * jnp.conj(V[c]))
+    return (d_ab + d_bc + d_ca) / TWO_PI
+
+
+def mesh_phase_gradient_directionality(
+    grad: jnp.ndarray, vertices: jnp.ndarray, faces: jnp.ndarray
+) -> jnp.ndarray:
+    """Area-weighted PGD on a mesh: |area-weighted mean gradient| / area-weighted
+    mean |gradient|, in [0, 1] (->1 = coherent travelling wave)."""
+    p = vertices[faces]
+    area = 0.5 * jnp.linalg.norm(jnp.cross(p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]), axis=1)
+    total = jnp.sum(area) + 1e-12
+    mean_vec = jnp.sum(area[:, None] * grad, axis=0) / total
+    mean_mag = jnp.sum(area * jnp.linalg.norm(grad, axis=1)) / total
+    return jnp.linalg.norm(mean_vec) / (mean_mag + 1e-12)
