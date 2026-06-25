@@ -204,6 +204,32 @@ def phase_singularity_charge(V: jnp.ndarray, faces: jnp.ndarray) -> jnp.ndarray:
     return (d_ab + d_bc + d_ca) / TWO_PI
 
 
+def smooth_field_mesh(
+    V: jnp.ndarray, faces: jnp.ndarray, n_iter: int = 1
+) -> jnp.ndarray:
+    """Spatially smooth a (complex) vertex field by averaging each vertex with
+    its 1-ring neighbours — vector averaging that suppresses incoherent phase
+    noise (and the spurious singularities it creates) while preserving genuine
+    spatial phase structure.  ``n_iter`` smoothing passes."""
+    n = V.shape[0]
+    und = jnp.concatenate(
+        [faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]], axis=0
+    )
+    src = jnp.concatenate([und[:, 0], und[:, 1]])
+    dst = jnp.concatenate([und[:, 1], und[:, 0]])
+    deg = jax.ops.segment_sum(jnp.ones(src.shape[0]), dst, num_segments=n)
+    for _ in range(n_iter):
+        nbr = jax.ops.segment_sum(V[src], dst, num_segments=n)
+        V = (V + nbr) / (1.0 + deg)
+    return V
+
+
+def face_amplitude(amplitude: jnp.ndarray, faces: jnp.ndarray) -> jnp.ndarray:
+    """Mean instantaneous amplitude over each face's vertices (for thresholding
+    singularities to high-amplitude — genuinely oscillating — cortex)."""
+    return jnp.mean(amplitude[faces], axis=1)
+
+
 def mesh_phase_gradient_directionality(
     grad: jnp.ndarray, vertices: jnp.ndarray, faces: jnp.ndarray
 ) -> jnp.ndarray:

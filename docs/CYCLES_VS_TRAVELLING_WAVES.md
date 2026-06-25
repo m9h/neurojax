@@ -174,20 +174,24 @@ frequency interpolation and the ρ-thresholds in `phase_correlation_*`.
   wrap-free edge phase differences), `phase_singularity_charge` (per-face winding
   number = mesh curl/rotation detector), `mesh_phase_gradient_directionality`
   (area-weighted PGD). 4 more TDD tests (15 total) on a flat triangulated grid.
-- **Run on real MEG** (`scripts/real_data/wh_mesh_waves{_prep,}.py`): WH sub-05
-  source-localized to the fsaverage LH cortical mesh (10242 verts, 20480 faces),
-  alpha band (8-12 Hz), 60 s; mesh wave operators applied per frame on the GB10
-  GPU (6000 frames). Result: **PGD median 0.055** (no hemisphere-wide planar
-  wave), but **~294 phase singularities/frame** (every frame). The high
-  singularity count is the signature of a complex/turbulent phase field — at this
-  stage likely dominated by phase noise (each noisy patch spawns +-1 winding
-  pairs). Interpreting it requires (i) spatial phase smoothing / amplitude
-  thresholding and (ii) the source-leakage + two-dipole nulls. So: the pipeline
-  runs end-to-end on real MEG, but no travelling-wave *claim* — null-testing next.
+- **Run on real MEG, null-tested** (`scripts/real_data/wh_mesh_waves{_prep,}.py`):
+  WH sub-05 → fsaverage LH cortical mesh (10242 verts, 20480 faces), alpha band
+  (8-12 Hz), 60 s, GB10 GPU (6000 frames). Added spatial smoothing
+  (`smooth_field_mesh`), amplitude-thresholded singularity counts (`face_amplitude`),
+  and a **spatial-shuffle null** (permute vertices). Result:
+    - PGD: real median **0.075** vs shuffle-null **0.023** (null 95th 0.039);
+      **89% of frames exceed the null** → spatially-organized phase structure
+      above chance (but low absolute PGD ⇒ not a hemisphere-wide planar front).
+    - Amplitude-thresholded singularities/frame: real **8.6** vs null **44.4** —
+      far fewer defects than shuffled noise ⇒ the cortical phase is *more
+      organized than chance*. (The raw, unsmoothed ~294/frame was phase noise.)
+    - **Verdict: spatial wave structure is ABOVE the shuffle null** — weakly
+      wave-like, organized alpha phase, not noise. Still descriptive: the
+      source-leakage + two-dipole biophysical nulls remain to be added.
 
-**Next:** (a) amplitude-thresholded / spatially-smoothed singularity detection +
-the two-dipole/leakage nulls before any wave claim; (b) a K=12 multi-subject HMM
-to obtain a real TINDA cycle (S >> 0); then cross-test wave direction/rotation
+**Next:** (a) the biophysical two-dipole / source-leakage nulls (forward-model a
+beating-dipole surrogate) to finish the wave validation; (b) a K=12 multi-subject
+HMM to obtain a real TINDA cycle (S >> 0); then cross-test wave direction/rotation
 against the TINDA cycle order on the same source mesh.
 
 ## Sources

@@ -16,6 +16,7 @@ import pytest
 from neurojax.analysis.waves import (
     curl,
     divergence,
+    face_amplitude,
     generalized_phase,
     mesh_phase_gradient,
     mesh_phase_gradient_directionality,
@@ -23,6 +24,7 @@ from neurojax.analysis.waves import (
     phase_gradient_directionality,
     phase_singularity_charge,
     singularity_location,
+    smooth_field_mesh,
     wave_direction,
 )
 
@@ -171,3 +173,28 @@ class TestMeshWaves:
         V = jnp.exp(1j * (0.3 * v[:, 0] + 0.1 * v[:, 1]))
         g = mesh_phase_gradient(V, v, f)
         assert float(mesh_phase_gradient_directionality(g, v, f)) > 0.95
+
+
+class TestSmoothingAndNulls:
+    def test_smoothing_reduces_noise_singularities(self):
+        v, f = flat_mesh(20)
+        V = jnp.exp(1j * jr.uniform(jr.PRNGKey(3), (v.shape[0],)) * TWO_PI)
+        n0 = int(jnp.sum(jnp.abs(phase_singularity_charge(V, f)) > 0.5))
+        Vs = smooth_field_mesh(V, f, n_iter=5)
+        n1 = int(jnp.sum(jnp.abs(phase_singularity_charge(Vs, f)) > 0.5))
+        assert n1 < 0.5 * n0  # noise singularities at least halved
+
+    def test_smoothing_preserves_planar(self):
+        v, f = flat_mesh(20)
+        V = jnp.exp(1j * (0.2 * v[:, 0] + 0.1 * v[:, 1]))
+        Vs = smooth_field_mesh(V, f, n_iter=3)
+        g = mesh_phase_gradient(Vs, v, f)
+        assert float(mesh_phase_gradient_directionality(g, v, f)) > 0.9
+        assert float(jnp.max(jnp.abs(phase_singularity_charge(Vs, f)))) < 0.2
+
+    def test_face_amplitude(self):
+        v, f = flat_mesh(10)
+        amp = jnp.ones(v.shape[0])
+        fa = face_amplitude(amp, f)
+        assert fa.shape[0] == f.shape[0]
+        np.testing.assert_allclose(np.asarray(fa), 1.0, atol=1e-6)
