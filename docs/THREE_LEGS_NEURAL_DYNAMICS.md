@@ -87,12 +87,23 @@ that defeats vanilla SINDy on neural data.
 
 ---
 
+## Architecture (where the code lives)
+
+The *methods* are general differentiable system identification, so they live in
+**jaxctrl** (next to SINDy/Koopman in `_sysid`); **neurojax re-exports and applies**
+them — mirroring how `neurojax.dynamics.sindy` re-exports `jaxctrl.SINDyOptimizer`.
+- `jaxctrl/_contrastive.py` — `CEBRA`, `ContrastiveEncoder`, `info_nce` (DONE; 4 tests).
+- `neurojax.dynamics.CEBRA` — thin re-export (`dynamics/cebra.py`); jaxctrl made
+  optional so neurojax still imports in a lean GPU env.
+
 ## Concrete plan
 
-1. **JAX CEBRA encoder** (`dynamics/cebra.py`) — InfoNCE contrastive encoder in
-   Equinox (time-contrastive + optional behaviour labels). Embed WH/WAND MEG
-   source-parcel time-series → does the structured cycle appear as a literal
-   ring/loop in the latent (as CEBRA does for hippocampal coding)?
+1. **JAX CEBRA encoder** — DONE in `jaxctrl/_contrastive.py`: a time-contrastive
+   InfoNCE encoder (Equinox); L2-normalized 2-D output puts a cyclic attractor on
+   a ring. Validated on synthetic ring data — temporal-neighbourhood preservation
+   is clean; *pure time-contrastive* gives only partial *global* ring recovery
+   (behaviour-conditioned CEBRA or DYSCO would tighten it). NEXT: embed WH/WAND MEG
+   source-parcel time-series → does the structured cycle appear as a ring/loop?
 2. **JAX SINDy/DYSCO on the latent** — fit ż = f(z) on the CEBRA latent (SINDy,
    already in `dynamics/`), then a DYSCO-style JEPA predictor (Equinox+Diffrax) for
    the governing flow with affine-gauge identifiability. Is the attractor a
