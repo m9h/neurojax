@@ -40,31 +40,46 @@ See Also:
         used by :func:`windowed_signatures`.
 """
 
-from jaxctrl import (
-    KoopmanEstimator,
-    SINDyOptimizer,
-    fourier_library,
-    polynomial_library,
-)
+# SINDy/Koopman/windowed wrap jaxctrl; keep them optional so the contrastive
+# (CEBRA) leg, which only needs equinox, imports without jaxctrl installed.
+# SINDy / Koopman / windowed / CEBRA all live in jaxctrl; keep them optional so
+# neurojax still imports in a lean env without jaxctrl installed.
+try:
+    from jaxctrl import (
+        KoopmanEstimator,
+        SINDyOptimizer,
+        fourier_library,
+        polynomial_library,
+        CEBRA,
+        ContrastiveEncoder,
+        info_nce,
+    )
+    from neurojax.dynamics.windowed import (
+        windowed_sindy,
+        windowed_dmd,
+        windowed_signatures,
+        WindowedSINDyResult,
+        WindowedDMDResult,
+        WindowedSignatureResult,
+    )
+    _HAS_JAXCTRL = True
+except ImportError:  # jaxctrl not installed (e.g. lean GPU env)
+    _HAS_JAXCTRL = False
 
-from neurojax.dynamics.windowed import (
-    windowed_sindy,
-    windowed_dmd,
-    windowed_signatures,
-    WindowedSINDyResult,
-    WindowedDMDResult,
-    WindowedSignatureResult,
-)
-
-__all__ = [
-    "SINDyOptimizer",
-    "KoopmanEstimator",
-    "polynomial_library",
-    "fourier_library",
-    "windowed_sindy",
-    "windowed_dmd",
-    "windowed_signatures",
-    "WindowedSINDyResult",
-    "WindowedDMDResult",
-    "WindowedSignatureResult",
-]
+__all__ = []
+if _HAS_JAXCTRL:
+    __all__ += [
+        "SINDyOptimizer",
+        "KoopmanEstimator",
+        "polynomial_library",
+        "fourier_library",
+        "CEBRA",
+        "ContrastiveEncoder",
+        "info_nce",
+        "windowed_sindy",
+        "windowed_dmd",
+        "windowed_signatures",
+        "WindowedSINDyResult",
+        "WindowedDMDResult",
+        "WindowedSignatureResult",
+    ]
