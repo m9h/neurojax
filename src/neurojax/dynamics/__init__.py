@@ -53,6 +53,8 @@ try:
         CEBRA,
         ContrastiveEncoder,
         info_nce,
+        DYSCO,
+        LatentFlow,
     )
     from neurojax.dynamics.windowed import (
         windowed_sindy,
@@ -76,6 +78,8 @@ if _HAS_JAXCTRL:
         "CEBRA",
         "ContrastiveEncoder",
         "info_nce",
+        "DYSCO",
+        "LatentFlow",
         "windowed_sindy",
         "windowed_dmd",
         "windowed_signatures",

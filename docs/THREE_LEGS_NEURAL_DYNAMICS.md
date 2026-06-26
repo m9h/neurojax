@@ -93,8 +93,14 @@ The *methods* are general differentiable system identification, so they live in
 **jaxctrl** (next to SINDy/Koopman in `_sysid`); **neurojax re-exports and applies**
 them — mirroring how `neurojax.dynamics.sindy` re-exports `jaxctrl.SINDyOptimizer`.
 - `jaxctrl/_contrastive.py` — `CEBRA`, `ContrastiveEncoder`, `info_nce` (DONE; 4 tests).
-- `neurojax.dynamics.CEBRA` — thin re-export (`dynamics/cebra.py`); jaxctrl made
-  optional so neurojax still imports in a lean GPU env.
+- `jaxctrl/_dysco.py` — `DYSCO`, `LatentFlow` (DONE; 3 tests). Contrastive encoder
+  + SINDy-parameterized latent flow (reuses `_sysid.polynomial_library`) trained
+  JEPA-style → latent trajectory + governing equation ż = Θ(z)·Ξ. Validated: from
+  a nonlinearly-observed 2-D rotation it recovers a latent flow with imaginary
+  eigenvalues (~±iω) — i.e. it identifies the **limit cycle**, up to the affine gauge.
+- `neurojax.dynamics.{CEBRA,DYSCO}` — thin re-exports (`dynamics/cebra.py`,
+  `dynamics/dysco.py`); jaxctrl made optional so neurojax still imports in a lean
+  GPU env. `from neurojax.dynamics import CEBRA, DYSCO, SINDyOptimizer, KoopmanEstimator`.
 
 ## Concrete plan
 
