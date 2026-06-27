@@ -63,6 +63,40 @@ read a beta/gamma peak; the table above, with the raw ‖L−Lᵀ‖ asymmetry a
 shrunk whitening, is the corrected result.) Script:
 `scripts/real_data/wand_timefreq_irrev.py`.
 
+**Leg C extension — band-resolved Langevin (model-based, 2026-06-27).**
+The model-free ‖L−Lᵀ‖ asymmetry shows irreversibility is present and
+frequency-resolved, but it conflates a genuine solenoidal (broken-detailed-balance)
+*drift* with a plain amplitude/diffusion effect. Fitting a linear Langevin
+`dz = A z dt + √(2D) dW` per band (Gavish-Donoho optimal-rank PCA embedding → drift
+via the 1st Kramers–Moyal moment, diffusion via the 2nd) separates them: the
+gradient drift `A_rev = −D Σ⁻¹`, the solenoidal drift `A_sol = A + D Σ⁻¹`, and the
+entropy-production rate `Ṡ = tr(A_sol Σ A_solᵀ D⁻¹) ≥ 0` (invariant under any
+invertible linear change of coordinates, so the only reported choice is the rank):
+
+| band  | Hz    | rank | EPR   | null  | EPR/null | f_sol/Hz | sol/tot |
+|-------|-------|-----:|------:|------:|---------:|---------:|--------:|
+| delta | 2–4   | 18   | 1.850 | 0.048 | 38.5     | 0.044    | 0.64    |
+| theta | 4–8   | 18   | 0.909 | 0.042 | 21.6     | 0.061    | 0.26    |
+| alpha | 8–13  | 19   | 0.636 | 0.046 | 13.8     | 0.074    | 0.13    |
+| beta  | 13–30 | 18   | 0.220 | 0.049 | 4.5      | 0.089    | 0.05    |
+| gamma | 30–45 | 17   | 0.110 | 0.029 | 3.8      | 0.115    | 0.02    |
+
+The verdict is **a genuine solenoidal drift, not a diffusion artifact**: entropy
+production sits **3.8–38× above the shuffle null** in every band, and Ṡ by
+construction isolates the irreversible part of the drift (with D⁻¹ weighting), so
+the low-frequency-dominant asymmetry *is* a real probability current. Three things
+the fit adds over the model-free proxy: (1) `sol/tot` = ‖A_sol‖/‖A‖ is scale-free
+and collapses **0.64 → 0.02** delta→gamma — slow-band drift is 64% rotational,
+gamma drift is 98% pure gradient relaxation; the dynamics change *character* with
+frequency. (2) `f_sol` = |Im λ(A_sol)|/2π puts an actual frequency on the cycle
+DMD/SINDy/DYSCO all returned as ~0: **0.04–0.12 Hz**, an *infraslow* rotation
+(8–23 s period) of the band envelopes — buried in the noise statistics, invisible
+to a drift-only deterministic fit but recovered from the solenoidal eigenvalue.
+(3) the peak shifts theta→delta versus the model-free metric (the D⁻¹-weighted
+drift-based estimator pushes it one band lower), but both agree on the headline.
+This is exactly the SMNI-style "cyclic bias in the noise-induced term" predicted
+below. Script: `scripts/real_data/wand_band_langevin.py`.
+
 ## Connection to SMNI (and the right next tool)
 The cyclic structure lives in the **diffusion**, not the **drift**. DMD/SINDy/
 DYSCO model the drift ż = f(z), so they see ~0 — as they should. Capturing the
@@ -79,9 +113,11 @@ quantity SMNI derives mechanistically from columnar firing statistics.
   time-frequency irreversibility front-end) on the GB10.
 - The Langevin/Fokker–Planck estimator anticipated above is now implemented in
   jaxctrl (`fit_linear_langevin`, gradient/solenoidal split, entropy production)
-  and re-exported by `neurojax.dynamics`; the band-resolved table above is its
-  model-free entropy-production counterpart.
+  and re-exported by `neurojax.dynamics`; the two band-resolved tables above are
+  its model-free (‖L−Lᵀ‖) and model-based (Ṡ, f_sol, sol/tot) views, which agree
+  that the irreversibility is a real, low-frequency-dominant solenoidal current.
 - Prototype scale: 10 subjects, 6 min, template coreg. Next: individual
   FreeSurfer source recon (as more subjects are reconstructed), Leg B (mesh waves)
-  on the WAND surfaces, and per-band drift+diffusion Langevin fits (to localise
-  whether the theta-dominant asymmetry is a diffusion or solenoidal-drift effect).
+  on the WAND surfaces, and a Donoho–Tanner identifiability check on the sparse
+  fits (does the (rank, sample) regime sit below the phase-transition boundary
+  where the recovered drift is identifiable?).
