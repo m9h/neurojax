@@ -308,6 +308,13 @@ The critical upgrade: WAND's 7-echo GRE enables **quantitative BOLD (qBOLD)** �
 
 This replaces the uniform global OEF from TRUST with spatially resolved oxygen extraction — a significant accuracy improvement, especially for cortical regions near large veins where OEF varies substantially. Implementation in vpjax (`vpjax/qbold/`).
 
+**vpjax processing results (sub-08033, 2026-04-03):**
+- R2* fitting: r=1.0000 vs QUIT reference, 5.7s for 9M voxels on DGX Spark GPU
+- qBOLD OEF: median=0.29 (expected 0.30-0.40), 26.3s for 9M voxels (200 gradient steps each)
+- Iron-myelin decomposition from R2* + QSMxT chi map: iron median=0.87, myelin median=1.08 (a.u.)
+- Figures: `derivatives/vpjax/sub-08033/ses-06/figures/` (R2* validation, OEF/DBV maps, iron-myelin, echo decay fit)
+- Script: `vpjax/scripts/process_wand.py` (R2*, OEF, iron-myelin, CMRO₂, figures)
+
 ### 12. Cortical Layer Analysis + QSM (sub-mm WAND data)
 **Discovery:** WAND ses-06 structural data is **sub-millimeter** — MEGRE at 0.67mm, MP2RAGE at 0.7mm, T2w at 0.21mm in-plane. This enables cortical depth-dependent analysis via LAYNII or Nighres (~2-3 depth bins across the cortical ribbon).
 
@@ -860,6 +867,9 @@ Currently numpy-based with python loops (slow for 100K+ streamlines). Future: JA
 | TRUST OEF | Structural-guided SSS ROI + voxel-wise T2 QC | T2=76ms, OEF=14% | Real measurement, protocol sensitivity limited |
 | CMRO₂ | CBF × OEF × CaO₂ | 41 µmol/100g/min (low, follows OEF) | Working |
 | qBOLD OEF | JAX R2/R2' separation | R2=23.8Hz, R2'=10.1Hz | Fitting works, DBV calibration needed |
+| **vpjax R2*** | vpjax log-linear fit (7-echo) | r=1.0000 vs QUIT, 5.7s/9M voxels on GPU | **Complete** |
+| **vpjax qBOLD OEF** | vpjax qBOLD fit (200 grad steps/voxel) | Median OEF=0.29, 26.3s/9M voxels | **Complete** — DBV hitting lower clip at 7T, needs tuning |
+| **vpjax iron-myelin** | R2* + QSM → 2×2 decomposition | Iron median=0.87, myelin median=1.08 (a.u.) | **Complete** — shape mismatch (90 vs 92 slices) cropped |
 
 ### PINN / Neural ODE
 
@@ -869,6 +879,8 @@ Currently numpy-based with python loops (slow for 100K+ streamlines). Future: JA
 | BlochNeuralODE | Forward pass + gradients verified | 7/7 tests pass |
 | MultiCompartmentNODE | bSSFP forward + joint loss + MWF recovery | 6/6 tests pass |
 | qBOLD module | Signal model + R2/R2' fitting + OEF conversion | 10/10 tests pass |
+| **vpjax full suite** | Balloon-Windkessel, BOLD/ASL/VASO observers, Riera NVC, qBOLD, QSM, Fick CMRO₂, iron-myelin, layers, LL integrator | **119/119 tests pass** |
+| **vpjax WAND pipeline** | R2* + qBOLD OEF + iron-myelin on sub-08033 ses-06 (0.67mm 7T MEGRE) | **Complete** — outputs at `derivatives/vpjax/sub-08033/ses-06/` |
 | Ramani QMT (qMRLab port) | Sf table + Bloch ODE + Ramani signal + fitting | 10/10 tests pass |
 
 ### MEG Processing Pipeline (sub-08033 validated)
