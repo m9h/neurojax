@@ -883,6 +883,37 @@ wheels = [
 ]
 
 [[package]]
+name = "emeg-fm"
+version = "0.1.0"
+source = { editable = "../emeg-fm" }
+dependencies = [
+    { name = "jax" },
+    { name = "numpy" },
+    { name = "optax" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "braindecode", marker = "extra == 'extract'", specifier = ">=0.8" },
+    { name = "eegdash", marker = "extra == 'extract'" },
+    { name = "jax", specifier = ">=0.4" },
+    { name = "matplotlib", marker = "extra == 'weightwatcher'", specifier = ">=3.7" },
+    { name = "mne", marker = "extra == 'extract'", specifier = ">=1.6" },
+    { name = "mne", marker = "extra == 'moabb'", specifier = ">=1.6" },
+    { name = "moabb", marker = "extra == 'moabb'", specifier = ">=1.0" },
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "optax", specifier = ">=0.2" },
+    { name = "pandas", marker = "extra == 'probes'", specifier = ">=2.0" },
+    { name = "pandas", marker = "extra == 'weightwatcher'", specifier = ">=2.0" },
+    { name = "pytest", marker = "extra == 'test'", specifier = ">=7.0" },
+    { name = "scikit-learn", marker = "extra == 'moabb'", specifier = ">=1.3" },
+    { name = "scikit-learn", marker = "extra == 'probes'", specifier = ">=1.3" },
+    { name = "torch", marker = "extra == 'extract'", specifier = ">=2.1" },
+    { name = "weightwatcher", marker = "extra == 'weightwatcher'", specifier = ">=0.7" },
+]
+provides-extras = ["extract", "moabb", "weightwatcher", "probes", "test"]
+
+[[package]]
 name = "equinox"
 version = "0.13.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2401,6 +2432,10 @@ doc = [
     { name = "sphinx-copybutton" },
     { name = "sphinxcontrib-bibtex" },
 ]
+eeg-fm = [
+    { name = "emeg-fm" },
+    { name = "scikit-learn" },
+]
 neoba = [
     { name = "neoba" },
 ]
@@ -2446,6 +2481,7 @@ requires-dist = [
     { name = "dandi", specifier = ">=0.50.0" },
     { name = "diffrax", specifier = ">=0.5.0" },
     { name = "distrax", specifier = ">=0.1.0" },
+    { name = "emeg-fm", marker = "extra == 'eeg-fm'", editable = "../emeg-fm" },
     { name = "equinox", specifier = ">=0.11.0" },
     { name = "fenics-basix", specifier = ">=0.7" },
     { name = "fsspec", specifier = ">=2023.0.0" },
@@ -2486,6 +2522,7 @@ requires-dist = [
     { name = "s3fs", specifier = ">=2023.0.0" },
     { name = "scico", specifier = ">=0.0.1" },
     { name = "scikit-image", specifier = ">=0.26.0" },
+    { name = "scikit-learn", marker = "extra == 'eeg-fm'", specifier = ">=1.3" },
     { name = "scikit-learn", marker = "extra == 'test'" },
     { name = "scipy", specifier = ">=1.10.0" },
     { name = "signax", specifier = ">=0.1.0" },
@@ -2502,7 +2539,7 @@ requires-dist = [
     { name = "tqdm", marker = "extra == 'test'" },
     { name = "vbjax", git = "https://github.com/ins-amu/vbjax" },
 ]
-provides-extras = ["bench", "smni", "neoba", "test", "doc"]
+provides-extras = ["bench", "smni", "neoba", "eeg-fm", "test", "doc"]
 
 [package.metadata.requires-dev]
 doc = [
