@@ -24,6 +24,8 @@ Modules:
     sindy: SINDy re-exports from jaxctrl.
     koopman: Koopman/DMD re-exports from jaxctrl.
     windowed: Windowed systems-identification for MEG dynamics comparison.
+    smni: Ingber SMNI / Canonical Momenta Indicators / PATHINT re-exports from
+        the smni-cmi peer package (optional; inert when not installed).
 
 References:
     Brunton, S. L., Proctor, J. L., & Kutz, J. N. (2016).
@@ -80,6 +82,33 @@ try:
 except ImportError:  # jaxctrl not installed (e.g. lean GPU env)
     _HAS_JAXCTRL = False
 
+# SMNI / CMI / PATHINT — Ingber's path-integral statistical mechanics, the
+# canonical-momenta view of the Langevin/Fokker-Planck dynamics above.  Optional
+# peer package (smni-cmi); keep inert when absent, like the jaxctrl block.
+try:
+    from neurojax.dynamics import smni as smni
+    from neurojax.dynamics.smni import (
+        DT,
+        FS_HZ,
+        SMNIDrift,
+        canonical_momenta,
+        drift,
+        fit_linear_drift,
+        momentum_magnitude,
+        smni_log_likelihood,
+        velocity,
+        FitResult,
+        MLEConfig,
+        fit_mle,
+        action,
+        coherence,
+        nonlinear,
+        pathint,
+    )
+    _HAS_SMNI = True
+except ImportError:  # smni-cmi not installed
+    _HAS_SMNI = False
+
 __all__ = []
 if _HAS_JAXCTRL:
     __all__ += [
@@ -110,4 +139,25 @@ if _HAS_JAXCTRL:
         "WindowedSINDyResult",
         "WindowedDMDResult",
         "WindowedSignatureResult",
+    ]
+
+if _HAS_SMNI:
+    __all__ += [
+        "smni",
+        "DT",
+        "FS_HZ",
+        "SMNIDrift",
+        "canonical_momenta",
+        "drift",
+        "fit_linear_drift",
+        "momentum_magnitude",
+        "smni_log_likelihood",
+        "velocity",
+        "FitResult",
+        "MLEConfig",
+        "fit_mle",
+        "action",
+        "coherence",
+        "nonlinear",
+        "pathint",
     ]

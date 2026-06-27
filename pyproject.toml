@@ -64,6 +64,11 @@ bench = [
     "cma >= 3.3.0",
     "llamea",
 ]
+# Optional physics bridge: Ingber SMNI / CMI / PATHINT via the smni-cmi peer
+# package, re-exported through neurojax.dynamics.smni. Path source below.
+smni = [
+    "smni-cmi",
+]
 test = [
     "pytest >= 7.0.0",
     "sybil",
@@ -97,6 +102,7 @@ filterwarnings = [
 [tool.uv.sources]
 jaxctrl = { path = "../jaxctrl", editable = true }
 vbjax = { git = "https://github.com/ins-amu/vbjax" }
+smni-cmi = { path = "../../Workspace/smni-cmi", editable = true }
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
