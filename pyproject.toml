@@ -75,6 +75,14 @@ smni = [
 neoba = [
     "neoba",
 ]
+# Optional EEG/MEG foundation-model bridge: REVE/LaBraM adapters + FMScope
+# identity-trap (LEACE) audit via the emeg-fm peer package, re-exported through
+# neurojax.bench.foundation_models. Path source below. Add emeg-fm[extract] for
+# the torch FM adapters, emeg-fm[moabb] for the MOABB cohort builder.
+eeg-fm = [
+    "emeg-fm",
+    "scikit-learn>=1.3",
+]
 test = [
     "pytest >= 7.0.0",
     "sybil",
@@ -110,6 +118,7 @@ jaxctrl = { path = "../jaxctrl", editable = true }
 vbjax = { git = "https://github.com/ins-amu/vbjax" }
 smni-cmi = { path = "../../Workspace/smni-cmi", editable = true }
 neoba = { path = "../neoba", editable = true }
+emeg-fm = { path = "../emeg-fm", editable = true }
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
