@@ -69,6 +69,12 @@ bench = [
 smni = [
     "smni-cmi",
 ]
+# Optional brain-age bridge: NEOBA oscillatory features (OSF/ODC + specparam +
+# sparse group lasso) via the neoba peer package, re-exported through
+# neurojax.analysis.neoba. Path source below.
+neoba = [
+    "neoba",
+]
 test = [
     "pytest >= 7.0.0",
     "sybil",
@@ -103,6 +109,7 @@ filterwarnings = [
 jaxctrl = { path = "../jaxctrl", editable = true }
 vbjax = { git = "https://github.com/ins-amu/vbjax" }
 smni-cmi = { path = "../../Workspace/smni-cmi", editable = true }
+neoba = { path = "../neoba", editable = true }
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
