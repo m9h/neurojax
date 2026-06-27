@@ -97,6 +97,41 @@ drift-based estimator pushes it one band lower), but both agree on the headline.
 This is exactly the SMNI-style "cyclic bias in the noise-induced term" predicted
 below. Script: `scripts/real_data/wand_band_langevin.py`.
 
+**Leg C — identifiability of the sparse drifts (Donoho–Tanner, 2026-06-27).**
+Are these sparse fits even identifiable? Each band's drift is a sparse regression —
+recover a `k`-sparse coefficient vector from an `n×N` polynomial library (`n`
+envelope samples, `N` candidate terms). The Donoho–Tanner *weak* phase transition
+(via the ℓ1 descent-cone statistical dimension; Amelunxen-Lotz-McCoy-Tropp 2014,
+matching Donoho–Tanner 2009) says when ℓ1/STLSQ can recover the support at all:
+identifiable iff `n > N·δ(k/N)`. This is the identifiability counterpart of the
+Gavish–Donoho rank selection used throughout (`svht_rank`, estimation side).
+
+| band  | rank | P (lib) | k (support) | δ=n/N | min window | headroom |
+|-------|-----:|--------:|------------:|------:|-----------:|---------:|
+| delta | 18   | 190     | 33          | 947   | 1.8 s      | 2000×    |
+| theta | 18   | 190     | 61          | 947   | 2.6 s      | 1406×    |
+| alpha | 19   | 210     | 101         | 857   | 3.4 s      | 1047×    |
+| beta  | 18   | 190     | 137         | 947   | 3.6 s      | 994×     |
+| gamma | 17   | 171     | 145         | 1053  | 3.4 s      | 1065×    |
+
+Two readings. **(1)** On the full 6-min record every band sits **~1000–2000×
+inside** the identifiable region (δ ≈ 850–1050 ≫ 1) — under-identification is *not*
+a source of artifact in the sparse fits; the binding constraint is library
+conditioning / SNR, not the phase transition. The actionable number is `min window`:
+the shortest segment whose sparse drift support is still DT-identifiable (the floor
+for a windowed-SINDy analysis) — 1.8 s for delta, ~3.6 s for beta. **(2)** The
+recovered support size `k` is itself **frequency-graded** — 33 active terms in delta
+rising monotonically to 145 in gamma (17% → 85% of the library) — at a fixed,
+reported STLSQ threshold (0.05). The slow bands have a *sparse, parsimonious* drift;
+gamma needs a near-dense library. This is a third, independent measure pointing the
+same way as EPR and sol/tot: **low-frequency dynamics are structured** (sparse +
+solenoidal + irreversible), **gamma is unstructured** (dense + gradient +
+near-reversible). The absolute `k` depends on the threshold, but the monotone
+ordering does not, and it was computed entirely independently of the Langevin fit.
+Caveat: polynomial libraries are correlated, so DT is the optimistic bound — a
+correlated design needs strictly more samples. Script:
+`scripts/real_data/wand_identifiability.py`.
+
 ## Connection to SMNI (and the right next tool)
 The cyclic structure lives in the **diffusion**, not the **drift**. DMD/SINDy/
 DYSCO model the drift ż = f(z), so they see ~0 — as they should. Capturing the
@@ -116,8 +151,11 @@ quantity SMNI derives mechanistically from columnar firing statistics.
   and re-exported by `neurojax.dynamics`; the two band-resolved tables above are
   its model-free (‖L−Lᵀ‖) and model-based (Ṡ, f_sol, sol/tot) views, which agree
   that the irreversibility is a real, low-frequency-dominant solenoidal current.
+- The sparse drift fits are Donoho–Tanner identifiable with ~1000–2000× headroom
+  on the 6-min record (`l1_statistical_dimension`, `donoho_tanner_regime` in
+  jaxctrl, re-exported by `neurojax.dynamics`); the recovered support size is
+  itself frequency-graded (sparse slow bands → near-dense gamma), a third
+  structural gradient agreeing with EPR and sol/tot.
 - Prototype scale: 10 subjects, 6 min, template coreg. Next: individual
-  FreeSurfer source recon (as more subjects are reconstructed), Leg B (mesh waves)
-  on the WAND surfaces, and a Donoho–Tanner identifiability check on the sparse
-  fits (does the (rank, sample) regime sit below the phase-transition boundary
-  where the recovered drift is identifiable?).
+  FreeSurfer source recon (as more subjects are reconstructed) and Leg B (mesh
+  waves / connectome harmonics) on the WAND surfaces.
