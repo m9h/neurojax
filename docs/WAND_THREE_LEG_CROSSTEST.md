@@ -200,13 +200,34 @@ Level-2 reproduces the linear circulation (sanity); **level-3 significant in
 delta/theta/alpha ⇒ genuine *nonlinear* broken detailed balance**, null in
 beta/gamma. Script: `scripts/real_data/wand_logsig_irrev.py`.
 
-**The convergent picture.** All three independent proper-null tests agree: the slow
-bands (delta/theta/alpha) carry genuine, low-dimensional, *nonlinear* broken detailed
-balance; beta is weak; gamma is reversible/noise-like at every order. **Alpha is the
-cleanest broken-detailed-balance signal** across the proper nulls (reversible-null
-excess z=4.69, nonlinear log-sig z=3.71) — a sharper, more rigorous claim than the
-raw delta-dominant EPR. Stricter follow-up: a coupling-preserving
-constrained-randomization (TISEAN) null.
+**(4) Determinism, second probe — S-map (EDM) nonlinearity test.** Complements RQA
+with the Sugihara θ test (`smap_nonlinearity` in jaxctrl): θ=0 is a global linear map,
+rising skill for θ>0 signals nonlinear determinism. The gain Δρ = ρ(θ*)−ρ(0) is **≈0**
+in every band (0.0001–0.0035 vs an IAAFT floor) — a global linear map predicts as
+well as any locally-weighted nonlinear one, so **there is no deterministic nonlinear
+skeleton**, a second positive confirmation of the linear/stochastic reading. The gain
+is statistically above the floor in delta/theta/alpha (z~10) but the effect size is
+negligible (~0.1% skill), echoing the weak level-3 log-sig residual. Linear
+predictability ρ(0) declines delta 0.88 → gamma 0.05 (gamma = noise). Script:
+`scripts/real_data/wand_smap_nonlinearity.py`.
+
+**(5) The complete test — signature-kernel MMD(X, X̄).** The signature kernel is
+characteristic on path laws, so MMD(forward, reversed) = 0 iff time-reversible — a
+single all-orders, multichannel statistic (depth-3 signatures, two-sample permutation
+null). Significant in all bands (p=0.002 floor), effect peaking at alpha (z=17.0),
+strong delta/theta (~14), moderate beta (7.2), weak gamma (2.0). Script:
+`scripts/real_data/wand_sigkernel_mmd.py`.
+
+**The convergent picture.** Five independent proper-null tests agree: the slow bands
+(delta/theta/alpha) carry genuine, low-dimensional, *nonlinear* broken detailed
+balance, while the dynamics remain *linearly predictable / stochastic* (no nonlinear
+deterministic skeleton); beta is weak; gamma is reversible/noise-like at every order.
+**Alpha is the cleanest broken-detailed-balance signal** across every proper null
+(reversible-surrogate z=4.69, nonlinear log-sig z=3.71, sig-MMD z=17.0) — a sharper,
+more rigorous claim than the raw delta-dominant EPR (whose delta peak is mostly the
+matched-spectrum floor of slow narrowband signals). Deferred: a coupling-preserving
+**constrained-randomization** null — TISEAN is not packaged (needs a source build), so
+it is a future sibling oracle to TimeseriesSurrogates.jl.
 
 ## Connection to SMNI (and the right next tool)
 The cyclic structure lives in the **diffusion**, not the **drift**. DMD/SINDy/
