@@ -66,21 +66,26 @@ def analytic_env(x):
 def main():
     print("JAX backend:", jax.default_backend())
     graph = os.environ.get("WAND_GRAPH", "geometric")
-    if graph == "structural":
-        SC = np.load(os.path.join(OUT, "desikan68_SC.npy"))          # probtrackx 68×68 SC
-        W = np.log1p(SC)                                             # compress streamline-count range
-        print(f"structural graph: probtrackx SC (log1p), density {np.mean(SC > 0):.2f}")
+    if graph == "surface_lbo":
+        d = np.load(os.path.join(OUT, "desikan68_surfaceLBO.npz"))    # lapy LBO, DC-free
+        evals, Phi, dc = d["evals"], d["Phi"], 0
+        print(f"surface-LBO basis (lapy, per-hemisphere): {Phi.shape[1]} region modes")
     else:
-        cent = np.load(os.path.join(OUT, "desikan68_centroids.npy"))  # (68, 3)
-        W, sigma = gaussian_graph(cent)
-        print(f"geometric graph: 68 Desikan regions, Gaussian σ={sigma*1000:.1f} mm")
-    evals, Phi = connectome_harmonics(jnp.asarray(W), normalized=False)
-    evals, Phi = np.asarray(evals), np.asarray(Phi)
-    print(f"harmonic eigenvalues (spatial freq): λ1..5 = "
-          f"{np.round(evals[1:6], 3)} ... λ68 = {evals[-1]:.2f}")
+        if graph == "structural":
+            SC = np.load(os.path.join(OUT, "desikan68_SC.npy"))      # probtrackx 68×68 SC
+            W = np.log1p(SC)                                         # compress streamline-count range
+            print(f"structural graph: probtrackx SC (log1p), density {np.mean(SC > 0):.2f}")
+        else:
+            cent = np.load(os.path.join(OUT, "desikan68_centroids.npy"))  # (68, 3)
+            W, sigma = gaussian_graph(cent)
+            print(f"geometric graph: 68 Desikan regions, Gaussian σ={sigma*1000:.1f} mm")
+        evals, Phi = connectome_harmonics(jnp.asarray(W), normalized=False)
+        evals, Phi, dc = np.asarray(evals), np.asarray(Phi), 1       # mode 0 = DC
+    evals_lo = evals[dc:dc + N_HARM]
+    print(f"harmonic eigenvalues (spatial freq): λ1..5 = {np.round(evals_lo[:5], 4)}")
 
     X = np.load(os.path.join(OUT, "parcels68.npy")).astype(np.float32)  # (T, 68)
-    Phi_lo = Phi[:, 1:N_HARM + 1]                                      # drop DC mode
+    Phi_lo = Phi[:, dc:dc + N_HARM]                                    # low-order modes
     a = np.asarray(project_harmonics(jnp.asarray(X), jnp.asarray(Phi_lo)))  # (T, N_HARM)
     env = np.asarray(analytic_env(jnp.asarray(a)))                     # broadband envelope
     ds = int(FS / ENV_FS)
@@ -105,7 +110,7 @@ def main():
     print("top rotational harmonic pairs (mode_i, mode_j, |α*|):")
     for i, j in pairs:
         print(f"    H{i+1:>2d} <-> H{j+1:>2d}   |α*|={au[i, j]:.4f}  "
-              f"(λ={evals[i+1]:.2f},{evals[j+1]:.2f})")
+              f"(λ={evals_lo[i]:.3g},{evals_lo[j]:.3g})")
     com = np.sum(au * (np.arange(N_HARM)[:, None] + np.arange(N_HARM)[None, :] + 2) / 2) / au.sum()
     print(f"  -> circulation centre-of-mass at harmonic order ≈ {com:.1f} "
           f"(of {N_HARM}); low ⇒ the cycle is rotation among LOW-order connectome harmonics.")
