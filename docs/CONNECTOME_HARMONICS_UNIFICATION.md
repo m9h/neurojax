@@ -66,3 +66,43 @@ WAND derivatives already have `fsl-bedpostx`, `fsl-dtifit`, `eddy_qc`, `fsl-dwi`
   decomposition + entropy production) applied to the harmonic-coefficient latent.
 - Novelty: connectome harmonics + non-equilibrium/solenoidal analysis + MEG
   dynamics on a 169-subject multimodal cohort — not previously combined.
+
+## No EEG bands — the harmonic spectrum is the frequency axis (2026-06-27)
+Atasoy's framework uses **no conventional EEG bands**: it decomposes activity onto
+the connectome harmonics, ordered by *spatial* frequency (eigenvalue), and reports
+harmonic **power** and **energy** (frequency-weighted, the harmonic's intrinsic
+oscillation from the wave-equation dispersion). LSD raises high-frequency-harmonic
+power; loss of consciousness collapses to low-frequency harmonics. So we **drop the
+delta/theta/…/gamma bins** and run the WAND dynamics **broadband in the harmonic
+basis** — the eigenvalue spectrum is the structure-derived frequency axis.
+
+**HADES (Harmonic Decomposition of Spacetime; Vohryzek, Atasoy, Kringelbach, Deco
+et al. 2023–24, on DMT)** is the temporal-dynamics-in-harmonic-basis framework:
+harmonic modes in space expressed over time (fractional occupancy, lifetime, latent
+space, a "spacetime hierarchy") — the harmonic-basis analogue of our Leg-A
+occupancy/TINDA. Two openings it leaves that we fill: (i) **HADES is fMRI-only and
+explicitly flags MEG/EEG as the next step** — the WAND harmonic leg *is* that MEG
+extension; (ii) **HADES has no non-equilibrium analysis** — our solenoidal
+circulation-among-harmonics / EPR (α* = A_sol·Σ in the harmonic basis) is the piece
+it lacks. HADES uses *functional* harmonics (FC-graph eigenmodes; Atasoy 2021); we
+use *structural/geometric* — worth computing the functional version too (from the
+MEG's own FC, no DWI) for a direct, cheap comparison.
+
+## First result — geometric eigenmodes, broadband (`wand_connectome_harmonics.py`)
+Desikan-68 region graph weighted by centroid proximity (Gaussian σ=76 mm) →
+connectome harmonics → project broadband source MEG onto the 20 low-order modes →
+broadband analytic envelope → linear Langevin. The eigenvalue spectrum (λ ≈ 15→37)
+is the frequency axis; resting power concentrates in low-order harmonics (H1,H2,H7).
+**Broadband EPR = 0.098, vs a reversible IAAFT null 0.067±0.007 (z=4.42, p=0.024)**
+→ genuine harmonic-basis broken detailed balance. The irreversible-circulation
+matrix α* = A_sol·Σ **rotates among low-order harmonics** (top pairs H2↔H7, H1↔H12,
+H1↔H8; centre-of-mass ≈ harmonic 9 of 20) at **f_sol = 0.099 Hz** — the same
+infraslow ~10 s cycle the band analysis found at 0.04–0.12 Hz. The central test
+passes: the resting cycle is a solenoidal rotation among a small set of low-order
+connectome harmonics.
+
+Caveats / next: geometric (centroid) graph — the **structural** connectome
+(`wand_structural_connectome.py`: TRACULA BBR `aparc+aseg` in diffusion space +
+sub-08033 bedpostX → `probtrackx2_gpu --network` → 68×68 SC) is the proper Atasoy
+basis (running). `parcels68` is per-parcel standardised (use raw next). Then: the
+functional-harmonic version, and the same broadband analysis on the structural basis.
