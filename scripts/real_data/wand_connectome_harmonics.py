@@ -65,11 +65,16 @@ def analytic_env(x):
 
 def main():
     print("JAX backend:", jax.default_backend())
-    cent = np.load(os.path.join(OUT, "desikan68_centroids.npy"))      # (68, 3)
-    W, sigma = gaussian_graph(cent)
+    graph = os.environ.get("WAND_GRAPH", "geometric")
+    if graph == "structural":
+        W = np.load(os.path.join(OUT, "desikan68_SC.npy"))           # probtrackx 68×68 SC
+        print(f"structural graph: probtrackx SC, density {np.mean(W > 0):.2f}")
+    else:
+        cent = np.load(os.path.join(OUT, "desikan68_centroids.npy"))  # (68, 3)
+        W, sigma = gaussian_graph(cent)
+        print(f"geometric graph: 68 Desikan regions, Gaussian σ={sigma*1000:.1f} mm")
     evals, Phi = connectome_harmonics(jnp.asarray(W), normalized=False)
     evals, Phi = np.asarray(evals), np.asarray(Phi)
-    print(f"geometric graph: 68 Desikan regions, Gaussian σ={sigma*1000:.1f} mm")
     print(f"harmonic eigenvalues (spatial freq): λ1..5 = "
           f"{np.round(evals[1:6], 3)} ... λ68 = {evals[-1]:.2f}")
 
