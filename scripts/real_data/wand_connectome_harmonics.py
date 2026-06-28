@@ -19,6 +19,7 @@ current rotates between.
 """
 
 import os
+import subprocess
 
 import jax
 import jax.numpy as jnp
@@ -34,9 +35,14 @@ from neurojax.dynamics import (
 )
 
 OUT = os.environ.get("WAND_OUT", "/data/datasets/wand_src")
+SCR = os.environ.get("SCRATCH", "/tmp/claude-1000/-home-mhough-dev-neurojax/"
+                     "a44a9232-d44b-4b8b-8812-560682c446fa/scratchpad")
+ORACLE = os.path.join(os.path.dirname(__file__), "oracle_surrogates")
+JULIA = os.path.expanduser("~/.juliaup/bin/julia")
 FS = 250.0
 ENV_FS = 50.0
 N_HARM = 20            # low-order harmonics kept (excl. the constant/DC mode)
+N_SURR = 40
 
 
 def gaussian_graph(centroids):
@@ -97,6 +103,22 @@ def main():
     com = np.sum(au * (np.arange(N_HARM)[:, None] + np.arange(N_HARM)[None, :] + 2) / 2) / au.sum()
     print(f"  -> circulation centre-of-mass at harmonic order ≈ {com:.1f} "
           f"(of {N_HARM}); low ⇒ the cycle is rotation among LOW-order connectome harmonics.")
+
+    # significance: broadband EPR vs a reversible IAAFT null (spectrum+marginal matched)
+    fin, fout = os.path.join(SCR, "ch_in.npy"), os.path.join(SCR, "ch_out.npy")
+    np.save(fin, env.astype(np.float64))
+    subprocess.run([JULIA, "--startup-file=no",
+                    os.path.join(ORACLE, "gen_surrogates.jl"), fin, fout,
+                    str(N_SURR), "iaaft", "0"],
+                   check=True, capture_output=True,
+                   env=dict(os.environ, JULIA_PROJECT=ORACLE))
+    S = np.load(fout)
+    surr = np.array([float(langevin_entropy_production(
+        fit_linear_langevin(S[i], 1.0 / ENV_FS))) for i in range(len(S))])
+    z = (eps - surr.mean()) / (surr.std() + 1e-12)
+    p = (np.sum(surr >= eps) + 1) / (len(surr) + 1)
+    print(f"\nreversible IAAFT null: EPR={eps:.3f} vs null {surr.mean():.3f}±{surr.std():.3f}"
+          f"  z={z:.2f}  p={p:.3f}  (harmonic-basis broken detailed balance)")
 
 
 if __name__ == "__main__":
