@@ -67,8 +67,9 @@ def main():
     print("JAX backend:", jax.default_backend())
     graph = os.environ.get("WAND_GRAPH", "geometric")
     if graph == "structural":
-        W = np.load(os.path.join(OUT, "desikan68_SC.npy"))           # probtrackx 68×68 SC
-        print(f"structural graph: probtrackx SC, density {np.mean(W > 0):.2f}")
+        SC = np.load(os.path.join(OUT, "desikan68_SC.npy"))          # probtrackx 68×68 SC
+        W = np.log1p(SC)                                             # compress streamline-count range
+        print(f"structural graph: probtrackx SC (log1p), density {np.mean(SC > 0):.2f}")
     else:
         cent = np.load(os.path.join(OUT, "desikan68_centroids.npy"))  # (68, 3)
         W, sigma = gaussian_graph(cent)

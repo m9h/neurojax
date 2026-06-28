@@ -101,8 +101,30 @@ infraslow ~10 s cycle the band analysis found at 0.04–0.12 Hz. The central tes
 passes: the resting cycle is a solenoidal rotation among a small set of low-order
 connectome harmonics.
 
-Caveats / next: geometric (centroid) graph — the **structural** connectome
-(`wand_structural_connectome.py`: TRACULA BBR `aparc+aseg` in diffusion space +
-sub-08033 bedpostX → `probtrackx2_gpu --network` → 68×68 SC) is the proper Atasoy
-basis (running). `parcels68` is per-parcel standardised (use raw next). Then: the
-functional-harmonic version, and the same broadband analysis on the structural basis.
+## Structural connectome (proper Atasoy basis) — robustness confirmed
+`wand_structural_connectome.py` built sub-08033's Desikan-68 SC from TRACULA's
+BBR-registered `aparc+aseg` (diffusion space) + bedpostX → `probtrackx2_gpu
+--network` (261 s on the GB10), ROIs in exact `parcels68` order. Re-running the same
+broadband harmonic analysis on the structural basis (`WAND_GRAPH=structural`,
+log1p streamline counts):
+
+| | geometric | structural |
+|---|---|---|
+| broadband EPR | 0.098 | 0.101 |
+| reversible IAAFT null | 0.067±0.007 | 0.068±0.007 |
+| z | 4.42 | 4.65 |
+| f_sol | 0.099 Hz | 0.101 Hz |
+| circulation centre-of-mass | 9.3 / 20 | 10.6 / 20 |
+
+**The non-equilibrium signature is basis-invariant**: both bases give a significant
+(z≈4.5), infraslow (f_sol≈0.10 Hz) solenoidal cycle that is rotation among low-order
+connectome harmonics. The *specific* harmonics differ (geometric H1/H2/H7 carry
+power & circulation; structural H13/H8/H15 — different graphs, different eigenvectors)
+but the aggregate result is robust, and the structural (proper Atasoy) basis sharpens
+it slightly. So the resting cycle = a low-dimensional solenoidal current among
+low-order connectome harmonics, independent of whether the harmonics come from
+cortical geometry or white-matter structure.
+
+Next: the **functional-harmonic** version (HADES's own basis, from the MEG's FC — no
+DWI), for the three-way comparison; map the dominant structural harmonics to anatomy;
+non-standardised parcels; scale to more subjects as their DWI is reconstructed.
