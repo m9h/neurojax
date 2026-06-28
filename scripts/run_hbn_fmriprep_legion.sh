@@ -41,20 +41,25 @@ done
 { echo "participant_id"; for s in "${SUBJECTS[@]}"; do echo "sub-$s"; done; } > "$BIDS/participants.tsv"
 
 # --- fMRIPrep (with FreeSurfer recon-all) -----------------------------------
-PARTICIPANTS="$(printf '%s ' "${SUBJECTS[@]}")"
 ENGINE="$(command -v podman || command -v docker)"
-echo "[fmriprep] $FMRIPREP_VER via $ENGINE on: $PARTICIPANTS"
-# rootless podman on Fedora/SELinux: :z relabels bind mounts; bump shm for fMRIPrep.
-"$ENGINE" run --rm --shm-size=8g \
-  -v "$BIDS:/data:ro,z" -v "$OUT:/out:z" -v "$WORK:/work:z" \
-  -v "$FS_LICENSE:/opt/freesurfer/license.txt:ro,z" \
-  "nipreps/fmriprep:${FMRIPREP_VER}" \
-  /data /out participant \
-  --participant-label $PARTICIPANTS \
-  --output-spaces MNI152NLin2009cAsym fsaverage5 fsnative \
-  --fs-license-file /opt/freesurfer/license.txt \
-  --nthreads "$NTHREADS" --omp-nthreads "$NTHREADS" --mem-mb "$MEM_MB" \
-  --work-dir /work --notrack --skip-bids-validation
+# Run subjects SEQUENTIALLY and lift podman's PID cap. Running multiple subjects
+# in parallel x recon-all -openmp blew past podman's default --pids-limit (2048)
+# -> "libgomp: Thread creation failed: Resource temporarily unavailable" and a
+# nipype deadlock. One subject at a time + --pids-limit=0 + omp 8 fixes it.
+for sub in "${SUBJECTS[@]}"; do
+  echo "[fmriprep] $FMRIPREP_VER via $ENGINE on sub-$sub"
+  # rootless podman on Fedora/SELinux: :z relabels bind mounts; bump shm for fMRIPrep.
+  "$ENGINE" run --rm --shm-size=8g --pids-limit=0 \
+    -v "$BIDS:/data:ro,z" -v "$OUT:/out:z" -v "$WORK:/work:z" \
+    -v "$FS_LICENSE:/opt/freesurfer/license.txt:ro,z" \
+    "nipreps/fmriprep:${FMRIPREP_VER}" \
+    /data /out participant \
+    --participant-label "$sub" \
+    --output-spaces MNI152NLin2009cAsym fsaverage5 fsnative \
+    --fs-license-file /opt/freesurfer/license.txt \
+    --nthreads "$NTHREADS" --omp-nthreads 8 --mem-mb "$MEM_MB" \
+    --work-dir /work --notrack --skip-bids-validation
+done
 
 # --- pull HBN's 2018 FS6 for the same subjects, to diff against ------------
 for sub in "${SUBJECTS[@]}"; do
