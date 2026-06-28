@@ -132,6 +132,82 @@ Caveat: polynomial libraries are correlated, so DT is the optimistic bound — a
 correlated design needs strictly more samples. Script:
 `scripts/real_data/wand_identifiability.py`.
 
+## Strengthening the irreversibility case — three independent proper nulls (2026-06-27)
+
+The committed irreversibility (model-free `‖L−Lᵀ‖`, model-based Langevin EPR) was
+significant only vs a **time-shuffle** null — which whitens the spectrum, so it
+rejects i.i.d. noise and nothing more. Two caveats then surfaced: (i) the model-free
+and model-based estimators are the *same* second-order object (the OLS-Langevin
+`α* = ½(AΣ−ΣAᵀ) = A_sol·Σ` is *identically* the empirical Lévy area — verified on
+WAND), so they were never independent corroboration; (ii) `irreversibility ≠
+determinism`. Three genuinely independent tests, each with a proper null, now
+strengthen the case (review: `docs/NONLINEAR_TSA_REVIEW.md`).
+
+**(1) Arrow of time — SOTA reversible surrogate null.** Re-test the whitened band
+circulation (Lévy area) against a per-channel **IAAFT** null from the
+TimeseriesSurrogates.jl oracle (`scripts/real_data/oracle_surrogates/`): it preserves
+each channel's power spectrum *and* amplitude distribution exactly and is
+time-reversible, so survival rules out autocorrelation, spectrum shape, *and* the
+(skewed) envelope marginal.
+
+| band | circ | null | z | p |
+|------|-----:|-----:|----:|----:|
+| delta | 0.664 | 0.578 | 2.59 | 0.016 |
+| theta | 0.936 | 0.793 | 2.88 | 0.016 |
+| alpha | 1.269 | 0.990 | **4.69** | 0.016 |
+| beta | 1.344 | 1.239 | 1.45 | 0.131 |
+| gamma | 1.608 | 1.358 | 2.86 | 0.016 |
+
+Significant in 4/5 bands (p = surrogate floor, N=60). The *excess* over the
+matched-spectrum reversible floor peaks at **alpha**, not delta — the raw
+delta-dominant EPR is largely the high matched-spectrum floor of slow narrowband
+signals. Script: `scripts/real_data/wand_reversible_null.py`.
+
+**(2) Determinism — RQA + recurrence-network dimension (pyunicorn oracle).** A
+*positive* test of "stochastic, not a limit cycle" (the DMD/SINDy≈0 was
+absence-of-evidence). DET, with an IAAFT-surrogate floor, and the transitivity
+dimension:
+
+| band | DET | surrDET | LAM | L_max | transD |
+|------|----:|--------:|----:|------:|-------:|
+| delta | 0.571 | 0.548 | 0.729 | 108 | 3.72 |
+| theta | 0.271 | 0.257 | 0.456 | 16 | 3.81 |
+| alpha | 0.216 | 0.165 | 0.360 | 8 | 3.35 |
+| beta | 0.143 | 0.128 | 0.256 | 7 | 3.85 |
+| gamma | 0.109 | 0.128 | 0.205 | 5 | 4.08 |
+
+DET is low (0.11–0.57; a noisy limit cycle gives ~0.86, pure noise ~0.09) →
+**positively confirms no deterministic limit cycle**. Transitivity dimension ≈ 3.7
+vs the linear PCA rank ≈ 18 → a **low-dimensional (~3–4D) nonlinear manifold**, not a
+1-D limit cycle (transD = 1.14 for a clean circle) and not 18-D noise — exactly the
+"biased stochastic walk on a ring". Gamma DET < surrogate → noise-like. Script:
+`scripts/real_data/wand_determinism_rqa.py`.
+
+**(3) Nonlinear arrow of time — higher-order log-signatures.** The log-signature
+negates uniformly under time reversal, so levels ≥3 carry nonlinear path asymmetry
+the Gaussian/linear estimators miss. Windowed depth-3 log-sig (signax) per band,
+each level's mean ranked against a sign-flip null:
+
+| band | lvl2 z (p) | lvl3 z (p) |
+|------|-----------:|-----------:|
+| delta | 4.88 (.002) | 3.08 (.005) |
+| theta | 2.89 (.007) | 1.97 (.037) |
+| alpha | 2.52 (.017) | **3.71 (.002)** |
+| beta | −0.17 (.571) | 0.33 (.364) |
+| gamma | 0.83 (.239) | −0.94 (.830) |
+
+Level-2 reproduces the linear circulation (sanity); **level-3 significant in
+delta/theta/alpha ⇒ genuine *nonlinear* broken detailed balance**, null in
+beta/gamma. Script: `scripts/real_data/wand_logsig_irrev.py`.
+
+**The convergent picture.** All three independent proper-null tests agree: the slow
+bands (delta/theta/alpha) carry genuine, low-dimensional, *nonlinear* broken detailed
+balance; beta is weak; gamma is reversible/noise-like at every order. **Alpha is the
+cleanest broken-detailed-balance signal** across the proper nulls (reversible-null
+excess z=4.69, nonlinear log-sig z=3.71) — a sharper, more rigorous claim than the
+raw delta-dominant EPR. Stricter follow-up: a coupling-preserving
+constrained-randomization (TISEAN) null.
+
 ## Connection to SMNI (and the right next tool)
 The cyclic structure lives in the **diffusion**, not the **drift**. DMD/SINDy/
 DYSCO model the drift ż = f(z), so they see ~0 — as they should. Capturing the
