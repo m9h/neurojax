@@ -80,6 +80,10 @@ try:
         circulation_strength,
         expected_levy_rate,
         solenoidal_circulation,
+        gaussian_cmi,
+        transfer_entropy,
+        mvte_matrix,
+        te_permutation_test,
     )
     from neurojax.dynamics.windowed import (
         windowed_sindy,
@@ -155,6 +159,10 @@ if _HAS_JAXCTRL:
         "circulation_strength",
         "expected_levy_rate",
         "solenoidal_circulation",
+        "gaussian_cmi",
+        "transfer_entropy",
+        "mvte_matrix",
+        "te_permutation_test",
         "windowed_sindy",
         "windowed_dmd",
         "windowed_signatures",
