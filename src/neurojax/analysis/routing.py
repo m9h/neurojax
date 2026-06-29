@@ -72,6 +72,18 @@ def routing_modes(field_ts, n_modes=25):
     return Vt[:k], U[:, :k] * s[:k], var
 
 
+def routing_to_harmonics(modes, harmonics):
+    """Project routing-mode spatial patterns onto the connectome harmonics — the
+    flow↔structure bridge.
+
+    ``modes`` (n_modes, n) routing-mode patterns (:func:`routing_modes`);
+    ``harmonics`` (n, n_harm) connectome harmonics
+    (:func:`~neurojax.spatial.connectome_harmonics`).  Returns loadings
+    (n_modes, n_harm): which structural eigenmodes each routing mode expresses.
+    """
+    return jnp.asarray(modes) @ jnp.asarray(harmonics)
+
+
 def rerouting_rate(activations, fs):
     """Zero-crossings per second of each routing-mode activation (T, n_modes).
 

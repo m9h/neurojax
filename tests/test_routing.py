@@ -12,6 +12,7 @@ from neurojax.analysis.routing import (
     routing_fields,
     routing_modes,
     rerouting_rate,
+    routing_to_harmonics,
 )
 from neurojax.geometry.hodge import divergence, curl
 
@@ -41,6 +42,16 @@ def test_routing_modes_recover_rank1():
     assert var[0] > 0.98                                          # rank-1 dominates
     assert abs(np.corrcoef(modes[0], pat)[0, 1]) > 0.99           # spatial pattern
     assert abs(np.corrcoef(activ[:, 0], act - act.mean())[0, 1]) > 0.99   # activation
+
+
+def test_routing_to_harmonics_projection():
+    # if a routing mode IS a harmonic, it loads fully on that harmonic (orthonormal)
+    rng = np.random.default_rng(1)
+    n, h = 40, 8
+    Phi = np.linalg.qr(rng.standard_normal((n, h)))[0]            # orthonormal harmonics
+    modes = Phi.T                                                # each mode = a harmonic
+    load = np.asarray(routing_to_harmonics(jnp.asarray(modes), jnp.asarray(Phi)))
+    np.testing.assert_allclose(load, np.eye(h), atol=1e-3)       # mode k -> harmonic k (float32)
 
 
 def test_rerouting_rate_counts_sign_flips():
