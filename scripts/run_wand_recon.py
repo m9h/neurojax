@@ -27,10 +27,11 @@ OUT = os.path.expanduser(f"~/wand_recon_{SUB}.npz")
 
 print("[1] read CTF resting MEG", flush=True)
 raw = mne.io.read_raw_ctf(DS, preload=True, clean_names=True)
+n_bad = len(raw.info["bads"])
 raw.pick_types(meg=True, ref_meg=False, exclude="bads")
 raw.filter(1.0, 45.0); raw.resample(250); raw.crop(tmax=min(60.0, raw.times[-1]))
-print(f"    {len(raw.ch_names)} MEG ch, sfreq {raw.info['sfreq']}, "
-      f"{int(raw.times[-1])}s", flush=True)
+print(f"    {len(raw.ch_names)} good MEG ch (honored {n_bad} bad), "
+      f"sfreq {raw.info['sfreq']}, {int(raw.times[-1])}s", flush=True)
 
 print("[2] fiducial coreg + individual source space + sphere", flush=True)
 # fiducial-only head->MRI trans (sphere MEG needs no head surface / watershed):
@@ -72,11 +73,36 @@ pdc = np.asarray(out["pdc"])
 alpha = (np.asarray(freqs) >= 8) & (np.asarray(freqs) <= 12)
 P = pdc[alpha].mean(0); np.fill_diagonal(P, 0.0)
 names = [l.name for l in labels]
-idx = np.dstack(np.unravel_index(np.argsort(P, axis=None)[::-1], P.shape))[0][:8]
-print("    top alpha-band directed edges (source -> target, PDC):", flush=True)
+
+# leakage diagnostic: parcels whose mean leadfield topographies are highly
+# correlated are poorly separable -> directed edges between them are leakage-
+# suspect (Valdes-Sosa). Flag/exclude those before reading the top edges.
+print("    computing parcel leakage (leadfield-topography correlation)", flush=True)
+fwd_fix = mne.convert_forward_solution(fwd, force_fixed=True, use_cps=True)
+topos = []
+for lab in labels:
+    fl = mne.forward.restrict_forward_to_label(fwd_fix, lab)
+    topos.append(np.abs(np.asarray(fl["sol"]["data"])).mean(1))
+T = np.asarray(topos); Tc = T - T.mean(1, keepdims=True)
+leak = np.abs(Tc @ Tc.T) / np.sqrt(np.outer((Tc ** 2).sum(1), (Tc ** 2).sum(1)) + 1e-20)
+LEAK_THR = 0.7
+
+idx = np.dstack(np.unravel_index(np.argsort(P, axis=None)[::-1], P.shape))[0][:20]
+print(f"    top alpha directed edges (PDC) with leakage flag (>{LEAK_THR}=suspect):",
+      flush=True)
+shown = 0
 for i, j in idx:
-    print(f"      {names[j]:>24} -> {names[i]:<24} {P[i, j]:.3f}", flush=True)
-np.savez_compressed(OUT, pdc=pdc, dtf=np.asarray(out["dtf"]),
+    flag = "  <-- LEAKAGE-SUSPECT" if leak[i, j] > LEAK_THR else ""
+    print(f"      {names[j]:>22} -> {names[i]:<22} PDC={P[i, j]:.3f} "
+          f"leak={leak[i, j]:.2f}{flag}", flush=True)
+    shown += 1
+    if shown >= 10:
+        break
+clean = [(i, j) for i, j in idx if leak[i, j] <= LEAK_THR][:6]
+print("    --- leakage-CLEAN top edges (separable parcels) ---", flush=True)
+for i, j in clean:
+    print(f"      {names[j]:>22} -> {names[i]:<22} PDC={P[i, j]:.3f}", flush=True)
+np.savez_compressed(OUT, pdc=pdc, dtf=np.asarray(out["dtf"]), leakage=leak,
                     freqs=np.asarray(freqs), parcels=np.array(names))
 print(f"[done] {SUB}: individual FS source space + sphere + dig-coreg -> {OUT}",
       flush=True)
