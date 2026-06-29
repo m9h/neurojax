@@ -11,6 +11,14 @@ from neurojax.geometry.hodge import (
     cotangent_laplacian,
     helmholtz_hodge,
 )
+from neurojax.geometry.hodge_pointcloud import (
+    knn_graph,
+    estimate_normals,
+    point_gradient,
+    point_divergence,
+    point_vorticity,
+    point_phase_gradient,
+)
 
 __all__ = [
     "phase_gradient",
@@ -19,4 +27,10 @@ __all__ = [
     "curl",
     "cotangent_laplacian",
     "helmholtz_hodge",
+    "knn_graph",
+    "estimate_normals",
+    "point_gradient",
+    "point_divergence",
+    "point_vorticity",
+    "point_phase_gradient",
 ]

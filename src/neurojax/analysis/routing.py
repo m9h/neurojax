@@ -20,6 +20,26 @@ import jax.numpy as jnp
 import numpy as np
 
 from neurojax.geometry.hodge import phase_gradient, divergence, curl
+from neurojax.geometry.hodge_pointcloud import (
+    point_phase_gradient,
+    point_divergence,
+    point_vorticity,
+)
+
+
+def routing_fields_pointcloud(X, nbr, phase_ts, normals):
+    """Point-cloud backend of :func:`routing_fields` (MARBLE-style manifold, no mesh).
+
+    ``X`` (n, 3) node positions, ``nbr`` (n, k) neighbour indices
+    (:func:`~neurojax.geometry.hodge_pointcloud.knn_graph`), ``normals`` (n, 3).
+    Returns (divergence, vorticity) fields, each (T, n) — the sensor-manifold routing
+    maps exactly as Vinão-Carl compute them."""
+    def one(phase):
+        Fhat = point_phase_gradient(X, nbr, phase)
+        return point_divergence(X, nbr, Fhat), point_vorticity(X, nbr, Fhat, normals)
+
+    div, vort = jax.vmap(one)(jnp.asarray(phase_ts))
+    return div, vort
 
 
 def routing_fields(V, F, phase_ts):
