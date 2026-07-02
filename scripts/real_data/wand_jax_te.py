@@ -34,15 +34,19 @@ def main():
     M = np.asarray(mvte_matrix(A))                                    # (n, n) conditional TE
 
     # circular-shift surrogate null: each column independently shifted (kills cross-node
-    # coupling, keeps autocorrelation), recompute the whole MV-TE matrix, vmap-ed
+    # coupling, keeps autocorrelation), recompute the whole MV-TE matrix.  Loop over
+    # surrogates (one ~2GB matrix at a time; XLA-cached so each is fast) — vmapping the
+    # outer dim too would materialise all of them at once and OOM.
     idx0 = jnp.arange(T)
 
+    @jax.jit
     def surrogate_mvte(key):
         shifts = jax.random.randint(key, (n,), MAXLAG + 1, T - MAXLAG - 1)
         sh = jnp.take_along_axis(A, (idx0[:, None] - shifts[None, :]) % T, axis=0)
         return mvte_matrix(sh)
 
-    null = np.asarray(jax.vmap(surrogate_mvte)(jax.random.split(jax.random.PRNGKey(0), N_SURR)))
+    null = np.stack([np.asarray(surrogate_mvte(k))
+                     for k in jax.random.split(jax.random.PRNGKey(0), N_SURR)])
     thresh = np.percentile(null, 99)                                 # p<0.01 network threshold
     sig = (M > thresh) & (~np.eye(n, dtype=bool))
 
