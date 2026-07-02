@@ -27,6 +27,7 @@ vortices expressing those same harmonics.
 | **Reversible IAAFT null** (TimeseriesSurrogates.jl) | vs spectrum+marginal-matched reversible | circulation > null 4/5 bands (z 2.6–4.7) | irreversibility survives a proper null |
 | **Signature-kernel MMD** | all-orders time-reversibility | significant all bands (alpha z=17) | statistically time-irreversible |
 | **Connectome harmonics** (Leg B) | spatial eigenbasis of the cycle | circulation among low-order harmonics; EPR≈0.10, z 4.4–5.7; basis-invariant (geometric≈structural≈surface-LBO) | the cycle = rotation among a few **low-order structural modes** |
+| **Transfer entropy** (multivariate Gaussian, conditional) | directed information flow among harmonics | 9 significant edges (p<0.01 vs 100 circular-shift surrogates); directed cycles at lengths 2–7 among H1–H15 | independent **information-theoretic** confirmation of the directed loop |
 | **Phase-flow routing** (Vinão-Carl) | physical-space Hodge: vortices/sources | vortices express harmonics H[1,2,7]; net rotation bias +0.10; rerouting ~4/s | physical **vortices** = the spatial realization of the circulation |
 | **Donoho–Tanner** | sparse-fit identifiability | ~1000–2000× inside the identifiable region; support frequency-graded | the fits are well-posed; complexity ↑ with frequency |
 
@@ -45,7 +46,10 @@ The state-space circulation `A_sol·Σ` (Tomita–Tomita = expected Lévy area),
 physical-space vortices, and the low-order harmonic rotation are the **same object**,
 empirically: the phase-flow vortices project onto the same harmonics (H1/H2/H7) the
 Langevin circulation rotates among, at the same ~0.1 Hz, both significant against
-proper reversible nulls.
+proper reversible nulls. Multivariate transfer entropy among the harmonics adds a
+fourth, purely information-theoretic view of the same object: the directed loops it
+finds (H14→H2, H14→H7, H7→H14, H11→H8, H7→H11, ...) are the TE signature of a
+solenoidal (non-gradient) coupling structure, not a feed-forward cascade.
 
 ## The stack (all differentiable-JAX-native)
 `HMM/DyNeMo (states) → phase-flow Hodge (physical routing, mesh + point-cloud
@@ -63,3 +67,7 @@ in `jaxctrl` (`_circulation`, `_langevin`, `_denoise`, `_sysid`) and `neurojax`
   band-free harmonic dynamics.
 - Reference oracles studied (licenses audited): MARBLE (MIT, ported), HADES/CHAP (no
   license, read-only), lapy/BrainEigenmodes (open).
+- Transfer entropy: the JAX-native Gaussian estimator (`jaxctrl._information`,
+  `scripts/real_data/wand_jax_te.py`) ran to completion; the IDTxl oracle comparison
+  run did not produce output and has not been re-run, so the TE result above is not
+  yet cross-checked against the reference (nonlinear/KSG) estimator.
