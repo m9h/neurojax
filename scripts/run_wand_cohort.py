@@ -52,19 +52,35 @@ def main():
             print(f"  {s}: running individual recon ...", flush=True)
             subprocess.run([PY, RECON, s], check=False, env=env)
 
-    pdcs, leaks, parcels, freqs, used = [], [], None, None, []
+    loaded, freqs, used = [], None, []
     for s in subs:
         out = os.path.expanduser(f"~/wand_recon_{s}.npz")
         if not os.path.exists(out):
             continue
         d = np.load(out, allow_pickle=True)
-        pdcs.append(d["pdc"]); leaks.append(d["leakage"])
-        parcels, freqs = d["parcels"], d["freqs"]; used.append(s)
-    if not pdcs:
+        loaded.append(d); freqs = d["freqs"]; used.append(s)
+    if not loaded:
         sys.exit("no per-subject recon outputs found")
 
+    # subjects drop different aparc parcels (empty-vertex labels vary per subject's
+    # own surface reconstruction -- see run_wand_recon.py), so PDC/leakage matrices
+    # have different shapes. Align everyone onto the common intersection of parcel
+    # names (order taken from the subject with the most parcels) before averaging.
+    name_sets = [set(d["parcels"]) for d in loaded]
+    common = set.intersection(*name_sets)
+    ref = max(loaded, key=lambda d: len(d["parcels"]))["parcels"]
+    names = [n for n in ref if n in common]
+    print(f"  common parcels across all {len(used)} subjects: {len(names)}/{len(ref)}",
+          flush=True)
+
+    pdcs, leaks = [], []
+    for d in loaded:
+        subj_names = list(d["parcels"])
+        idx = [subj_names.index(n) for n in names]
+        pdcs.append(d["pdc"][:, idx][:, :, idx])
+        leaks.append(d["leakage"][np.ix_(idx, idx)])
+
     G, L = np.mean(pdcs, 0), np.mean(leaks, 0)
-    names = list(parcels)
     alpha = (freqs >= 8) & (freqs <= 12)
     P = G[alpha].mean(0); np.fill_diagonal(P, 0.0)
     idx = np.dstack(np.unravel_index(np.argsort(P, axis=None)[::-1], P.shape))[0]
