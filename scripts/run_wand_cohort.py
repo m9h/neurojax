@@ -96,7 +96,7 @@ def main():
         if shown >= 12:
             break
     outp = os.path.expanduser("~/wand_cohort_connectivity.npz")
-    np.savez_compressed(outp, pdc=G, leakage=L, freqs=freqs, parcels=parcels,
+    np.savez_compressed(outp, pdc=G, leakage=L, freqs=freqs, parcels=np.array(names),
                         n=len(used), subjects=np.array(used))
     print(f"\n[done] group map (n={len(used)}) -> {outp}", flush=True)
 
