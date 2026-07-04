@@ -62,7 +62,16 @@ inv = mne.minimum_norm.make_inverse_operator(raw.info, fwd, cov)
 stc = mne.minimum_norm.apply_inverse_raw(raw, inv, lambda2=1.0 / 9.0, method="MNE")
 labels = [l for l in mne.read_labels_from_annot(FS_SUBJ, "aparc",
           subjects_dir=SUBJECTS_DIR) if "unknown" not in l.name.lower()]
-ltc = mne.extract_label_time_course(stc, labels, src, mode="mean_flip")
+# some individual oct6 source spaces have zero vertices under a handful of aparc
+# labels (subject-specific reconstruction quirk); allow_empty + drop those parcels
+# rather than crash the whole subject.
+ltc = mne.extract_label_time_course(stc, labels, src, mode="mean_flip", allow_empty=True)
+nonempty = ~np.all(ltc == 0, axis=1)
+if not nonempty.all():
+    print(f"    dropping {int((~nonempty).sum())} empty-vertex parcels: "
+          f"{[l.name for l, keep in zip(labels, nonempty) if not keep]}", flush=True)
+    labels = [l for l, keep in zip(labels, nonempty) if keep]
+    ltc = ltc[nonempty]
 print(f"    {ltc.shape[0]} parcels x {ltc.shape[1]} samples", flush=True)
 
 print("[4] neurojax directed source connectivity (PDC/DTF)", flush=True)
