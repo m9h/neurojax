@@ -94,11 +94,36 @@ Top leakage-clean alpha-band directed edges (group mean, n=26):
 
 Sensorimotor (precentral/paracentral/postcentral) and orbitofrontal↔cingulate
 directed coupling dominate. This is a real-anatomy, larger-N (26 vs 10) sanity
-check that directed structure exists and is consistent across subjects — it has
-**not yet** been mapped onto the harmonic basis or checked against the ~0.1 Hz
-circulation above; that reconciliation (does this parcel-level directed
-structure project onto the same low-order harmonics H1/H2/H7?) is the natural
-next step tying this cohort pipeline back into the convergent-answer story.
+check that directed structure exists and is consistent across subjects.
+
+**Reconciliation with the harmonic circulation (2026-07-06) — partial, basis-dependent, not a
+clean confirmation.** Expressed the group alpha-band directed-PDC matrix (41 common parcels) as a
+bilinear form in the same harmonic coordinates as the circulation analysis (`Phi41.T @ P @ Phi41`,
+`Phi41` = the 68-node harmonic eigenvectors restricted to the 41 available rows by parcel name),
+took the antisymmetric part as the PDC analogue of the Langevin circulation's `A_sol`, and tested
+two things against parcel-identity permutation nulls (2000 permutations):
+`scripts/real_data/wand_reconcile_pdc_harmonics.py`.
+
+| basis | rotational-structure COM (of 20) | vs null | flagged-harmonic loading enrichment | vs null |
+|---|---|---|---|---|
+| geometric | 9.34 (ref: ~9.3) | z=−1.21, p=0.118 (n.s.) | **0.70×** (top-PDC parcels *less* loaded on H1,H2,H7) | z=−2.65, p=0.9995 (n.s., wrong direction) |
+| structural | 11.23 (ref: ~10.6) | z=0.03, p=0.444 (n.s.) | **1.75×** (top-PDC parcels *more* loaded on H13,H8,H15) | z=1.81, **p=0.059** (marginal) |
+
+Two things line up loosely — the geometric-basis centre-of-mass matches the template-coreg
+reference almost exactly (9.34 vs 9.3), and H1/H7 recur among the top rotational pairs found here
+(H1↔H7, H1↔H6, H6↔H7, H7↔H13) even though the specific partner harmonics (H6, H13) differ from the
+reference's (H12, H8, H2) — but neither permutation test reaches significance in the geometric
+basis, and the loading-enrichment check there is significant in the *wrong* direction (the
+anatomically PDC-active regions are *less* loaded on H1/H2/H7 than an average parcel, not more).
+The structural basis gives the one suggestively positive number (1.75× enrichment, p=0.059) but its
+rotational-structure test is null. **Verdict: this reconciliation attempt does not yet cleanly tie
+the cohort's real-anatomy directed structure to the harmonic circulation** — the two pipelines
+differ in more ways than just anatomy (alpha-band-restricted PDC vs the circulation's broadband
+Langevin fit; group-averaged directed connectivity vs a per-subject dynamical fit; largely
+non-overlapping subject sets, template n=10 vs individual-anatomy n=26), any of which could dilute
+a real correspondence rather than its absence being the true state of affairs. Sharper next
+attempt: broadband (not alpha-only) PDC, and/or fit the harmonic circulation itself on the same
+n=26 individual-anatomy subjects so both legs use the same subjects and coregistration.
 
 ## Caveats / scope
 - 10 subjects, template (fsaverage) coregistration, Desikan-68. Cohort scale-up needs
