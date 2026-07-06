@@ -255,6 +255,49 @@ matched-spectrum floor of slow narrowband signals). Deferred: a coupling-preserv
 **constrained-randomization** null — TISEAN is not packaged (needs a source build), so
 it is a future sibling oracle to TimeseriesSurrogates.jl.
 
+## Cross-dataset replication on Wakeman-Henson (2026-07-06)
+Everything above is WAND-only. Wakeman-Henson (WH, OpenNeuro ds000117) already had
+an independent TINDA finding (`wh_k12_cycle.py`: S=+0.065, z=56.6 on a cached K=12
+`oracle_gamma.npy`), but `wh_source_prep_oracle.py` never persisted the raw 68-region
+parcel time series, so the Langevin/harmonic/TE battery couldn't be run on it. A
+fresh, self-consistent rerun (`wh_source_parcels_prep.py`, 8 subjects x 2 runs,
+fsaverage template + LCMV + Desikan-68, same recipe as `wand_source_prep.py`) now
+saves `parcels68.npy` alongside `prepared.npy`/`oracle_gamma.npy` — reproducing the
+same 788,600-sample session set (confirms it matches the original `wh_src8` cache).
+
+| test | WAND | WH | verdict |
+|---|---|---|---|
+| TINDA discrete cycle | S=+0.052, z=30.8 | S=+0.062, z=50.9 | both significant |
+| Transfer entropy (harmonics) | 9 edges, cycles len 2–7 | 24 edges, cycles len 2–7 | both significant, WH denser |
+| Band EPR/null ratio | 3.8–38x | 4.0–36.3x | **nearly identical range** |
+| sol/tot delta→gamma | 0.64→0.02 | 0.44→0.02 | same monotonic decay |
+| f_sol range | 0.044–0.115 Hz | 0.052–0.131 Hz | **same infraslow band** |
+| single-timescale flux-along-TINDA-order | 75% | 33% (below chance) | diverges |
+
+WH has no structural connectome of its own, so `wh_te_prep.py` borrows WAND's
+geometric harmonic basis (both are on the same fsaverage Desikan-68 template, so this
+is a legitimate shared basis, not a mismatch). The band-resolved Langevin fit
+(`wh_band_langevin.py`, the WH counterpart of `wand_band_langevin.py` — the script
+that actually produces the headline EPR/sol-tot/f_sol numbers) reproduces WAND's
+pattern almost exactly: EPR far above a shuffle null in every band, `sol/tot`
+decaying monotonically delta→gamma, and `f_sol` landing in the same ~0.05–0.13 Hz
+infraslow range. This is the same solenoidal circulation on an **independent
+dataset, acquisition site, and task paradigm** (WH is a face-recognition task, not
+resting state).
+
+One real divergence: the single-timescale `wh_langevin.py` (smoothed K=4 PCA of the
+HMM state probabilities at 25 Hz) collapses to near-null EPR just like WAND's own
+`wand_langevin.py` does at that timescale (documented above, "the smoothed/
+single-timescale view collapses irreversibility to ~0") — but its one interpretable
+metric at that timescale, "flux circulates along TINDA order," is 75% for WAND and
+only 33% (below chance) for WH. The most likely explanation is that WH's TINDA cycle
+partly reflects trial-locked task structure (repeated face-recognition stimulus
+epochs), which need not project onto continuous-embedding flux the same way a
+genuine spontaneous resting-state cycle does — worth checking directly (e.g.
+epoch-locked vs. inter-trial-interval-only Langevin fits) before treating it as
+settled. Scripts: `scripts/real_data/wh_source_parcels_prep.py`, `wh_te_prep.py`,
+`wh_langevin.py`, `wh_band_langevin.py`.
+
 ## Connection to SMNI (and the right next tool)
 The cyclic structure lives in the **diffusion**, not the **drift**. DMD/SINDy/
 DYSCO model the drift ż = f(z), so they see ~0 — as they should. Capturing the
