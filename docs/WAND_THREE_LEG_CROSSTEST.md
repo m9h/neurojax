@@ -132,6 +132,32 @@ Caveat: polynomial libraries are correlated, so DT is the optimistic bound — a
 correlated design needs strictly more samples. Script:
 `scripts/real_data/wand_identifiability.py`.
 
+**Leg C extension — band-resolved multifractality (WSE, 2026-07-05).** Everything
+above characterizes the drift's *directionality* (gradient vs solenoidal); it says
+nothing about whether the band envelope itself is monofractal (Gaussian/fGn, as the
+Langevin noise model assumes) or genuinely multifractal (intermittent/multiplicative).
+Applying the weak-scaling-exponent multifractal formalism (Dumeur, Saes, Abry,
+Ciuciu, Wendt, Jaffard 2025, arXiv:2503.16892) to each band's parcel-averaged
+amplitude envelope (same Morlet front-end as `wand_band_langevin.py`):
+
+| band  | Hz    | sol/tot | c1 (H) | c2 (multifractality) | spectrum width |
+|-------|-------|--------:|-------:|----------------------:|---------------:|
+| delta | 2–4   | 0.64    | +0.419 | **-0.076**             | 0.269          |
+| theta | 4–8   | 0.26    | +0.202 | **-0.034**             | 0.136          |
+| alpha | 8–13  | 0.13    | +0.122 | **-0.007**             | 0.074          |
+| beta  | 13–30 | 0.05    | +0.012 | +0.023                 | 0.220          |
+| gamma | 30–45 | 0.02    | -0.085 | +0.114                 | 0.298          |
+
+Rotational strength (`sol/tot`) and multifractality (`c2`) are **not independent
+axes** — they're strongly coupled: `corr(sol/tot, c2) = -0.82`. Delta, the most
+solenoidal band, is also the most genuinely multifractal (c2<0); gamma, nearly pure
+gradient relaxation, is essentially monofractal (c2>0, slightly super-Gaussian). This
+refines the earlier harmonic-coefficient WSE pass (`wand_multifractal_wse.py`), which
+averaged over the full 1–45 Hz band and came back only weakly multifractal on
+average — the genuine multifractality was concentrated in the low-frequency,
+high-circulation bands all along, and splitting by band reveals it. Script:
+`scripts/real_data/wand_band_multifractal_wse.py`.
+
 ## Strengthening the irreversibility case — three independent proper nulls (2026-06-27)
 
 The committed irreversibility (model-free `‖L−Lᵀ‖`, model-based Langevin EPR) was
