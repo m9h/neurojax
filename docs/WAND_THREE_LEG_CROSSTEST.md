@@ -290,12 +290,28 @@ HMM state probabilities at 25 Hz) collapses to near-null EPR just like WAND's ow
 `wand_langevin.py` does at that timescale (documented above, "the smoothed/
 single-timescale view collapses irreversibility to ~0") — but its one interpretable
 metric at that timescale, "flux circulates along TINDA order," is 75% for WAND and
-only 33% (below chance) for WH. The most likely explanation is that WH's TINDA cycle
-partly reflects trial-locked task structure (repeated face-recognition stimulus
-epochs), which need not project onto continuous-embedding flux the same way a
-genuine spontaneous resting-state cycle does — worth checking directly (e.g.
-epoch-locked vs. inter-trial-interval-only Langevin fits) before treating it as
-settled. Scripts: `scripts/real_data/wh_source_parcels_prep.py`, `wh_te_prep.py`,
+only 33% (below chance) for WH.
+
+**Epoch-locked vs ITI split (2026-07-06) — task-locked hypothesis NOT supported.**
+Tested directly whether WH's 33% reflects trial-locked task structure: split the
+K=12 state sequence into disjoint contiguous windows per trial (0–1.0 s
+post-stimulus vs 2.0–2.8 s late-ITI, clear of both this trial's evoked response and
+the next trial's onset — min ISI ≈2.99 s across all runs) across all 2,350/2,345
+trials (8 subjects x 2 runs), accumulating bigram transition counts separately per
+condition (`transition_flux`/`discrete_entropy_production` are linear in the raw
+count matrix, so summing per-window counts before computing flux is exact — unlike
+concatenating non-contiguous subsequences, which would fabricate spurious
+transitions at window boundaries). Result: **both conditions land at exactly 50%
+(chance) flux-along-order** — neither reproduces the full-sequence's 33%. This
+argues *against* the task-locked-artifact explanation (if evoked processing drove
+the anti-alignment, the epoch-locked window specifically should show it). More
+likely: "flux along a fixed candidate order" (a same-sign-as-median heuristic) is a
+much cruder statistic than TINDA's own block-shuffle-validated cycle-strength test
+(which finds WH highly significant, z=50.9) — the 33%/75% divergence probably
+reflects that crudeness rather than a genuine WAND-vs-WH dynamical difference.
+Script: `scripts/real_data/wh_epoch_vs_iti_langevin.py`.
+
+Other scripts: `scripts/real_data/wh_source_parcels_prep.py`, `wh_te_prep.py`,
 `wh_langevin.py`, `wh_band_langevin.py`.
 
 ## Connection to SMNI (and the right next tool)
