@@ -28,6 +28,7 @@ vortices expressing those same harmonics.
 | **Signature-kernel MMD** | all-orders time-reversibility | significant all bands (alpha z=17) | statistically time-irreversible |
 | **Connectome harmonics** (Leg B) | spatial eigenbasis of the cycle | circulation among low-order harmonics; EPR≈0.10, z 4.4–5.7; basis-invariant (geometric≈structural≈surface-LBO) | the cycle = rotation among a few **low-order structural modes** |
 | **Transfer entropy** (multivariate Gaussian, conditional) | directed information flow among harmonics | 9 significant edges (p<0.01 vs 100 circular-shift surrogates); directed cycles at lengths 2–7 among H1–H15 | independent **information-theoretic** confirmation of the directed loop |
+| **WSE multifractal** (weak scaling exponent, `pymultifracs`) | per-harmonic regularity + multifractality (c1, c2 log-cumulants) | all 15 harmonics c1<0 (H_min-like, negative); c2 small, mean +0.008, only 3/15 slightly negative | **weakly multifractal / near-monofractal** — consistent with the existing Gaussian/fGn Langevin noise model, no strong hidden multiplicative structure |
 | **Phase-flow routing** (Vinão-Carl) | physical-space Hodge: vortices/sources | vortices express harmonics H[1,2,7]; net rotation bias +0.10; rerouting ~4/s | physical **vortices** = the spatial realization of the circulation |
 | **Donoho–Tanner** | sparse-fit identifiability | ~1000–2000× inside the identifiable region; support frequency-graded | the fits are well-posed; complexity ↑ with frequency |
 
@@ -50,6 +51,16 @@ proper reversible nulls. Multivariate transfer entropy among the harmonics adds 
 fourth, purely information-theoretic view of the same object: the directed loops it
 finds (H14→H2, H14→H7, H7→H14, H11→H8, H7→H11, ...) are the TE signature of a
 solenoidal (non-gradient) coupling structure, not a feed-forward cascade.
+
+The WSE multifractal analysis (Dumeur et al. 2025) checks a different axis entirely:
+not *is there a directed cycle*, but *is each harmonic's own dynamics simple
+(Gaussian/monofractal, as the Langevin model assumes) or intermittent/multifractal*.
+All 15 harmonics come back weakly multifractal at most (c2 ≈ 0) — no evidence the
+Langevin/fGn-style noise model is missing real multiplicative structure. Notably, all
+15 also have negative c1 (H_min-like exponent), which is exactly the condition the
+paper shows breaks the standard wavelet p-leader formalism outright (without an ad hoc
+large fractional-integration order) — a concrete case where the older multifractal
+tools would have been the wrong tool for this data.
 
 ## The stack (all differentiable-JAX-native)
 `HMM/DyNeMo (states) → phase-flow Hodge (physical routing, mesh + point-cloud
@@ -92,6 +103,12 @@ next step tying this cohort pipeline back into the convergent-answer story.
 ## Caveats / scope
 - 10 subjects, template (fsaverage) coregistration, Desikan-68. Cohort scale-up needs
   per-subject FS/TRACULA (FastSurfer seg path; bedpostx is the GPU bottleneck).
+- WSE multifractal analysis ran on the same subject-concatenated `harmonic_coeffs.npy`
+  as the TE analysis (~10 subjects x 6 min @ 25 Hz). The coarsest scale examined
+  (2^12 samples ~ 164s) approaches a sizeable fraction of one subject's segment, and
+  internal subject-concatenation boundaries are not NaN-masked the way the series
+  edges are — a per-subject rerun would rule out coarse-scale boundary leakage, though
+  the result is consistent across all 15 harmonics.
 - Phase-flow uses alpha-band phase (narrowband, as Vinão-Carl do) — distinct from the
   band-free harmonic dynamics.
 - Reference oracles studied (licenses audited): MARBLE (MIT, ported), HADES/CHAP (no
