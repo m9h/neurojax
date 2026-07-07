@@ -71,33 +71,40 @@ in `jaxctrl` (`_circulation`, `_langevin`, `_denoise`, `_sysid`) and `neurojax`
 (`geometry.hodge[_pointcloud]`, `analysis.routing`, `spatial.harmonics`,
 `analysis.timefreq`).
 
-## Cohort-scale extension: individual-anatomy source connectivity (n=26, 2026-07-04)
+## Cohort-scale extension: individual-anatomy source connectivity (n=27, 2026-07-06)
 A separate, complementary pipeline (`scripts/run_wand_recon.py` +
 `scripts/run_wand_cohort.py`) replaces the template (fsaverage) coregistration
 above with each subject's **own** FreeSurfer surfaces, a single-sphere MEG
 conductor, and head-digitization coregistration — real individual anatomy, not
-harmonic/template space. Run cohort-wide (26/27 FreeSurfer-complete + resting-MEG
-WAND subjects; one excluded for a corrupted source-space mesh), aggregated as
-mean directed PDC/DTF over aparc parcels common to all subjects (41/68, since
-individual oct6 source spaces drop a subject-specific handful of empty-vertex
-labels).
+harmonic/template space. Now runs on the full 27/27 FreeSurfer-complete +
+resting-MEG WAND cohort: the one prior holdout (`sub-14445`) failed oct6 source-
+space setup on an MNE-side icosahedral-decimation edge case (FreeSurfer's own
+recon-all reported no error) — `run_wand_recon.py` now falls back to oct5/oct4
+when oct6 fails, at the cost of a coarser source space for that one subject
+(33/68 usable parcels vs. the typical 63-68). Aggregated as mean directed
+PDC/DTF over aparc parcels common to all 27 subjects (23/68 — down from 41/68 at
+n=26, since sub-14445's coarse oct4 recon shrinks the common-parcel
+intersection).
 
-Top leakage-clean alpha-band directed edges (group mean, n=26):
+Top leakage-clean alpha-band directed edges (group mean, n=27):
 
 | driver | receiver | PDC | leakage |
 |---|---|---|---|
-| precentral-rh | paracentral-rh | 0.140 | 0.27 |
-| insula-lh | transversetemporal-lh | 0.136 | 0.32 |
-| lateralorbitofrontal-lh | rostralanteriorcingulate-lh | 0.131 | 0.51 |
-| superiorparietal-lh | precuneus-lh | 0.130 | 0.63 |
-| precentral-lh | paracentral-lh | 0.126 | 0.35 |
+| precentral-rh | paracentral-rh | 0.141 | 0.26 |
+| posteriorcingulate-rh | paracentral-rh | 0.120 | 0.13 |
+| precuneus-rh | paracentral-rh | 0.118 | 0.33 |
+| postcentral-rh | precentral-rh | 0.117 | 0.64 |
+| precentral-rh | postcentral-rh | 0.114 | 0.64 |
 
 Sensorimotor (precentral/paracentral/postcentral) and orbitofrontal↔cingulate
-directed coupling dominate. This is a real-anatomy, larger-N (26 vs 10) sanity
-check that directed structure exists and is consistent across subjects.
+directed coupling dominate — the same qualitative pattern as the n=26 pass
+despite the smaller common-parcel set, a real-anatomy, larger-N (27 vs 10)
+sanity check that directed structure exists and is consistent across subjects.
 
 **Reconciliation with the harmonic circulation (2026-07-06) — partial, basis-dependent, not a
-clean confirmation.** Expressed the group alpha-band directed-PDC matrix (41 common parcels) as a
+clean confirmation.** Computed against the prior n=26/41-common-parcel cohort snapshot (before
+`sub-14445` was added at n=27/23-common-parcels above); not yet rerun on the updated file.
+Expressed the group alpha-band directed-PDC matrix (41 common parcels) as a
 bilinear form in the same harmonic coordinates as the circulation analysis (`Phi41.T @ P @ Phi41`,
 `Phi41` = the 68-node harmonic eigenvectors restricted to the 41 available rows by parcel name),
 took the antisymmetric part as the PDC analogue of the Langevin circulation's `A_sol`, and tested
