@@ -49,8 +49,24 @@ trans = mne.transforms.Transform("head", "mri", trans_mat)
 resid = np.linalg.norm(mne.transforms.apply_trans(trans_mat, head_pts) - mri_pts,
                        axis=1) * 1e3
 print(f"    fiducial coreg residual {resid.mean():.1f} mm", flush=True)
-src = mne.setup_source_space(FS_SUBJ, spacing="oct6", subjects_dir=SUBJECTS_DIR,
-                             add_dist=False)
+# some subjects' topology-fixed white surfaces have a residual vertex the
+# oct6 icosahedral decimation can't neighbor-match (MNE-side edge case, not a
+# FreeSurfer recon failure -- recon-all itself reports no error); fall back to
+# progressively coarser spacings rather than dropping the subject, and report
+# the effective source count explicitly since it's a real resolution loss.
+src = None
+for spacing in ("oct6", "oct5", "oct4"):
+    try:
+        src = mne.setup_source_space(FS_SUBJ, spacing=spacing, subjects_dir=SUBJECTS_DIR,
+                                     add_dist=False)
+        break
+    except RuntimeError as e:
+        print(f"    spacing={spacing} failed ({e}); falling back", flush=True)
+if src is None:
+    raise RuntimeError(f"no usable source-space spacing for {FS_SUBJ}")
+if spacing != "oct6":
+    print(f"    WARNING: used coarser spacing={spacing} for this subject "
+          f"(oct6 decimation failed)", flush=True)
 sphere = mne.make_sphere_model(r0=(0.0, 0.0, 0.04), head_radius=0.09)  # standard MEG sphere
 fwd = mne.make_forward_solution(raw.info, trans, src, sphere, meg=True, eeg=False)
 print(f"    forward: {fwd['nsource']} individual sources x {fwd['nchan']} MEG",
