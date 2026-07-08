@@ -101,36 +101,40 @@ directed coupling dominate — the same qualitative pattern as the n=26 pass
 despite the smaller common-parcel set, a real-anatomy, larger-N (27 vs 10)
 sanity check that directed structure exists and is consistent across subjects.
 
-**Reconciliation with the harmonic circulation (2026-07-06) — partial, basis-dependent, not a
-clean confirmation.** Computed against the prior n=26/41-common-parcel cohort snapshot (before
-`sub-14445` was added at n=27/23-common-parcels above); not yet rerun on the updated file.
-Expressed the group alpha-band directed-PDC matrix (41 common parcels) as a
-bilinear form in the same harmonic coordinates as the circulation analysis (`Phi41.T @ P @ Phi41`,
-`Phi41` = the 68-node harmonic eigenvectors restricted to the 41 available rows by parcel name),
-took the antisymmetric part as the PDC analogue of the Langevin circulation's `A_sol`, and tested
-two things against parcel-identity permutation nulls (2000 permutations):
-`scripts/real_data/wand_reconcile_pdc_harmonics.py`.
+**Reconciliation with the harmonic circulation (2026-07-06, updated 2026-07-08 at n=27) — partial,
+basis-dependent, not a clean confirmation, and the one marginal signal weakened when rerun.**
+Expressed the group alpha-band directed-PDC matrix (common parcels) as a bilinear form in the same
+harmonic coordinates as the circulation analysis (`Phi41.T @ P @ Phi41`, harmonic eigenvectors
+restricted to the available rows by parcel name), took the antisymmetric part as the PDC analogue
+of the Langevin circulation's `A_sol`, and tested two things against parcel-identity permutation
+nulls (2000 permutations): `scripts/real_data/wand_reconcile_pdc_harmonics.py`.
 
-| basis | rotational-structure COM (of 20) | vs null | flagged-harmonic loading enrichment | vs null |
-|---|---|---|---|---|
-| geometric | 9.34 (ref: ~9.3) | z=−1.21, p=0.118 (n.s.) | **0.70×** (top-PDC parcels *less* loaded on H1,H2,H7) | z=−2.65, p=0.9995 (n.s., wrong direction) |
-| structural | 11.23 (ref: ~10.6) | z=0.03, p=0.444 (n.s.) | **1.75×** (top-PDC parcels *more* loaded on H13,H8,H15) | z=1.81, **p=0.059** (marginal) |
+| basis | run | rotational COM (of 20) | vs null | flagged-harmonic loading enrichment | vs null |
+|---|---|---|---|---|---|
+| geometric | n=26, 41 parcels | 9.34 (ref: ~9.3) | z=−1.21, p=0.118 (n.s.) | **0.70×** (depleted) | z=−2.65, p=0.9995 (wrong direction) |
+| geometric | **n=27, 23 parcels** | 9.52 (ref: ~9.3) | z=−1.17, p=0.121 (n.s.) | **0.70×** (depleted) | z=−1.74, p=0.977 (wrong direction) |
+| structural | n=26, 41 parcels | 11.23 (ref: ~10.6) | z=0.03, p=0.444 (n.s.) | **1.75×** enrichment | z=1.81, **p=0.059** (marginal) |
+| structural | **n=27, 23 parcels** | 11.21 (ref: ~10.6) | z=−0.28, p=0.336 (n.s.) | **1.25×** enrichment | z=0.77, p=0.216 (**weakened**) |
 
-Two things line up loosely — the geometric-basis centre-of-mass matches the template-coreg
-reference almost exactly (9.34 vs 9.3), and H1/H7 recur among the top rotational pairs found here
-(H1↔H7, H1↔H6, H6↔H7, H7↔H13) even though the specific partner harmonics (H6, H13) differ from the
-reference's (H12, H8, H2) — but neither permutation test reaches significance in the geometric
-basis, and the loading-enrichment check there is significant in the *wrong* direction (the
-anatomically PDC-active regions are *less* loaded on H1/H2/H7 than an average parcel, not more).
-The structural basis gives the one suggestively positive number (1.75× enrichment, p=0.059) but its
-rotational-structure test is null. **Verdict: this reconciliation attempt does not yet cleanly tie
-the cohort's real-anatomy directed structure to the harmonic circulation** — the two pipelines
-differ in more ways than just anatomy (alpha-band-restricted PDC vs the circulation's broadband
-Langevin fit; group-averaged directed connectivity vs a per-subject dynamical fit; largely
-non-overlapping subject sets, template n=10 vs individual-anatomy n=26), any of which could dilute
-a real correspondence rather than its absence being the true state of affairs. Sharper next
-attempt: broadband (not alpha-only) PDC, and/or fit the harmonic circulation itself on the same
-n=26 individual-anatomy subjects so both legs use the same subjects and coregistration.
+Adding `sub-14445` (oct4-fallback, coarse source space) shrinks the common-parcel intersection from
+41/68 to 23/68 (§ above) — fewer, and partly different, anatomical regions being compared. The
+geometric-basis picture is essentially unchanged (COM still matches the reference closely, still
+non-significant, loading still depleted rather than enriched in the wrong direction). The
+structural basis is where the update matters: the one previously-marginal positive signal (1.75×
+enrichment, p=0.059, right at the edge) **drops to 1.25× / p=0.216 with more subjects but fewer
+common parcels** — going the wrong way for a real effect that should sharpen with more data, and
+consistent with it having been noise close to the p=0.05 boundary rather than a true, strengthening
+signal. The top rotational pairs also stopped naming the reference's flagged harmonics (H15/H8
+no longer appear in the structural top-5 at n=27, vs appearing twice at n=26), though H2↔H7 — one
+of the *geometric* reference's own top pairs — does now appear directly in the n=27 geometric top-5
+(it didn't at n=26). **Updated verdict: no stronger than before, and the previously most promising
+number got weaker, not more convincing, when re-run on more data** — some of that is likely reduced
+power from the shrunk common-parcel set (23 vs 41) rather than evidence against a true effect, but
+that is itself informative: this reconciliation needs a fix to the anatomical-overlap bottleneck
+(broadband, not alpha-only, PDC; and/or fitting the harmonic circulation on the same n=27
+individual-anatomy subjects, rather than the n=10 template-coreg cohort, so both legs share subjects,
+anatomy, and the full 68-parcel support instead of a shrinking common intersection) before the next
+rerun is likely to move this number in either direction.
 
 ## Caveats / scope
 - 10 subjects, template (fsaverage) coregistration, Desikan-68. Cohort scale-up needs
