@@ -71,38 +71,40 @@ in `jaxctrl` (`_circulation`, `_langevin`, `_denoise`, `_sysid`) and `neurojax`
 (`geometry.hodge[_pointcloud]`, `analysis.routing`, `spatial.harmonics`,
 `analysis.timefreq`).
 
-## Cohort-scale extension: individual-anatomy source connectivity (n=27, 2026-07-06)
+## Cohort-scale extension: individual-anatomy source connectivity (n=54, 2026-07-10)
 A separate, complementary pipeline (`scripts/run_wand_recon.py` +
 `scripts/run_wand_cohort.py`) replaces the template (fsaverage) coregistration
 above with each subject's **own** FreeSurfer surfaces, a single-sphere MEG
 conductor, and head-digitization coregistration — real individual anatomy, not
-harmonic/template space. Now runs on the full 27/27 FreeSurfer-complete +
-resting-MEG WAND cohort: the one prior holdout (`sub-14445`) failed oct6 source-
-space setup on an MNE-side icosahedral-decimation edge case (FreeSurfer's own
-recon-all reported no error) — `run_wand_recon.py` now falls back to oct5/oct4
-when oct6 fails, at the cost of a coarser source space for that one subject
-(33/68 usable parcels vs. the typical 63-68). Aggregated as mean directed
-PDC/DTF over aparc parcels common to all 27 subjects (23/68 — down from 41/68 at
-n=26, since sub-14445's coarse oct4 recon shrinks the common-parcel
-intersection).
+harmonic/template space. `run_wand_recon.py` falls back to oct5/oct4 when oct6
+source-space setup fails (as for `sub-14445`, 33/68 usable parcels vs. the
+typical 63-68), at the cost of a coarser source space for that one subject.
+Now runs on the **full 54/54 FreeSurfer-complete + resting-MEG WAND cohort**
+that's ready today (up from 27 at the last snapshot; the FreeSurfer pipeline
+had simply outpaced the cohort script — this run cleared the entire backlog,
+confirmed via `ready_subjects()` returning zero subjects still missing a
+recon). Aggregated as mean directed PDC/DTF over aparc parcels common to all
+54 subjects (still 23/68 — unchanged from n=27, confirming this is a real
+bottleneck set by a handful of subjects with sparse source coverage, not
+sampling noise that more subjects would dilute away).
 
-Top leakage-clean alpha-band directed edges (group mean, n=27):
+Top leakage-clean alpha-band directed edges (group mean, n=54):
 
 | driver | receiver | PDC | leakage |
 |---|---|---|---|
-| precentral-rh | paracentral-rh | 0.141 | 0.26 |
-| posteriorcingulate-rh | paracentral-rh | 0.120 | 0.13 |
-| precuneus-rh | paracentral-rh | 0.118 | 0.33 |
-| postcentral-rh | precentral-rh | 0.117 | 0.64 |
-| precentral-rh | postcentral-rh | 0.114 | 0.64 |
+| precentral-rh | paracentral-rh | 0.170 | 0.28 |
+| posteriorcingulate-rh | paracentral-rh | 0.138 | 0.12 |
+| insula-rh | transversetemporal-rh | 0.121 | 0.23 |
+| superiorparietal-rh | precuneus-rh | 0.119 | 0.59 |
+| precuneus-rh | paracentral-rh | 0.114 | 0.31 |
 
 Sensorimotor (precentral/paracentral/postcentral) and orbitofrontal↔cingulate
-directed coupling dominate — the same qualitative pattern as the n=26 pass
-despite the smaller common-parcel set, a real-anatomy, larger-N (27 vs 10)
-sanity check that directed structure exists and is consistent across subjects.
+directed coupling still dominate — the same qualitative pattern as n=26/n=27,
+now confirmed at exactly the currently-available cohort scale.
 
-**Reconciliation with the harmonic circulation (2026-07-06, updated 2026-07-08 at n=27) — partial,
-basis-dependent, not a clean confirmation, and the one marginal signal weakened when rerun.**
+**Reconciliation with the harmonic circulation (2026-07-06, updated 2026-07-08 at n=27, updated
+2026-07-10 at n=54) — partial, basis-dependent, not a clean confirmation, and now flat against
+cohort size once the common-parcel bottleneck is held fixed.**
 Expressed the group alpha-band directed-PDC matrix (common parcels) as a bilinear form in the same
 harmonic coordinates as the circulation analysis (`Phi41.T @ P @ Phi41`, harmonic eigenvectors
 restricted to the available rows by parcel name), took the antisymmetric part as the PDC analogue
@@ -112,29 +114,28 @@ nulls (2000 permutations): `scripts/real_data/wand_reconcile_pdc_harmonics.py`.
 | basis | run | rotational COM (of 20) | vs null | flagged-harmonic loading enrichment | vs null |
 |---|---|---|---|---|---|
 | geometric | n=26, 41 parcels | 9.34 (ref: ~9.3) | z=−1.21, p=0.118 (n.s.) | **0.70×** (depleted) | z=−2.65, p=0.9995 (wrong direction) |
-| geometric | **n=27, 23 parcels** | 9.52 (ref: ~9.3) | z=−1.17, p=0.121 (n.s.) | **0.70×** (depleted) | z=−1.74, p=0.977 (wrong direction) |
+| geometric | n=27, 23 parcels | 9.52 (ref: ~9.3) | z=−1.17, p=0.121 (n.s.) | **0.70×** (depleted) | z=−1.74, p=0.977 (wrong direction) |
+| geometric | **n=54, 23 parcels** | 9.23 (ref: ~9.3) | z=−1.46, p=0.074 (n.s.) | **0.70×** (depleted) | z=−1.74, p=0.977 (wrong direction) |
 | structural | n=26, 41 parcels | 11.23 (ref: ~10.6) | z=0.03, p=0.444 (n.s.) | **1.75×** enrichment | z=1.81, **p=0.059** (marginal) |
-| structural | **n=27, 23 parcels** | 11.21 (ref: ~10.6) | z=−0.28, p=0.336 (n.s.) | **1.25×** enrichment | z=0.77, p=0.216 (**weakened**) |
+| structural | n=27, 23 parcels | 11.21 (ref: ~10.6) | z=−0.28, p=0.336 (n.s.) | **1.25×** enrichment | z=0.77, p=0.216 (**weakened**) |
+| structural | **n=54, 23 parcels** | 10.78 (ref: ~10.6) | z=−0.65, p=0.217 (n.s.) | **1.25×** enrichment | z=0.77, p=0.216 (**flat**) |
 
-Adding `sub-14445` (oct4-fallback, coarse source space) shrinks the common-parcel intersection from
-41/68 to 23/68 (§ above) — fewer, and partly different, anatomical regions being compared. The
-geometric-basis picture is essentially unchanged (COM still matches the reference closely, still
-non-significant, loading still depleted rather than enriched in the wrong direction). The
-structural basis is where the update matters: the one previously-marginal positive signal (1.75×
-enrichment, p=0.059, right at the edge) **drops to 1.25× / p=0.216 with more subjects but fewer
-common parcels** — going the wrong way for a real effect that should sharpen with more data, and
-consistent with it having been noise close to the p=0.05 boundary rather than a true, strengthening
-signal. The top rotational pairs also stopped naming the reference's flagged harmonics (H15/H8
-no longer appear in the structural top-5 at n=27, vs appearing twice at n=26), though H2↔H7 — one
-of the *geometric* reference's own top pairs — does now appear directly in the n=27 geometric top-5
-(it didn't at n=26). **Updated verdict: no stronger than before, and the previously most promising
-number got weaker, not more convincing, when re-run on more data** — some of that is likely reduced
-power from the shrunk common-parcel set (23 vs 41) rather than evidence against a true effect, but
-that is itself informative: this reconciliation needs a fix to the anatomical-overlap bottleneck
-(broadband, not alpha-only, PDC; and/or fitting the harmonic circulation on the same n=27
-individual-anatomy subjects, rather than the n=10 template-coreg cohort, so both legs share subjects,
-anatomy, and the full 68-parcel support instead of a shrinking common intersection) before the next
-rerun is likely to move this number in either direction.
+Doubling the cohort from 27 to 54 subjects **did not grow the common-parcel intersection** (still
+23/68) — it's set by a handful of subjects with genuinely sparse source coverage (e.g. `sub-27934`
+at 47/68 usable parcels), not diluted by sample size, so the flagged-harmonic loading-enrichment
+numbers are numerically identical to four decimals at n=27 and n=54: the "top-PDC-active parcels"
+(the top-quartile-by-directed-degree set the enrichment test conditions on) came out exactly the
+same both times. That test has now plateaued and **will not move further without more common
+parcels**, not more subjects. The rotational-COM statistic, which doesn't depend on the parcel
+*identities* the same way, did drift slightly closer to significance with the extra subjects
+(geometric p: 0.121→0.074; structural p: 0.336→0.217) — consistent with reduced sampling noise in
+the mean PDC estimate, but both are still non-significant and neither basis crossed p<0.05.
+**Updated verdict: same as at n=27 — no clean confirmation, no clean rejection, and now direct
+evidence that simply adding more of the currently-available subjects is not going to resolve it.**
+The fix is still the one identified at n=27: broadband (not alpha-only) PDC, and/or fitting the
+harmonic circulation on these same individual-anatomy subjects rather than the separate n=10
+template-coreg cohort, so both legs share subjects, anatomy, and the full 68-parcel support instead
+of a stuck 23-parcel intersection.
 
 ## Caveats / scope
 - 10 subjects, template (fsaverage) coregistration, Desikan-68. Cohort scale-up needs
