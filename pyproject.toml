@@ -96,7 +96,7 @@ filterwarnings = [
 
 [tool.uv.sources]
 jaxctrl = { path = "../jaxctrl", editable = true }
-vbjax = { git = "https://github.com/ins-amu/vbjax" }
+vbjax = { git = "https://github.com/ins-amu/vbjax", rev = "e3c84a2516e7c46a50b2d7fd17e1af37fd25fdd6" }
 
 [tool.ruff.lint]
 select = ["E", "F", "I"]
