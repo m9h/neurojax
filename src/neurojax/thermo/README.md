@@ -63,6 +63,28 @@ exactly zero:
 
 `tests/test_fdt.py` — 5/5 green.
 
+## Red-green contract
+
+The replication claim is an executable assertion, not a sentence in a README that can drift.
+`tests/test_replication_contract.py` is **RED** until the pipeline has been run against the real
+EBRAINS data and the published effect actually reproduces:
+
+```bash
+pytest src/neurojax/thermo/tests -q        # RED  -> "no results at ...; run the replication first"
+python -m neurojax.thermo.replicate_ebrains --restarts 4 --steps 300
+pytest src/neurojax/thermo/tests -q        # GREEN -> 11 passed, 1 xfailed
+```
+
+It asserts: all 24 recordings analyzed (nothing silently dropped), fits finite, the empirical
+lagged covariance genuinely asymmetric, **FDT violations decrease with anesthesia depth
+(rho < 0, p < 0.05)**, group means ordered light > mid > deep, and entropy production
+independently agreeing.
+
+The gap we have *not* closed is also a test — `test_effect_size_matches_paper` asserts
+|rho| >= 0.8 and is marked `xfail(strict=True)`. It stays red until the effect size approaches the
+published 0.885, and will fail loudly (XPASS) if it ever does, forcing the claim to be updated
+rather than quietly overstated.
+
 ## Use
 
 ```bash
