@@ -99,9 +99,12 @@ def test_entropy_production_independently_agrees():
 
 
 # ---------------------------------------------------------------- the gap we have NOT closed
-@pytest.mark.xfail(reason="known gap: our |rho| ~0.54 vs the paper's 0.885 -- pipeline differs "
-                          "(tau, downsampling, 4 restarts vs their 1000). Kept as a failing "
-                          "target rather than hidden in prose.", strict=True)
+@pytest.mark.xfail(reason="known gap: our |rho| ~0.5 vs the paper's 0.885. RESTARTS ARE RULED OUT "
+                          "as the cause -- 16 restarts gave rho=-0.450 vs 4 restarts' -0.538, i.e. "
+                          "no better (see results/fdt_results_r16.json). The remaining suspect is "
+                          "the measure itself: their values span 0.7242-0.7252, ours 1-156, so the "
+                          "normalization differs. Kept as a failing target, not hidden in prose.",
+                   strict=True)
 def test_effect_size_matches_paper():
     from scipy.stats import spearmanr
     rows, _ = _ranked()

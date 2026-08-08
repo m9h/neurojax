@@ -36,13 +36,14 @@ def analyze(path, restarts, steps, lag_s=0.1, lr=2e-2, seed=0):
     Q = jnp.eye(n)
     taus = jnp.linspace(0.02, 0.4, 6)
 
-    best = None
-    for r in range(restarts):
-        A, losses = fit_gec(FC, FS, tau, jax.random.PRNGKey(seed + r), n_steps=steps, lr=lr)
-        L = float(losses[-1])
-        if np.isfinite(L) and (best is None or L < best[0]):
-            best = (L, A)
-    L, A = best
+    # all restarts as ONE vmapped computation (the axis the reference farms out to SLURM)
+    from .gec import fit_gec_restarts
+    As, finals = fit_gec_restarts(FC, FS, tau, jax.random.PRNGKey(seed),
+                                  n_restarts=restarts, n_steps=steps, lr=lr)
+    finals = np.asarray(finals)
+    finals = np.where(np.isfinite(finals), finals, np.inf)
+    k = int(np.argmin(finals))
+    L, A = float(finals[k]), As[k]
     return dict(
         loss=L,
         fdt_violation=float(fdt_violation(A, Q, taus)),

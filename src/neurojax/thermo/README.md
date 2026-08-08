@@ -25,6 +25,25 @@ The paper reports ρ = 0.885 for the same comparison. **The direction, ordering 
 reproduce; the effect size is weaker** (|ρ| 0.538 vs 0.885), and only 4/8 mice are strictly
 monotone individually.
 
+### Restart count is NOT the limiting factor (tested, negative)
+
+The obvious way to close the effect-size gap is more optimization restarts — the reference runs
+**1000** and averages. Quadrupling ours makes it slightly *worse*:
+
+| restarts | ρ (FDT violation) | p | ρ (entropy production) | p |
+|---|---|---|---|---|
+| 4 | **−0.538** | 0.0067 | −0.472 | 0.020 |
+| 16 | **−0.450** | 0.027 | −0.302 | 0.151 (n.s.) |
+
+Both sit within noise of each other, so optimization quality is not what separates us from 0.885.
+**Scaling to 1000 restarts on HPC would be wasted compute** — worth knowing before spending it, since
+the 16-restart run already took hours (one recording alone: 7348 s, the O(n⁶) Kronecker Lyapunov
+solve being the bottleneck).
+
+The remaining suspect is the **measure**, not the fit — see below. Two concrete next steps: implement
+their Cugliandolo–Kurchan normalization, and replace the Kronecker Lyapunov solve with an
+eigendecomposition-based O(n³) one so such scans become cheap.
+
 ### What is *not* claimed
 
 - **This is not their exact statistic.** Their FDT violation values span ≈0.7242–0.7252 — a very
