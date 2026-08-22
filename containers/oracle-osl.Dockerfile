@@ -1,41 +1,39 @@
 # Oracle container for osl-dynamics baseline comparison.
 #
-# Provides a self-contained environment for running osl-dynamics HMM/DyNeMo
-# pipelines and saving results as .npy files for comparison with neurojax.
+# Generates osl-dynamics HMM/DyNeMo baselines and saves .npy for parity tests
+# against the JAX reimplementation (src/neurojax/models/tests/test_*oracle*.py).
+#
+# CPU-only by design: osl-dynamics needs TensorFlow, which has no aarch64 GPU
+# build, and a baseline generator needs no GPU on x86 either — so this uses a
+# slim Python base, not a multi-GB NVIDIA image.
+#
+# Versions are pinned from containers/oracle-osl-requirements.txt — the EXACT
+# set verified to import + run on aarch64 (2026-06-23). The previous loose
+# ranges break today: scikit-image pulls numpy>=2 (incompatible with TF 2.17 /
+# numba), and osl-dynamics eagerly imports PyYAML + mat73, which are absent from
+# its wheel metadata.
 #
 # Build:
 #   docker build -f containers/oracle-osl.Dockerfile -t neurojax/oracle-osl .
 #
-# Run (mount data volume):
-#   docker run --gpus all --ipc=host \
-#     -v $(pwd)/data:/data \
+# Generate the HMM baseline fixtures (200 epochs → means/states converge):
+#   docker run --rm -e DATA_DIR=/data \
+#     -e N_SAMPLES=12000 -e N_STATES=4 -e N_CHANNELS=8 -e N_EPOCHS=200 \
+#     -v $(pwd)/tests/data/oracle_osl/hmm:/data \
 #     neurojax/oracle-osl \
-#     python /scripts/run_hmm_baseline.py
+#     sh -c "python /scripts/generate_synthetic.py && python /scripts/run_hmm_baseline.py"
 #
-FROM nvcr.io/nvidia/pytorch:26.02-py3
+FROM python:3.12-slim
 
-# Avoid interactive prompts
 ENV DEBIAN_FRONTEND=noninteractive
 
-# osl-dynamics pulls in TF, nibabel, nilearn, numba, etc.
-# Install osl-dynamics with ALL transitive deps it eagerly imports.
-# Pin numpy<2 for TF 2.17 compat (this is why we containerise).
-RUN pip install --no-cache-dir \
-    "numpy<2" \
-    "osl-dynamics>=3.0,<4" \
-    "tensorflow>=2.15,<2.18" \
-    "tensorflow-probability[tf]>=0.23,<0.25" \
-    "tf-keras>=2.15,<2.18" \
-    "mne>=1.6" \
-    "nibabel>=5" \
-    "nilearn>=0.13" \
-    "numba>=0.60" \
-    "scikit-image>=0.22" \
-    "pqdm>=0.2" \
-    "scikit-learn>=1.4" \
-    "seaborn>=0.13"
+# libgomp1: required by numba + TensorFlow CPU at runtime.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy oracle scripts into the image
+COPY containers/oracle-osl-requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
 COPY containers/scripts/ /scripts/
-
 WORKDIR /data

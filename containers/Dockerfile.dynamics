@@ -1,0 +1,51 @@
+# GPU container for NeuroJAX dynamics models on the DGX Spark (GB10 / aarch64).
+#
+# Path-C runtime: the JAX/Equinox reimplementations of osl-dynamics models
+# (GaussianHMM, DyNeMo) run GPU-accelerated here, validated against the CPU/TF
+# osl-dynamics oracle (containers/oracle-osl.Dockerfile).
+#
+# Why this is a slim Python base and not an NGC framework image:
+#   The JAX CUDA-13 pip wheels (jax-cuda13-plugin / jax-cuda13-pjrt) ship for
+#   linux aarch64 and BUNDLE the CUDA 13 runtime + cuDNN (nvidia-*-cu13). The
+#   only thing needed from the host is the driver, injected by `--gpus all`.
+#   Verified on the GB10 (driver 580.159.03, CUDA 13.0): jax.devices() ->
+#   [CudaDevice(id=0)], full model suite 66 passed on backend=gpu. So we avoid
+#   the ~35 GB NGC pull entirely. (osl-dynamics itself still can't use this GPU:
+#   it needs TensorFlow, which has no aarch64 GPU build — hence the JAX rewrite.)
+#
+#   NGC alternative, if you prefer NVIDIA's tuned stack:
+#     FROM nvcr.io/nvidia/jax:26.05-py3   # then skip the jax[cuda13] install
+#
+# Build:
+#   docker build -f containers/Dockerfile.dynamics -t neurojax/dynamics:gb10 .
+#
+# Verify the GPU is visible (should list CudaDevice, not CpuDevice):
+#   docker run --gpus all neurojax/dynamics:gb10 \
+#     python -c "import jax; print(jax.devices())"
+#
+# Run the model suite GPU-accelerated:
+#   docker run --gpus all --ipc=host -v $(pwd):/workspace/neurojax \
+#     neurojax/dynamics:gb10 \
+#     python -m pytest src/neurojax/models/tests/ -o addopts="" -q
+#
+FROM python:3.12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# JAX with the CUDA 13 plugin (aarch64 wheels bundle the CUDA 13 + cuDNN libs),
+# plus the lean deps for src/neurojax/models (hmm.py, dynemo.py).
+RUN pip install --no-cache-dir \
+    "jax[cuda13]" \
+    "equinox>=0.11" \
+    "optax>=0.1.9" \
+    "jaxtyping>=0.2.20" \
+    pytest
+
+# Keras 3 on the JAX backend — the latest GPU-capable Keras on the gx10.
+# Provided for new model work; the existing dynamics models use Equinox.
+RUN pip install --no-cache-dir "keras>=3.14"
+ENV KERAS_BACKEND=jax
+
+# Source mounted at runtime via -v (matches containers/Dockerfile.meg pattern).
+ENV PYTHONPATH="/workspace/neurojax/src:${PYTHONPATH}"
+WORKDIR /workspace/neurojax

@@ -87,6 +87,64 @@ class TestQBOLDFit:
         assert jnp.all(jnp.isfinite(results['R2_prime']))
 
 
+class TestFullQBOLDModel:
+    """Full He & Yablonskiy model with joint OEF + DBV fitting."""
+
+    def test_full_signal_shape(self):
+        from neurojax.qmri.qbold import qbold_signal_full
+        TEs = jnp.array([0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.035])
+        signal = qbold_signal_full(800.0, 18.0, 0.35, 0.03, TEs)
+        assert signal.shape == (7,)
+        assert jnp.all(jnp.isfinite(signal))
+        assert jnp.all(signal > 0)
+
+    def test_full_signal_differentiable(self):
+        from neurojax.qmri.qbold import qbold_signal_full
+        TEs = jnp.array([0.005, 0.010, 0.020, 0.035])
+        def loss(params):
+            return jnp.sum(qbold_signal_full(params[0], params[1], params[2], params[3], TEs) ** 2)
+        grads = jax.grad(loss)(jnp.array([800.0, 18.0, 0.35, 0.03]))
+        assert jnp.all(jnp.isfinite(grads))
+
+    def test_higher_oef_faster_decay(self):
+        """Higher OEF = more deoxy blood = faster signal decay."""
+        from neurojax.qmri.qbold import qbold_signal_full
+        TEs = jnp.array([0.005, 0.010, 0.020, 0.035])
+        sig_low = qbold_signal_full(800.0, 18.0, 0.20, 0.03, TEs)
+        sig_high = qbold_signal_full(800.0, 18.0, 0.50, 0.03, TEs)
+        assert float(sig_high[-1]) < float(sig_low[-1])
+
+    def test_full_fit_recovers_synthetic(self):
+        """Jointly recover OEF and DBV from the full model."""
+        from neurojax.qmri.qbold import qbold_signal_full, qbold_fit_full
+        TEs = jnp.array([0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.035])
+        S0_true, R2_true, OEF_true, DBV_true = 800.0, 18.0, 0.35, 0.04
+        data = qbold_signal_full(S0_true, R2_true, OEF_true, DBV_true, TEs)
+
+        result = qbold_fit_full(data, TEs, n_iters=3000)
+        assert abs(float(result['OEF']) - OEF_true) / OEF_true < 0.30, \
+            f"OEF: {float(result['OEF']):.3f} vs {OEF_true}"
+        # DBV is weakly constrained in GRE-based qBOLD (He & Yablonskiy 2007);
+        # check physiological range rather than precise recovery
+        assert 0.005 < float(result['DBV']) < 0.15, \
+            f"DBV out of physiological range: {float(result['DBV']):.4f}"
+
+    def test_full_fit_batch(self):
+        """Batch fitting via jax.vmap."""
+        from neurojax.qmri.qbold import qbold_signal_full, qbold_fit_full
+        TEs = jnp.array([0.005, 0.010, 0.015, 0.020, 0.025, 0.030, 0.035])
+        batch = jnp.stack([
+            qbold_signal_full(800.0, 18.0, oef, 0.03, TEs)
+            for oef in [0.20, 0.30, 0.40, 0.50]
+        ])
+        fit_fn = jax.vmap(lambda d: qbold_fit_full(d, TEs, n_iters=1000))
+        results = fit_fn(batch)
+        assert results['OEF'].shape == (4,)
+        # OEF should increase monotonically
+        oefs = np.array(results['OEF'])
+        assert oefs[-1] > oefs[0], f"OEF not monotonic: {oefs}"
+
+
 class TestOEFConversion:
     """R2' → OEF → CMRO₂ pipeline."""
 
