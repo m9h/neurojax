@@ -104,6 +104,16 @@ The gap we have *not* closed is also a test — `test_effect_size_matches_paper`
 published 0.885, and will fail loudly (XPASS) if it ever does, forcing the claim to be updated
 rather than quietly overstated.
 
+## Install
+
+```bash
+pip install -e ".[thermo]"     # adds neo (Spike2 reader), scipy, optax
+```
+
+Validated against **jax 0.9.2 / diffrax 0.7.2 / neo 0.14.5 / numpy <2** (Python 3.11). `neo` is
+required only by `ebrains.py`, which reads the dataset's Spike2 `.smr` files; the FDT/GEC maths
+needs just jax + optax + scipy.
+
 ## Use
 
 ```bash

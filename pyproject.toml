@@ -60,6 +60,10 @@ dependencies = [
 neurojax = "neurojax.cli:main"
 
 [project.optional-dependencies]
+# neurojax.thermo: non-equilibrium (FDT) analysis of EBRAINS/Spike2 recordings.
+# `neo` is the Spike2 (.smr) reader used by thermo/ebrains.py and is NOT a core dep.
+thermo = ["neo >= 0.13", "scipy >= 1.10.0", "optax >= 0.1.9"]
+
 bench = [
     "cma >= 3.3.0",
     "llamea",
