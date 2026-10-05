@@ -38,6 +38,7 @@ tutorials/ica_source_separation
 tutorials/preprocessing_asr
 tutorials/beamforming
 tutorials/glm_inference
+tutorials/dmt_autonomic
 ```
 
 ## API Reference
