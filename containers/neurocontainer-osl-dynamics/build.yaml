@@ -1,5 +1,5 @@
 name: osldynamics
-version: 3.0.0
+version: 3.2.2
 
 copyright:
   - license: MIT
@@ -7,6 +7,7 @@ copyright:
 
 architectures:
   - x86_64
+  - aarch64
 
 build:
   kind: neurodocker
@@ -26,6 +27,8 @@ build:
         - libhdf5-dev
         - libssl-dev
         - pkg-config
+        - python3
+        - tcsh
         - wget
 
     - template:
@@ -45,12 +48,29 @@ build:
           seaborn
           pqdm
           scikit-learn
-          osl-dynamics==3.0.0
+          osl-dynamics==3.2.2
+          osl-ephys==2.4.0
+
+    # FSL 6.0.7.22 — required by osl-ephys for coregistration / source
+    # reconstruction (flirt, bet, fast, fnirt via fslpy). fslinstaller.py
+    # auto-detects the host arch and pulls linux-64 or linux-aarch64.
+    - run:
+        - curl -fsSL https://fsl.fmrib.ox.ac.uk/fsldownloads/fslconda/releases/fslinstaller.py -o /tmp/fslinstaller.py
+        - python3 /tmp/fslinstaller.py -d /opt/fsl -V 6.0.7.22 --no_self_update
+        - rm -f /tmp/fslinstaller.py
+
+    - environment:
+        FSLDIR: /opt/fsl
+        FSLOUTPUTTYPE: NIFTI_GZ
+        PATH: /opt/fsl/share/fsl/bin:$PATH
 
     - deploy:
         path: []
         bins:
           - python
+          - bet
+          - flirt
+          - fast
 
     - environment:
         PATH: /opt/miniconda-latest/envs/osldynamics/bin:$PATH
@@ -59,8 +79,11 @@ build:
         NVIDIA_DRIVER_CAPABILITIES: compute,utility
 
     - test:
-        name: Import osl-dynamics
-        script: python -c "import osl_dynamics; print(osl_dynamics.__version__)"
+        name: Import osl-dynamics, osl-ephys, and check FSL
+        script: |
+          python -c "import osl_dynamics; print('osl-dynamics', osl_dynamics.__version__)"
+          python -c "import osl_ephys; print('osl-ephys', osl_ephys.__version__)"
+          test -x "$FSLDIR/share/fsl/bin/bet" && echo "FSL bet present"
 
 readme: |-
   ----------------------------------
@@ -72,7 +95,18 @@ readme: |-
   Multi-Dynamic Network Modes (M-DyNeMo) for inferring brain state
   dynamics from M/EEG and fMRI data.
 
-  This container includes GPU support via CUDA for TensorFlow acceleration.
+  This container also bundles osl-ephys (the preprocessing / source-recon
+  successor to the legacy OSL monolith) together with FSL 6.0.7.22, so the
+  full M/EEG pipeline — coregistration, source reconstruction, parcellation
+  and dynamics modelling — runs from one image.
+
+  TensorFlow acceleration:
+    * x86_64 — GPU via CUDA (uses the base-image CUDA/cuDNN runtime).
+    * aarch64 (DGX Spark / GB10) — TensorFlow runs CPU-only. Google ships no
+      CUDA aarch64 wheels, and NVIDIA's GPU TF for ARM is frozen at NGC 25.02
+      (pre-GB10). Run osl-dynamics HMM/DyNeMo training on the Grace cores here,
+      or do heavy GPU training on an x86 host. FSL + osl-ephys preprocessing
+      run natively on either arch.
 
   Example:
   ```
@@ -87,6 +121,11 @@ readme: |-
   Vidaurre, D., Woolrich, M.W. (2024). osl-dynamics, a toolbox for
   modeling fast dynamic brain activity. eLife, 12, RP91949.
   https://doi.org/10.7554/eLife.91949
+
+  van Es, M.W.J., Gohil, C., Quinn, A.J., Woolrich, M.W. (2025).
+  osl-ephys: a Python toolbox for the analysis of electrophysiology
+  data. Frontiers in Neuroscience, 19, 1522675.
+  https://doi.org/10.3389/fnins.2025.1522675
   ```
 
   To run container outside of this environment: ml osldynamics/{{ context.version }}

@@ -25,6 +25,7 @@ wheels/
 # Virtual Environments
 .env
 .venv
+.venv-*/
 env/
 venv/
 ENV/
@@ -61,6 +62,7 @@ SHA256SUMS
 # IDEs
 .vscode/
 .idea/
+.claude/
 octave-workspace
 tests/data/mrs/ismrm_fitting_challenge/repo
 tests/data/mrs/nifti_mrs_standard

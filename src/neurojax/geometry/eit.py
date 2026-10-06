@@ -197,12 +197,69 @@ def _tet_stiffness_local(vertices: np.ndarray) -> np.ndarray:
     return vol * (grads @ grads.T)
 
 
+def _tet_stiffness_batch(
+    elem_verts: np.ndarray,
+) -> np.ndarray:
+    """Batch-compute unit element stiffness matrices for all tetrahedra.
+
+    Fully vectorised — no Python loops over elements.
+
+    Args:
+        elem_verts: (n_elements, 4, 3) vertex coordinates per element
+
+    Returns:
+        (n_elements, 4, 4) unit-conductivity element stiffness matrices
+    """
+    n = len(elem_verts)
+    # Edge vectors from v0: (n, 3, 3)
+    d = elem_verts[:, 1:] - elem_verts[:, 0:1]
+
+    # Determinants and volumes: (n,)
+    dets = np.linalg.det(d)
+    vols = np.abs(dets) / 6.0
+
+    # Inverse of edge matrix: (n, 3, 3)
+    # Guard against degenerate elements
+    dets_safe = np.where(np.abs(dets) < 1e-15, 1.0, dets)
+    d_safe = d.copy()
+    degenerate = np.abs(dets) < 1e-15
+    # Replace degenerate elements with identity to avoid singular inverse
+    d_safe[degenerate] = np.eye(3)
+    d_inv = np.linalg.inv(d_safe)  # (n, 3, 3)
+
+    # Gradients of N1, N2, N3: (n, 3, 3), each column = ∇N_{i+1}
+    grad_N = np.transpose(d_inv, (0, 2, 1))  # (n, 3, 3)
+
+    # ∇N_0 = -sum of other gradients: (n, 3)
+    grad_N0 = -np.sum(grad_N, axis=2)  # (n, 3)
+
+    # All 4 gradients: (n, 4, 3)
+    grads = np.concatenate(
+        [grad_N0[:, np.newaxis, :], np.transpose(grad_N, (0, 2, 1))],
+        axis=1,
+    )
+
+    # Element stiffness: Ke_ij = V * (∇N_i · ∇N_j)
+    # K = V * grads @ grads^T: (n, 4, 4)
+    Ke = vols[:, np.newaxis, np.newaxis] * np.einsum(
+        "nik,njk->nij", grads, grads
+    )
+
+    # Zero out degenerate elements
+    Ke[degenerate] = 0.0
+
+    return Ke
+
+
 def assemble_stiffness_sparse(
     vertices: np.ndarray,
     elements: np.ndarray,
     sigma: np.ndarray,
 ) -> sparse.csr_matrix:
     """Assemble global stiffness matrix in sparse CSR format.
+
+    Fully vectorised assembly — handles millions of elements
+    without Python loops.
 
     Args:
         vertices: (n_vertices, 3) node coordinates
@@ -215,20 +272,23 @@ def assemble_stiffness_sparse(
     n_verts = len(vertices)
     n_elems = len(elements)
 
-    # Pre-allocate COO arrays (4×4 = 16 entries per element)
-    rows = np.zeros(n_elems * 16, dtype=np.int64)
-    cols = np.zeros(n_elems * 16, dtype=np.int64)
-    vals = np.zeros(n_elems * 16, dtype=np.float64)
+    # Gather element vertices: (n_elems, 4, 3)
+    elem_verts = vertices[elements]
 
-    for e in range(n_elems):
-        ev = vertices[elements[e]]  # (4, 3)
-        Ke = sigma[e] * _tet_stiffness_local(ev)  # (4, 4)
-        for i in range(4):
-            for j in range(4):
-                idx = e * 16 + i * 4 + j
-                rows[idx] = elements[e, i]
-                cols[idx] = elements[e, j]
-                vals[idx] = Ke[i, j]
+    # Batch stiffness: (n_elems, 4, 4)
+    Ke_unit = _tet_stiffness_batch(elem_verts)
+
+    # Scale by conductivity: (n_elems, 4, 4)
+    Ke = sigma[:, np.newaxis, np.newaxis] * Ke_unit
+
+    # Build COO arrays vectorised
+    # Row/col indices: for each element, 4×4 = 16 entries
+    ii = np.repeat(np.arange(4), 4)  # [0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3]
+    jj = np.tile(np.arange(4), 4)    # [0,1,2,3,0,1,2,3,0,1,2,3,0,1,2,3]
+
+    rows = elements[:, ii].ravel()     # (n_elems * 16,)
+    cols = elements[:, jj].ravel()     # (n_elems * 16,)
+    vals = Ke[:, ii, jj].ravel()       # (n_elems * 16,)
 
     K = sparse.coo_matrix((vals, (rows, cols)), shape=(n_verts, n_verts))
     return K.tocsr()
@@ -572,26 +632,41 @@ def compute_jacobian(
         x = spsolve(system, rhs)
         adjoint_potentials[m] = x[:n_verts]
 
-    # Pre-compute unit element stiffness matrices
+    # Batch-compute unit element stiffness: (n_elems, 4, 4)
+    Ke_unit = _tet_stiffness_batch(vertices[elements])
+
     logger.info(f"Computing Jacobian: {n_meas} × {n_elems}")
     n_patterns = len(protocol.injection)
-    n_meas_per_pattern = n_meas // n_patterns
+    n_meas_per_pattern = max(n_meas // max(n_patterns, 1), 1)
 
+    # Map each measurement to its injection pattern index
+    pattern_idx = np.minimum(
+        np.arange(n_meas) // n_meas_per_pattern, n_patterns - 1
+    )
+
+    # Vectorised Jacobian: process per injection pattern to limit memory
+    # Memory per pattern: O(n_meas_per_pattern × n_elems × 4) floats
     J = np.zeros((n_meas, n_elems))
 
-    for k in range(n_elems):
-        ev = vertices[elements[k]]
-        Ke_unit = _tet_stiffness_local(ev)  # unit conductivity
-        node_idx = elements[k]
+    for p in range(n_patterns):
+        mask = pattern_idx == p
+        m_indices = np.where(mask)[0]
+        if len(m_indices) == 0:
+            continue
 
-        for m_idx in range(n_meas):
-            p = min(m_idx // max(n_meas_per_pattern, 1), n_patterns - 1)
-            adj_idx = inverse_idx[m_idx]
+        # Injection potential at element nodes: (n_elems, 4)
+        phi_inj_p = forward_result.node_potentials[p][elements]
 
-            # J[m, k] = -φ_inj[node_idx]^T @ Ke @ φ_meas[node_idx]
-            phi_inj = forward_result.node_potentials[p, node_idx]
-            phi_meas = adjoint_potentials[adj_idx, node_idx]
-            J[m_idx, k] = -phi_inj @ Ke_unit @ phi_meas
+        # Adjoint potentials for this pattern's measurements: (n_m, n_elems, 4)
+        adj_idx = inverse_idx[m_indices]
+        phi_meas_p = adjoint_potentials[adj_idx][:, elements]
+
+        # J[m, k] = -φ_inj[k,i] Ke[k,i,j] φ_meas[m,k,j]
+        # First: Ke @ phi_inj^T → (n_elems, 4) via einsum
+        Ke_phi = np.einsum('kij,kj->ki', Ke_unit, phi_inj_p)  # (n_elems, 4)
+
+        # Then: J[m, k] = -φ_meas[m,k,:] · Ke_phi[k,:]
+        J[m_indices] = -np.einsum('mki,ki->mk', phi_meas_p, Ke_phi)
 
     return J
 
