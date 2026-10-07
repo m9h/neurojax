@@ -16,6 +16,7 @@ Differentiable in JAX via ``jnp.linalg.eigh``; works on any symmetric non-negati
 weighted adjacency (region structural connectivity, surface mesh, or mesh + tracts).
 """
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import scipy.sparse as sp
@@ -69,6 +70,39 @@ def connectome_adjacency(n_vertices, mesh_edges, tract_edges=None):
     A = A.tocsr()
     A.data[:] = 1.0                                        # duplicates were summed
     return A
+
+
+def functional_harmonics_adjacency(fc, knn=300, fisher_z=False):
+    """kNN graph of a dense functional connectome (Glomb 2021; HADES).
+
+    Follows ``s1_HADES_basis_denseFC_vertex_on_HCP.m``: zero the diagonal,
+    drop entries below each row's median, keep each row's ``knn`` largest
+    correlations, then OR-symmetrise to a binary adjacency.
+
+    Args:
+        fc: (N, N) correlation matrix (or Fisher-z if ``fisher_z``).
+        knn: Neighbours kept per row (300 at fs_LR 32k in the paper).
+        fisher_z: If True, ``fc`` is z-transformed and is unwound with tanh.
+
+    Returns:
+        (N, N) scipy.sparse CSR binary symmetric adjacency, zero diagonal.
+    """
+    fc = np.array(fc, dtype=np.float64, copy=True)
+    if fisher_z:
+        fc = np.tanh(fc)
+    n = fc.shape[0]
+    np.fill_diagonal(fc, 0.0)
+    fc[fc < np.median(fc, axis=1, keepdims=True)] = 0.0
+    knn = min(knn, n - 1)
+    nbrs = np.argpartition(-fc, knn, axis=1)[:, :knn]
+    rows = np.repeat(np.arange(n), knn)
+    cols = nbrs.ravel()
+    keep = fc[rows, cols] > 0
+    A = sp.coo_matrix((np.ones(keep.sum()), (rows[keep], cols[keep])), shape=(n, n)).tocsr()
+    A = ((A + A.T) > 0).astype(np.float64)
+    A.setdiag(0.0)
+    A.eliminate_zeros()
+    return A.tocsr()
 
 
 def _sparse_harmonics(A, n_modes, normalized):
@@ -152,6 +186,28 @@ def project_harmonics(X, harmonics):
     return jnp.asarray(X) @ jnp.asarray(harmonics)
 
 
+def cosine_projection(X, psi, eps=1e-12):
+    """Sign-invariant cosine score of each frame against each harmonic.
+
+    The ``'cos'`` option of ``surfFMRI_projectFH.m`` (Atasoy / HADES):
+    ``(90 - min(theta, 180 - theta)) / 90`` with ``theta`` the angle in degrees,
+    i.e. 1 for a frame parallel to the harmonic (either sign), 0 for orthogonal.
+    Amplitude is ignored, unlike ``project_harmonics``.
+
+    Args:
+        X: (..., N) frames.
+        psi: (N, K) harmonics.
+
+    Returns:
+        (..., K) scores in [0, 1].
+    """
+    num = X @ psi
+    den = jnp.linalg.norm(X, axis=-1, keepdims=True) * jnp.linalg.norm(psi, axis=0)
+    cos = jnp.abs(num / (den + eps))
+    theta = jnp.arccos(jnp.clip(cos, 0.0, 1.0))
+    return 1.0 - theta / (jnp.pi / 2)
+
+
 def harmonic_power_spectrum(X, harmonics):
     """Mean power per harmonic — the connectome-harmonic 'spectrum' of activity.
 
@@ -216,3 +272,96 @@ def repertoire_entropy(power, eps: float = 1e-12):
     """
     p = power / (jnp.sum(power, axis=-1, keepdims=True) + eps)
     return -jnp.sum(jnp.where(p > 0, p * jnp.log(p + eps), 0.0), axis=-1)
+
+
+# ---------------------------------------------------------------------------
+# HADES spacetime metrics (Vohryzek 2024, NSR; pure JAX)
+# ---------------------------------------------------------------------------
+
+def harmonic_contributions(alpha):
+    """Absolute and relative contribution of each harmonic over time.
+
+    ``p1_HADES_DMT_spatiotemporal_analysis.m``: mean and (sample) std over
+    time of |alpha_k|, and the same normalised to sum to 1 over harmonics.
+
+    Args:
+        alpha: (T, K) harmonic coefficients.
+
+    Returns:
+        dict with "mean", "std", "rel_mean", "rel_std", each (K,).
+    """
+    a = jnp.abs(alpha)
+    mean, std = a.mean(axis=0), a.std(axis=0, ddof=1)
+    return {"mean": mean, "std": std,
+            "rel_mean": mean / mean.sum(), "rel_std": std / std.sum()}
+
+
+def winner_takes_all(alpha, k=None):
+    """Dominant harmonic at each time point (LEiDA-style state sequence).
+
+    ``p2_HADES_DMT_dynamic_analysis_publication.m`` option 1: argmax of the
+    *signed* coefficient over the first ``k`` harmonics.
+
+    Args:
+        alpha: (T, K) harmonic coefficients.
+        k: Number of leading harmonics to compete; default all.
+
+    Returns:
+        (T,) integer state labels in [0, k).
+    """
+    if k is not None:
+        alpha = alpha[:, :k]
+    return jnp.argmax(alpha, axis=1)
+
+
+def fractional_occupancy(states, n_states):
+    """Fraction of time points spent in each state. (n_states,)"""
+    onehot = jax.nn.one_hot(states, n_states)
+    return onehot.mean(axis=0)
+
+
+def lifetimes(states, n_states, tr=1.0):
+    """Mean dwell time of each state in seconds, LEiDA rules.
+
+    Runs that start at the first frame or end at the last frame are
+    discarded (their true length is unknown); a state with no complete run
+    gets 0. Matches ``LEiDA_analysis.m`` / HADES ``LT``.
+
+    Args:
+        states: (T,) integer labels.
+        n_states: Number of states.
+        tr: Repetition time, seconds.
+
+    Returns:
+        (n_states,) mean lifetimes.
+    """
+    b = jax.nn.one_hot(states, n_states).T          # (S, T)
+    T = b.shape[1]
+    d = jnp.diff(b, axis=1)
+    n_starts = (d == 1).sum(axis=1)
+    total_on = b.sum(axis=1)
+    # length of a run touching the start / end (0 if the state is OFF there)
+    first_off = jnp.where(b.any(axis=1) & ~b.all(axis=1), jnp.argmin(b, axis=1), 0)
+    last_off = jnp.where(b.any(axis=1) & ~b.all(axis=1),
+                         jnp.argmin(b[:, ::-1], axis=1), 0)
+    leading = jnp.where(b[:, 0] == 1, first_off, 0)
+    trailing = jnp.where(b[:, -1] == 1, last_off, 0)
+    all_on = b.all(axis=1)
+    complete_on = jnp.where(all_on, 0.0, total_on - leading - trailing)
+    n_complete = jnp.where(all_on, 0, n_starts - (b[:, -1] == 1))
+    return jnp.where(n_complete > 0, complete_on / jnp.maximum(n_complete, 1), 0.0) * tr
+
+
+def transition_matrix(states, n_states):
+    """Empirical transition probabilities P[i, j] = #(i -> j) / (T - 1)."""
+    onehot = jax.nn.one_hot(states, n_states)
+    counts = onehot[:-1].T @ onehot[1:]
+    return counts / (states.shape[0] - 1)
+
+
+def latent_spread(alpha):
+    """Latent-space spread: mean over harmonics of the temporal std of alpha.
+
+    ``p3_HADES_DMT_latent_space_analysis_publication.m``, ``cnt_std_mean``.
+    """
+    return alpha.std(axis=0, ddof=1).mean()
