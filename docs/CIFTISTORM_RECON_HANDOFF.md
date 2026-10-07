@@ -16,6 +16,7 @@ cross-spectrum (HIGGS-style) → HCP/megconnectome CIFTI connectomes.
 |---|---|---|
 | `6ef9eab` | CIFTI-2 I/O on the fs_LR grayordinate contract: `load_dtseries`, `surface_vertex_mask`, `cortex_to_surface`, `save_dscalar` | `src/neurojax/io/cifti.py`, `tests/test_cifti_io.py` |
 | `6ef9eab` | Surface-scale harmonic basis: `mesh_edges`, `connectome_adjacency` (Atasoy mesh + tract graph, scipy.sparse), Lanczos path inside `connectome_harmonics` for sparse input, CHD metrics `harmonic_energy` (λ²-weighted), `log_binned_spectrum`, `repertoire_entropy`. Dense/differentiable path unchanged. | `src/neurojax/spatial/harmonics.py`, `tests/test_harmonics.py` |
+| `a36452e` | HADES variant (Vohryzek 2024, github.com/jvohryzek/HADES): `functional_harmonics_adjacency` (row-median + kNN-300 on dense FC), `cosine_projection`, `harmonic_contributions`, `winner_takes_all` / `fractional_occupancy` / `lifetimes` / `transition_matrix` (LEiDA rules), `latent_spread`. Mirrored in hippy-feat `jaxoccoli/harmonics.py` (e59974d). | `src/neurojax/spatial/harmonics.py`, `tests/test_hades.py` |
 | `27856c2` | `higgs_spectral(csd, leadfield, alpha, n_iter)`: per-frequency HIGGS EM on sensor cross-spectra as ONE jitted call (vmap over freqs, lax.scan over EM, grad flows through `alpha` + leadfield). `hermitian_glasso` made jit/vmap-safe (ADMM ρ is now traced). | `src/neurojax/source/higgs.py`, `src/neurojax/source/tests/test_higgs_spectral.py` |
 
 Verified end to end on real data: a ds006072 CIFTI (`/data/datasets/ds006072/NON_BIDS/ciftis/`)
