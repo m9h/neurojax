@@ -93,3 +93,77 @@ def denoise_epochs(epochs, sigma=None):
         Mt, k = _mp_truncate(M, sigma)
         out = np.asarray(fold(Mt, mode, out.shape)); kept.append(k)
     return out, kept
+
+
+# ---------------------------------------------------------------------------
+# Non-negative PARAFAC (space x frequency x time) for EEG power tensors
+# ---------------------------------------------------------------------------
+
+def nn_parafac(tensor, rank, n_iter=300, seed=0, tol=1e-6):
+    """Non-negative canonical polyadic decomposition by HALS (Cichocki & Phan 2009).
+
+    ``tensor[c, f, s] ~ sum_r A[c, r] B[f, r] C[s, r]`` with all factors
+    non-negative, the Miwakeichi et al. (2004) space-frequency-time
+    decomposition of EEG power.  Columns are normalised so the spatial and
+    temporal factors have unit sum and the spectral factor carries the scale.
+    Returns ``(factors, fit)`` with ``fit = 1 - ||T - T_hat|| / ||T||``.
+    """
+    T = np.asarray(tensor, dtype=float)
+    if (T < 0).any():
+        raise ValueError("nn_parafac needs a non-negative tensor (use power, not log power)")
+    rng = np.random.default_rng(seed)
+    shape = T.shape
+    factors = [rng.uniform(0.1, 1.0, size=(n, rank)) for n in shape]
+    unf = [np.asarray(unfold(T, m)) for m in range(3)]
+    norm_T = np.linalg.norm(T)
+    prev = np.inf
+    for it in range(n_iter):
+        for m in range(3):
+            others = [factors[k] for k in range(3) if k != m]
+            # Khatri-Rao product of the other factors (order matches unfolding)
+            kr = np.einsum("ir,jr->ijr", others[0], others[1]).reshape(-1, rank)
+            G = kr.T @ kr                      # (rank, rank)
+            MtK = unf[m] @ kr                  # (n_m, rank)
+            A = factors[m]
+            for r in range(rank):
+                num = MtK[:, r] - A @ G[:, r] + A[:, r] * G[r, r]
+                A[:, r] = np.maximum(num / max(G[r, r], 1e-12), 1e-12)
+            factors[m] = A
+        if it % 10 == 0:
+            That = np.einsum("cr,fr,sr->cfs", *factors)
+            err = np.linalg.norm(T - That) / norm_T
+            if abs(prev - err) < tol:
+                break
+            prev = err
+    # normalise: space and time factors to unit sum, scale into the spectral factor
+    for m in (0, 2):
+        s = factors[m].sum(axis=0, keepdims=True)
+        factors[m] = factors[m] / s
+        factors[1] = factors[1] * s
+    That = np.einsum("cr,fr,sr->cfs", *factors)
+    fit = 1.0 - np.linalg.norm(T - That) / norm_T
+    order = np.argsort(-factors[1].sum(axis=0))
+    factors = [f[:, order] for f in factors]
+    return factors, float(fit)
+
+
+def parafac_components(data, fs, rank=3, segment_s=2.0, f_lo=2.0, f_hi=45.0, n_iter=300):
+    """Space-frequency-time PARAFAC of a run's Welch power tensor.
+
+    Returns ``freqs`` and a list of components, each with ``spatial`` weights
+    over channels (sum 1), ``log_psd`` (the spectral signature, in log power,
+    directly usable by the spectral models), ``temporal`` weights over
+    segments (sum 1), ``power_share`` (its fraction of total reconstructed
+    power) and the alpha-band fraction of its spectral signature.
+    """
+    f, logT, n_seg = spectral_tensor(data, fs, segment_s, f_lo, f_hi)
+    T = np.exp(logT)
+    factors, fit = nn_parafac(T, rank, n_iter=n_iter)
+    A, B, C = factors
+    total = B.sum()
+    comps = []
+    band = (f >= 8) & (f <= 13)
+    for r in range(rank):
+        comps.append({"spatial": A[:, r], "log_psd": np.log(np.maximum(B[:, r], 1e-300)), "temporal": C[:, r],
+                      "power_share": float(B[:, r].sum() / total), "alpha_fraction": float(B[band, r].sum() / B[:, r].sum())})
+    return f, comps, fit, n_seg

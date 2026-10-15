@@ -281,20 +281,39 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--restarts", type=int, default=2)
     p.add_argument("--limit", type=int, default=0, help="stop after this many rows (0 = all)")
-    p.add_argument("--reduce", choices=["posterior", "hosvd"], default="posterior",
-                   help="posterior: fixed posterior-channel mean; hosvd: leading channel factor of the (channel x freq x segment) log-spectrum tensor over the whole cap")
+    p.add_argument("--reduce", choices=["posterior", "hosvd", "parafac", "parafac-weights"], default="posterior",
+                   help="posterior: fixed posterior-channel mean; hosvd: leading channel factor of the log-spectrum tensor; parafac: one row per non-negative space-frequency-time component (rank --rank) of the whole-cap power tensor; parafac-weights: the alpha component's spatial factor weights the whole-cap mean log spectrum")
+    p.add_argument("--rank", type=int, default=3)
     a = p.parse_args()
     global ALL_CHANNELS
-    ALL_CHANNELS = a.reduce == "hosvd"
+    ALL_CHANNELS = a.reduce in ("hosvd", "parafac", "parafac-weights")
 
     rows = []
     if os.path.exists(a.out):
         rows = json.load(open(a.out))
     done = {(r["subject"], r["run"], r["condition"]) for r in rows}
-    for sub, run, cond, fs, data, names, extra in ADAPTERS[a.dataset](a.root):
+    def expand(sub, run, cond, fs, data, names, extra):
+        """Yield (cond, log_psd, n_seg, extra) items for one run; several for a PARAFAC reduction."""
+        if a.reduce == "parafac" and not extra.get("epoched"):
+            from neurojax.bsd.multiway import parafac_components
+            f, comps, fit, n_seg = parafac_components(data * 1e6, fs, rank=a.rank)
+            for k, c in enumerate(comps):
+                top = np.argsort(-c["spatial"])[:8]
+                ex = dict(extra); ex.update({"reduce": "parafac", "component": k, "rank": a.rank, "parafac_fit": fit,
+                                             "power_share": c["power_share"], "alpha_fraction": c["alpha_fraction"],
+                                             "spatial_top": {names[i]: round(float(c["spatial"][i]), 4) for i in top},
+                                             "temporal_cv": float(c["temporal"].std() / c["temporal"].mean())})
+                yield f"{cond}::comp{k}", f, c["log_psd"], n_seg, None, ex
+            return
+        yield cond, None, None, None, None, extra
+
+    for sub, run, cond0, fs, data, names, extra0 in ADAPTERS[a.dataset](a.root):
+      for cond, f_pf, lp_pf, n_pf, _, extra in expand(sub, run, cond0, fs, data, names, extra0):
         if (sub, run, cond) in done:
             continue
-        if extra.get("epoched"):
+        if f_pf is not None:
+            f, lp, n_seg, mask = f_pf, lp_pf, n_pf, None
+        elif extra.get("epoched"):
             # one periodogram per trial, averaged: n_segments = n_trials
             from scipy.signal import periodogram
             n = data.shape[-1]
@@ -307,6 +326,16 @@ def main():
             for h in (1, 2):
                 mask &= np.abs(f - h * tag) > 0.75
             extra.update({"ssvep_hz": tag, "ssvep_snr": snr, "mask_excluded_bins": int((~mask).sum())})
+        elif a.reduce == "parafac-weights":
+            from neurojax.bsd.multiway import parafac_components, spectral_tensor
+            f, comps, fit, n_seg = parafac_components(data * 1e6, fs, rank=a.rank)
+            alpha = max(comps, key=lambda c: c["alpha_fraction"] * c["power_share"])
+            wgt = alpha["spatial"]
+            f2, T, n_seg = spectral_tensor(data, fs)
+            lp = np.einsum("c,cfs->f", wgt, T) / T.shape[2]; mask = None; f = f2
+            top = np.argsort(-wgt)[:8]
+            extra.update({"reduce": "parafac-weights", "parafac_fit": fit, "alpha_fraction": alpha["alpha_fraction"],
+                          "power_share": alpha["power_share"], "channel_weights": {names[i]: round(float(wgt[i]), 4) for i in top}})
         elif a.reduce == "hosvd":
             from neurojax.bsd.multiway import hosvd_spectrum, spectral_tensor
             f, T, n_seg = spectral_tensor(data, fs)
@@ -330,6 +359,8 @@ def main():
         json.dump(rows, open(a.out, "w"))
         if a.limit and len(rows) >= a.limit:
             break
+      if a.limit and len(rows) >= a.limit:
+          break
     print(f"wrote {len(rows)} rows to {a.out}")
 
 

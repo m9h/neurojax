@@ -147,3 +147,57 @@ log-power offset removal makes power parameters relative; LEMON's
 preprocessed release is band-passed and ICA-cleaned, which flattens the
 low-frequency end and lowers every exponent; HBN children's spectra are
 noisy and the average reference over 129 channels includes bad channels.
+
+## Multiway reduction (added 2026-10-15)
+
+`neurojax.bsd.multiway` adds tensor reductions of the EEG before any
+spectral model sees it, and `scripts/bsd_batch.py --reduce` selects them.
+Three were tried on LEMON (30 subjects, EC/EO):
+
+- **HOSVD of the (channel × frequency × segment) log-spectrum tensor.** The
+  leading channel factor is nearly flat across the cap whether or not the
+  common spectral shape is removed first (mean-level dominates the
+  uncentred tensor; a near-global power drift dominates the centred one), so
+  it is a worse spatial weighting than a posterior pick. Kept as an option,
+  not used.
+- **Non-negative PARAFAC of the power tensor** (Miwakeichi et al. 2004;
+  HALS, rank 3, under a second per run). This is the right multiway tool: on
+  the first subject's eyes-closed run it returns a posterior broadband
+  component carrying 82% of the power and left and right posterior alpha
+  components (87% of their power in 8–13 Hz, PO7/O1 and PO8/O2); eyes-open
+  it isolates frontal 26–44 Hz components, i.e. muscle and eye activity,
+  from the posterior ones. Across the 30 subjects, broadband components
+  carry ten times more frontal weight than alpha components (EC 0.039 vs
+  0.003, EO 0.131 vs 0.026 of the top-eight channel weight), which is the
+  spatial separation of aperiodic and alpha processes the ξ-α NET paper
+  reports, with the caveat that in eyes-open much of the frontal broadband
+  power is not neural.
+- **Fitting the spectral models to PARAFAC component spectra directly does
+  not work**: a non-negative part-spectrum is near zero outside its band, so
+  its log is not something a full-spectrum model should fit (residuals of 4
+  to 10 against 0.2 on channel averages). The component's *spatial* factor
+  is the usable product.
+
+`--reduce parafac-weights` therefore weights the whole-cap mean log spectrum
+by the dominant posterior component's spatial factor (data-driven per run).
+Against the fixed posterior average on LEMON: model selection is unchanged
+(the two-peak phenomenology wins 42 of 60), the eyes-closed increase of
+alpha peak height sharpens (sp2 `pw0` t = +5.4 vs +4.0; mixture
+`peak_alpha` t = +3.8 vs +4.7), but the alpha-damping contrast in the
+mixture weakens (t = −1.3 vs −3.6) because the learned weights spread
+over parietal channels where the peak is less damped to begin with. So for
+the damping readout the fixed posterior set is the better preprocessing;
+for component separation and artefact isolation PARAFAC is, and that is
+where it should be used: before the spectra, as a cleaning step, and as
+the spatial prior for where ξ-like and α-like processes live.
+
+`denoise_epochs` (multiway NORDIC: HOSVD with Marchenko-Pastur truncation
+per mode on a trials × channels × time tensor) is implemented and tested on
+synthetic data; it has not yet been applied to the HBN task epochs.
+
+On ERP-CORE: there are no neurojax results on it. The only ERP-CORE work in
+the workspace is the Zuna imputation pipeline's N170 benchmark, which was
+written for the DGX against a copy of the dataset there and evaluated on
+ds000117 with specparam features; nothing from it is on this machine. MOABB
+has an ERP-CORE loader. Processing ERP-CORE through the multiway and
+spectral pipeline would be new work.

@@ -62,3 +62,19 @@ LEMON and propofol comparisons showed the Liley mixture and ξ-α lack
 (`docs/bsd_results.md`). Fitting it under the same free energy as the other
 models is the next step; the port's parameters are already in SPM's units so
 the priors can be used as-is.
+
+## Running the oracle on this machine (status 2026-10-15)
+
+`spm-python` 25.1.2 is installed in `~/Workspace/data/spm26_standalone/.venv-spm`
+and the MATLAB Runtime R2025b at `/Applications/MATLAB/MATLAB_Runtime/R2025b`
+(spm-python's installer put R2026b there first, which the compiled SPM
+cannot use). On macOS compiled SPM must run under the runtime's `mwpython`;
+`spm_py.py` in that folder launches a script that way using the base uv
+interpreter, which ships `libpython3.12.dylib` (the venv interpreter does
+not). Pure-Python calls succeed under it; the first call into compiled
+MATLAB code dies silently, because the runtime starts a Java virtual
+machine and this Mac has no JDK, which produces macOS's "install a JDK"
+dialog. The launcher's `-mlstartup -nojvm` option is documented but not
+implemented. Installing a JDK (for example Temurin) is what unblocks
+`tests/test_dcm_cmc_oracle.py`; until then the test is skipped and the port
+is verified only by the model-level tests above.
