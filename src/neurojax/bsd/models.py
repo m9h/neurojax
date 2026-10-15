@@ -58,6 +58,8 @@ class SpecParam(SpectralModel):
     ``knee=False`` gives the "fixed" aperiodic ``offset - chi ln f``.  Peaks
     are Gaussians in log power as in specparam; their prior centre
     frequencies are supplied so that multi-peak fits are not label-symmetric.
+    Peak centres are mapped onto ``centre_bounds`` by a logistic so a peak
+    cannot wander below the fitted band to mimic aperiodic curvature.
     The peak height ``pw`` is carried *linearly* (not as a log) so that zero
     means "no peak": that is what lets Bayesian model reduction switch a
     peak off by shrinking its prior to zero, as DCM does with coupling
@@ -66,21 +68,33 @@ class SpecParam(SpectralModel):
 
     knee: bool = eqx.field(static=True)
     n_peaks: int = eqx.field(static=True)
+    centre_bounds: tuple = eqx.field(static=True)
 
     def __init__(self, peak_centres=(10.0,), knee=False, exponent_prior=(0.0, 0.5),
-                 centre_sd=2.0, power_prior=(0.5, 1.0), width_prior=(np.log(2.0), 0.5)):
+                 centre_sd=2.0, power_prior=(0.5, 1.0), width_prior=(np.log(2.0), 0.5),
+                 centre_bounds=(3.0, 40.0)):
         self.knee = bool(knee)
         self.n_peaks = len(peak_centres)
+        self.centre_bounds = (float(centre_bounds[0]), float(centre_bounds[1]))
         names = ["offset", "log_exponent"] + (["log_knee"] if knee else [])
         mean = [0.0, exponent_prior[0]] + ([np.log(1.0)] if knee else [])
         sd = [3.0, exponent_prior[1]] + ([1.0] if knee else [])
+        lo, hi = self.centre_bounds
         for k, cf in enumerate(peak_centres):
             names += [f"cf{k}", f"pw{k}", f"log_bw{k}"]
-            mean += [float(cf), power_prior[0], width_prior[0]]
-            sd += [centre_sd, power_prior[1], width_prior[1]]
+            # The centre is carried through a logistic map onto (lo, hi); the prior
+            # SD in Hz is converted to the unconstrained scale at the prior centre.
+            u = float(np.log((cf - lo) / (hi - cf)))
+            dcf_du = (cf - lo) * (hi - cf) / (hi - lo)
+            mean += [u, power_prior[0], width_prior[0]]
+            sd += [centre_sd / dcf_du, power_prior[1], width_prior[1]]
         self.names = tuple(names)
         self.prior_mean = jnp.asarray(mean, dtype=float)
         self.prior_sd = jnp.asarray(sd, dtype=float)
+
+    def _centre(self, u):
+        lo, hi = self.centre_bounds
+        return lo + (hi - lo) * jax.nn.sigmoid(u)
 
     def log_psd(self, freqs, theta):
         f = jnp.asarray(freqs, dtype=float)
@@ -92,7 +106,7 @@ class SpecParam(SpectralModel):
         else:
             out = offset - chi * jnp.log(f)
         for k in range(self.n_peaks):
-            cf, pw, bw = theta[i], theta[i + 1], jnp.exp(theta[i + 2])
+            cf, pw, bw = self._centre(theta[i]), theta[i + 1], jnp.exp(theta[i + 2])
             out = out + pw * jnp.exp(-((f - cf) ** 2) / (2.0 * bw ** 2))
             i += 3
         return out
@@ -103,7 +117,7 @@ class SpecParam(SpectralModel):
         if self.knee:
             d["knee"] = float(jnp.exp(theta[2])); i = 3
         for k in range(self.n_peaks):
-            d[f"cf{k}"] = float(theta[i]); d[f"pw{k}"] = float(theta[i + 1])
+            d[f"cf{k}"] = float(self._centre(theta[i])); d[f"pw{k}"] = float(theta[i + 1])
             d[f"bw{k}"] = float(jnp.exp(theta[i + 2])); i += 3
         return d
 
@@ -260,3 +274,50 @@ class XiAlpha(SpectralModel):
                 "P_alpha": float(jnp.exp(theta[3])), "lam_alpha": float(jnp.exp(theta[4])),
                 "nu_alpha": float(jnp.exp(theta[5])), "f_alpha": float(jnp.exp(theta[6])),
                 "floor": float(jnp.exp(theta[7]))}
+
+
+class DampedMixture(SpectralModel):
+    """Liley's full picture: a damping-distributed background family plus one resonant oscillator.
+
+    Muthukumaraswamy & Liley (2018) explain the 1/f background by many
+    relaxation processes with a spread of rates and the alpha peak by a
+    resonant oscillator; :class:`DampingDistribution` keeps only one family
+    and so has to choose between the two jobs.  This model has both: a
+    background family with a wide damping spread (its centre frequency and
+    peak power free) and a single :func:`_oscillator_psd` resonance, plus a
+    white floor.  Eight parameters, the same count as :class:`XiAlpha`, so
+    the two mechanistic hypotheses are compared at equal complexity.
+    """
+
+    n_quad: int = eqx.field(static=True)
+    nodes: jnp.ndarray
+    weights: jnp.ndarray
+
+    def __init__(self, centre=10.0, n_quad=24, centre_sd=0.3, background_centre=3.0,
+                 bg_damping_prior=(np.log(TWO_PI * 2.0), 1.0), bg_spread_prior=(np.log(1.0), 0.7),
+                 alpha_damping_prior=(np.log(TWO_PI * 1.0), 1.0), peak_prior=(0.0, 3.0), floor_prior=(-3.0, 3.0)):
+        self.n_quad = int(n_quad)
+        x, w = np.polynomial.hermite.hermgauss(self.n_quad)
+        self.nodes = jnp.asarray(x, dtype=float)
+        self.weights = jnp.asarray(w / np.sqrt(np.pi), dtype=float)
+        self.names = ("log_f_bg", "mu_log_gamma_bg", "log_spread_bg", "log_peak_bg",
+                      "log_f_alpha", "log_gamma_alpha", "log_peak_alpha", "log_floor")
+        self.prior_mean = jnp.asarray([np.log(float(background_centre)), bg_damping_prior[0], bg_spread_prior[0], peak_prior[0],
+                                       np.log(float(centre)), alpha_damping_prior[0], peak_prior[0], floor_prior[0]], dtype=float)
+        self.prior_sd = jnp.asarray([0.7, bg_damping_prior[1], bg_spread_prior[1], peak_prior[1],
+                                     centre_sd, alpha_damping_prior[1], peak_prior[1], floor_prior[1]], dtype=float)
+
+    def log_psd(self, freqs, theta):
+        omega = TWO_PI * jnp.asarray(freqs, dtype=float)
+        w_bg = TWO_PI * jnp.exp(theta[0])
+        mu, s, p_bg = theta[1], jnp.exp(theta[2]), jnp.exp(theta[3])
+        gammas = jnp.exp(mu + jnp.sqrt(2.0) * s * self.nodes)
+        bg = jnp.sum(self.weights[:, None] * jax.vmap(lambda g: _oscillator_psd(omega, w_bg, g, p_bg))(gammas), axis=0)
+        alpha = _oscillator_psd(omega, TWO_PI * jnp.exp(theta[4]), jnp.exp(theta[5]), jnp.exp(theta[6]))
+        return jnp.log(jnp.exp(theta[7]) + bg + alpha)
+
+    def natural(self, theta):
+        return {"f_bg": float(jnp.exp(theta[0])), "gamma_bg_median": float(jnp.exp(theta[1])),
+                "spread_bg": float(jnp.exp(theta[2])), "peak_bg": float(jnp.exp(theta[3])),
+                "f_alpha": float(jnp.exp(theta[4])), "gamma_alpha": float(jnp.exp(theta[5])),
+                "peak_alpha": float(jnp.exp(theta[6])), "floor": float(jnp.exp(theta[7]))}

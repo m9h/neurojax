@@ -118,16 +118,24 @@ def variational_laplace(model, freqs, log_psd, likelihood="gaussian", n_segments
         return sol.value, -neg_log_joint(sol.value, None), sol.result == optx.RESULTS.successful
 
     start = jnp.concatenate([pre.value, jnp.array([lam0])]) if not use_whittle else pre.value
+    if not bool(jnp.isfinite(start).all()):
+        start = mu  # the pre-fit diverged; start from the prior mean
     best = solve(start)
+    if not bool(jnp.isfinite(best[1])):
+        best = solve(mu)
     if restarts:
         key = jax.random.PRNGKey(seed)
         for k in jax.random.split(key, restarts):
             cand = solve(start + restart_scale * sd * jax.random.normal(k, start.shape))
-            if jnp.isfinite(cand[1]) and cand[1] > best[1]:
+            if bool(jnp.isfinite(cand[1])) and (not bool(jnp.isfinite(best[1])) or cand[1] > best[1]):
                 best = cand
     phi, lj, ok = best
+    if not bool(jnp.isfinite(lj)):
+        # Every start diverged: report a model that cannot explain the data rather than NaN.
+        phi, lj, ok = mu, -jnp.inf, False
 
     H = jax.hessian(lambda p: neg_log_joint(p, None))(phi)
+    H = jnp.where(jnp.isfinite(H), H, 0.0)
     H = 0.5 * (H + H.T)
     w, V = jnp.linalg.eigh(H)
     w = jnp.maximum(w, jitter)
@@ -135,6 +143,7 @@ def variational_laplace(model, freqs, log_psd, likelihood="gaussian", n_segments
     d = phi.shape[0]
     _, ld = jnp.linalg.slogdet(cov)
     F = lj + 0.5 * d * jnp.log(2.0 * jnp.pi) + 0.5 * ld
+    F = jnp.where(jnp.isfinite(F), F, -jnp.inf)
     prior_cov = jnp.diag(sd ** 2)
     ll = log_lik(phi)
     kl = _kl_gaussians(phi, cov, mu, prior_cov)

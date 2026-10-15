@@ -5,7 +5,7 @@ differentiable JAX model of ``ln S(f)``:
 
 * :class:`SpecParam` — the phenomenological aperiodic-plus-Gaussian-peaks
   parameterisation (Donoghue et al. 2020), with a fixed or knee aperiodic.
-* :class:`DampedOscillators` and :class:`DampingDistribution` — Liley's
+* :class:`DampedOscillators`, :class:`DampingDistribution` and :class:`DampedMixture` — Liley's
   hypothesis that the spectrum is a superposition of stochastically driven
   damped oscillators, the 1/f background arising from a distribution of
   damping rates (Muthukumaraswamy & Liley 2018; Liley & Muthukumaraswamy 2019).
@@ -40,6 +40,7 @@ from neurojax.bsd.compare import (
 from neurojax.bsd.inference import VLResult, variational_laplace
 from neurojax.bsd.likelihood import gaussian_log_likelihood, whittle_log_likelihood
 from neurojax.bsd.models import (
+    DampedMixture,
     DampedOscillators,
     DampingDistribution,
     SpecParam,
@@ -49,7 +50,7 @@ from neurojax.bsd.models import (
 from neurojax.bsd.simulate import psd_from_timeseries, simulate_log_psd
 
 __all__ = [
-    "SpectralModel", "SpecParam", "DampedOscillators", "DampingDistribution", "XiAlpha",
+    "SpectralModel", "SpecParam", "DampedOscillators", "DampingDistribution", "DampedMixture", "XiAlpha",
     "gaussian_log_likelihood", "whittle_log_likelihood",
     "VLResult", "variational_laplace",
     "log_bayes_factors", "posterior_model_probabilities", "fixed_effects_bms",

@@ -13,7 +13,7 @@ import pytest
 jax.config.update("jax_enable_x64", True)
 
 from neurojax.bsd import (  # noqa: E402
-    DampedOscillators, DampingDistribution, SpecParam, XiAlpha,
+    DampedMixture, DampedOscillators, DampingDistribution, SpecParam, XiAlpha,
     bayesian_model_average, bayesian_model_reduction, fixed_effects_bms,
     gaussian_log_likelihood, log_bayes_factors, posterior_model_probabilities,
     random_effects_bms, simulate_log_psd, variational_laplace, whittle_log_likelihood,
@@ -25,7 +25,8 @@ TWO_PI = 2 * np.pi
 
 def _specparam_truth():
     m = SpecParam()
-    t = m.prior()[0].at[0].set(0.0).at[1].set(jnp.log(1.2)).at[2].set(10.0).at[3].set(1.2).at[4].set(jnp.log(1.5))
+    # index 2 is the bounded peak centre on its unconstrained scale; the prior mean is 10 Hz
+    t = m.prior()[0].at[0].set(0.0).at[1].set(jnp.log(1.2)).at[3].set(1.2).at[4].set(jnp.log(1.5))
     return m, t
 
 
@@ -49,7 +50,7 @@ MODELS = {"specparam": SpecParam, "liley": DampingDistribution, "xialpha": XiAlp
 
 
 @pytest.mark.parametrize("make", [SpecParam, lambda: SpecParam(knee=True, peak_centres=(10.0, 20.0)),
-                                  DampedOscillators, DampingDistribution, XiAlpha])
+                                  DampedOscillators, DampingDistribution, DampedMixture, XiAlpha])
 def test_models_are_finite_and_differentiable(make):
     m = make()
     mu, sd = m.prior()
@@ -58,6 +59,15 @@ def test_models_are_finite_and_differentiable(make):
     g = jax.grad(lambda t: m.log_psd(FREQS, t).sum())(mu)
     assert jnp.isfinite(y).all() and jnp.isfinite(g).all()
     assert set(m.natural(mu)) and all(np.isfinite(v) for v in m.natural(mu).values())
+
+
+def test_specparam_centre_stays_in_band():
+    m = SpecParam(peak_centres=(10.0,), centre_bounds=(3.0, 40.0))
+    mu, sd = m.prior()
+    assert abs(m.natural(mu)["cf0"] - 10.0) < 1e-9
+    assert 3.0 <= m.natural(mu.at[2].set(-50.0))["cf0"] < 3.01 and 39.99 < m.natural(mu.at[2].set(50.0))["cf0"] <= 40.0
+    # a prior SD of 2 Hz at the centre maps back to about 2 Hz
+    assert abs(m.natural(mu.at[2].add(sd[2]))["cf0"] - 10.0 - 2.0) < 0.4
 
 
 def test_oscillator_peak_power_parameterisation():
@@ -167,7 +177,7 @@ def test_bayesian_model_average_matches_shared_names():
     r2 = variational_laplace(SpecParam(knee=True), FREQS, y)
     names, mean, var = bayesian_model_average([r1, r2], names=["cf0", "log_exponent", "log_knee"])
     assert np.isfinite(mean).all() and np.all(var >= 0)
-    assert abs(mean[0] - 10.0) < 0.5
+    assert abs(r1.natural()["cf0"] - 10.0) < 0.5 and abs(mean[0] - float(r1.mean[r1.names.index("cf0")])) < 0.5
     # log_knee exists only in r2: BMA returns r2's estimate for it
     assert abs(mean[2] - float(r2.mean[r2.names.index("log_knee")])) < 1e-9
 

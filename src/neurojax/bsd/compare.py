@@ -21,9 +21,12 @@ def log_bayes_factors(free_energies, reference=0):
 
 
 def posterior_model_probabilities(free_energies):
-    """Softmax of free energies (flat prior over models)."""
+    """Softmax of free energies (flat prior over models); a non-finite F gets probability zero."""
     F = np.asarray(free_energies, dtype=float)
-    z = F - F.max()
+    F = np.where(np.isfinite(F), F, -np.inf)
+    if not np.isfinite(F).any():
+        return np.full(F.shape, np.nan)
+    z = F - F[np.isfinite(F)].max()
     p = np.exp(z)
     return p / p.sum()
 
