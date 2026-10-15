@@ -242,7 +242,7 @@ def lead_field(P, n_sources, n_channels, U=None):
 
 def cmc_csd(P, w, X, x0=None, U=None, n_channels=None, pF=CMC_DEFAULTS):
     """Predicted cross-spectral densities, one ``(nw, nc, nc)`` complex array per row of *X*."""
-    n = P["T"].shape[0]
+    n = P["G"].shape[0]
     nc = n if n_channels is None else n_channels
     x0 = jnp.zeros((n, 8)) if x0 is None else jnp.asarray(x0, dtype=float)
     u0 = jnp.zeros(n)
@@ -323,7 +323,7 @@ def cmc_priors(A, B=(), C=None, n_channels=None):
         pE["N"].append(jnp.zeros((n, n))); pC["N"].append(jnp.asarray((b & Q & (A[2] != 0)) / 8.0))
     Cm = C != 0
     pE["C"] = jnp.asarray(Cm * 32.0 - 32.0); pC["C"] = jnp.asarray(Cm / 32.0)
-    pE["T"] = jnp.zeros((n, 4)); pC["T"] = jnp.full((n, 4), 1 / 32.0)
+    pE["T"] = jnp.zeros((1, 4)); pC["T"] = jnp.full((1, 4), 1 / 32.0)   # shared across sources, as SPM
     pE["G"] = jnp.zeros((n, 4)); pC["G"] = jnp.full((n, 4), 1 / 32.0)
     pE["D"] = jnp.zeros((n, n)); pC["D"] = jnp.asarray(Q / 64.0)
     pE["S"] = jnp.zeros(()); pC["S"] = jnp.asarray(1 / 64.0)

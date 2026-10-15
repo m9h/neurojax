@@ -63,18 +63,35 @@ LEMON and propofol comparisons showed the Liley mixture and ξ-α lack
 models is the next step; the port's parameters are already in SPM's units so
 the priors can be used as-is.
 
-## Running the oracle on this machine (status 2026-10-15)
+## Oracle result (2026-10-15)
 
-`spm-python` 25.1.2 is installed in `~/Workspace/data/spm26_standalone/.venv-spm`
-and the MATLAB Runtime R2025b at `/Applications/MATLAB/MATLAB_Runtime/R2025b`
-(spm-python's installer put R2026b there first, which the compiled SPM
-cannot use). On macOS compiled SPM must run under the runtime's `mwpython`;
-`spm_py.py` in that folder launches a script that way using the base uv
-interpreter, which ships `libpython3.12.dylib` (the venv interpreter does
-not). Pure-Python calls succeed under it; the first call into compiled
-MATLAB code dies silently, because the runtime starts a Java virtual
-machine and this Mac has no JDK, which produces macOS's "install a JDK"
-dialog. The launcher's `-mlstartup -nojvm` option is documented but not
-implemented. Installing a JDK (for example Temurin) is what unblocks
-`tests/test_dcm_cmc_oracle.py`; until then the test is skipped and the port
-is verified only by the model-level tests above.
+Live SPM 25.01 (spm-python 25.1.2 under MATLAB Runtime R2025b) was run for the
+single- and four-node LFP architectures of test 6, at the prior mean and at a
+perturbed parameter set (`G + 0.2`, `T - 0.1`, `D + 0.3`, `a + 0.5`), and its
+cross-spectra saved to `tests/data/dcm/cmc_csd_spm25_oracle.mat`
+(`scripts/spm_oracle/`). The JAX port reproduces every case to a maximum
+relative error of 2.7e-10 over all frequencies, channels and trials, and its
+priors equal SPM's exactly (`tests/test_dcm_cmc_oracle.py`, 8 tests, run
+without SPM against the shipped file). That is the forward model of test 6
+and the forward half of test 7 verified against the current equations; what
+remains of test 7 is the inversion and the free energy, which need the
+`LFP_BG` payload.
+
+Two things cost most of a day and are worth recording. The compiled SPM
+endpoint cannot return cells of complex N-D arrays, so the oracle runs as
+evaluated MATLAB code and saves a MAT file. And on macOS the runtime must be
+started with `-mlstartup -nojvm,-nodisplay`: without it the process exits
+silently at the first compiled call, with or without a system JDK (a JDK
+alone only removes macOS's "install a JDK" dialog); spm-python's launcher
+documents the option but does not pass it, so `scripts/spm_oracle/
+mwpython_launch.py` calls `mwpython` directly with the runtime's library
+paths and the base interpreter that ships `libpython3.12.dylib`.
+
+## What this adds to the spectral-model set
+
+The CMC CSD is the mechanistic model with a second resonance that the
+LEMON and propofol comparisons showed the Liley mixture and ξ-α lack
+(`docs/bsd_results.md`). Fitting it under the same free energy as the other
+models is the next step; the port's parameters are already in SPM's units so
+the priors can be used as-is, and the forward model is now known to be
+SPM's to ten significant figures.
