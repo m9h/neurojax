@@ -152,21 +152,44 @@ in this run. This is the dataset to use for contrast-gain work, with the
 caveat that the contrast staircase in CCD is a behavioural one, not a fixed
 ladder.
 
-**Trilinear (Tucker/Wang) basis at 99 % explained variance.** The user's
-earlier experience was that a trilinear basis keeping 99 % of the variance
-is the best denoiser. `tucker_energy_denoise(epochs, 0.99)` implements it
-(HOSVD, each mode truncated at the smallest rank that keeps the fraction of
-the core energy). On the raw CCD epochs it *lowers* the evoked SNR (40 Hz:
-2.2 → 1.5; 20 Hz: 1.5 → 0.7) because the retained channel rank is 1–2 and
-those factors are the artefact directions (eye, movement), while the SSVEP
-lives in low-variance posterior directions. Marchenko-Pastur truncation
-keeps almost everything (channel rank 25 of 129, segment rank 292) and
-leaves the SNR unchanged. With bad channels (variance > 5× or < 1/20 of the
-median) and bad trials (> 3× median amplitude) removed first, the 40 Hz SNR
-is 2.4 clean, 1.7 after the 99 % basis and 2.6 after a 99.9 % basis, so on
-these data the trilinear basis does not help and the explained-variance
-threshold has to be tuned per dataset. No earlier trilinear/Wang
-implementation or result exists in the workspace; this is the first one.
+**Trilinear (Wang) basis at 99 % explained variance: two regimes.** The
+reference is Wang, Begleiter & Porjesz (2000), trilinear modelling of
+event-related potentials, which neurojax replicated on the UCI alcoholism
+P300 set (`examples/replicate_fig2.py`, `analyze_scree.py`,
+`demo_uci_multiway_svd.py`; HOSVD rank 10 per mode and cumulative-variance
+scree cutoffs). That basis is built on *trial averages* across subjects,
+where 99 % of the energy is evoked signal. It had never been applied to
+HBN; the only earlier HBN work was exploratory CCD run-1 demos on one
+subject (sub-NDARGU729WUR) that saved no frequency and no SNR (confirmed
+with the `neurojax` session on 2026-10-15; the 30 Hz tag in those scripts
+was an assumption).
+
+Two versions were run on CCD run 1 (9 subjects, bad channels interpolated
+from the EGI positions, trials > 3× median amplitude dropped, 2 s epochs
+from 0.5 s after `contrastTrial_start`, posterior picks E70/E75/E83/E71/
+E76/E74/E82; `results/bsd/hbn_ccd_wang_basis_interp.json`):
+
+| preprocessing | 20 Hz evoked / single-trial SNR | 40 Hz evoked / single-trial | 50 Hz (no tag) single-trial |
+|---|---|---|---|
+| clean, no basis | 1.13 / 0.79 | 2.26 / 1.07 | 0.84 |
+| `tucker_energy_denoise` 99 % on single trials | 1.25 / 0.81 | 1.53 / 0.95 | 0.77 |
+| Wang basis on the group evoked tensor (9 × 129 × 1000), 99 %, trials projected | 1.10 / 0.87 | 1.95 / 1.31 | 1.03 |
+| same at 99.9 % | 1.14 / 0.73 | 2.10 / 1.00 | 0.89 |
+| Wang basis on the subject's own five sub-averages, 99 % | 1.29 / 0.97 | 1.98 / 1.00 | 1.10 |
+
+So the regime matters: the 99 % cut on raw single trials keeps channel
+rank 1–2 (eye and movement directions) and drops the 40 Hz line by a
+third, whereas the basis built on the evoked tensor (ranks 9 × 67 × 106)
+and applied as a projection raises the single-trial 40 Hz SNR by about a
+fifth (7 of 9 subjects) and leaves the evoked SNR within noise of the
+clean average. Two caveats keep this from being the "best denoiser" on
+these data: the single-trial gain also appears at 50 Hz where there is no
+tag, so part of it is generic flank suppression rather than signal
+retention; and 25 trials per subject with children is far from the UCI
+P300 regime. `evoked_trilinear_basis` and `project_trials` in
+`neurojax.bsd.multiway` implement the evoked-tensor version (tested on
+synthetic data against the single-trial cut); the earlier
+`tucker_energy_denoise` remains for the single-trial regime.
 
 ## What this says for the protocol
 

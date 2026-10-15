@@ -61,3 +61,37 @@ def test_denoise_epochs_reduces_error_on_low_rank_signal():
     den, kept = denoise_epochs(noisy)
     assert np.linalg.norm(den - sig) < np.linalg.norm(noisy - sig)
     assert all(k >= 1 for k in kept)
+
+
+def test_evoked_trilinear_basis_beats_single_trial_cut():
+    """A basis built on trial averages keeps a weak steady-state response that a 99% energy
+    cut on raw single trials discards (the raw cut keeps the high-variance noise directions)."""
+    import numpy as np
+    from neurojax.bsd.multiway import evoked_trilinear_basis, project_trials, tucker_energy_denoise
+    rng = np.random.default_rng(0)
+    n_sub, n_tr, n_ch, n_t, fs = 6, 30, 32, 400, 200.0
+    t = np.arange(n_t) / fs
+    topo = np.exp(-((np.arange(n_ch) - 26) ** 2) / 8.0)          # posterior steady-state source
+    art = np.exp(-((np.arange(n_ch) - 2) ** 2) / 4.0)             # frontal artefact source
+    ssvep = np.sin(2 * np.pi * 20 * t)
+    subs = []
+    for _ in range(n_sub):
+        X = 0.3 * topo[None, :, None] * ssvep[None, None, :]
+        X = X + 5.0 * art[None, :, None] * rng.standard_normal((n_tr, 1, n_t)).cumsum(-1) / np.sqrt(n_t)
+        X = X + rng.standard_normal((n_tr, n_ch, n_t))
+        subs.append(X)
+    f = np.fft.rfftfreq(n_t, 1 / fs); i20 = int(np.argmin(np.abs(f - 20)))
+
+    def st_snr(E):
+        S = np.abs(np.fft.rfft(E[:, 24:29, :].mean(1), axis=-1)) ** 2
+        flank = np.concatenate([S[:, i20 - 10:i20 - 3], S[:, i20 + 4:i20 + 11]], axis=1).mean(1)
+        return float(np.median(S[:, i20] / flank))
+
+    evoked = np.stack([X.mean(0) for X in subs])
+    uc, ut, ranks = evoked_trilinear_basis(evoked, 0.99)
+    assert ranks[0] <= n_sub and uc.shape == (n_ch, ranks[1]) and ut.shape == (n_t, ranks[2])
+    raw = np.median([st_snr(X) for X in subs])
+    proj = np.median([st_snr(project_trials(X, uc, ut)) for X in subs])
+    cut = np.median([st_snr(tucker_energy_denoise(X, 0.99)[0]) for X in subs])
+    assert proj > raw
+    assert proj > cut

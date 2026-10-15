@@ -186,3 +186,31 @@ def tucker_energy_denoise(epochs, energy=0.99):
     for mode, U in enumerate(factors):
         out = np.asarray(fold(np.asarray(U) @ np.asarray(unfold(out, mode)), mode, tuple(out.shape[:mode]) + (U.shape[0],) + tuple(out.shape[mode + 1:])))
     return out, ranks
+
+
+def evoked_trilinear_basis(evoked, energy=0.99):
+    """Wang, Begleiter & Porjesz (2000) trilinear basis: HOSVD of an *evoked* tensor
+    ``(groups, channels, time)`` (subjects, conditions or sub-averages along the first mode),
+    keeping the smallest rank per mode that retains *energy* of that mode's spectrum.
+
+    Returns ``(U_channels, U_time, ranks)``.  Build the basis on trial averages, where the
+    retained energy is signal, and project single trials with :func:`project_trials`; applying
+    the energy cut to raw single-trial epochs instead keeps artefact directions (see
+    ``docs/bsd_results.md``).
+    """
+    X = np.asarray(evoked, dtype=float)
+    ranks = []
+    for mode in range(X.ndim):
+        s = np.linalg.svd(np.asarray(unfold(X, mode)), compute_uv=False)
+        c = np.cumsum(s ** 2) / np.sum(s ** 2)
+        ranks.append(int(np.searchsorted(c, energy) + 1))
+    _, factors = hosvd(X, ranks=ranks)
+    return np.asarray(factors[1]), np.asarray(factors[2]), ranks
+
+
+def project_trials(epochs, u_channels, u_time):
+    """Project ``(trials, channels, time)`` epochs onto the channel and time subspaces of a trilinear basis."""
+    E = np.asarray(epochs, dtype=float)
+    pc = u_channels @ u_channels.T
+    pt = u_time @ u_time.T
+    return np.einsum("ij,njk,kl->nil", pc, E, pt)
