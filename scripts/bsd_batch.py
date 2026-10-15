@@ -131,14 +131,19 @@ def _mne():
     return mne
 
 
+ALL_CHANNELS = False   # set by --reduce hosvd: adapters then return the whole cap
+
+
 def _prep(raw, picks_pref, resample=250.0):
-    """Average reference over all EEG channels, pick the posterior set, resample."""
+    """Average reference over all EEG channels, pick the posterior set (or keep the cap), resample."""
     mne = _mne()
     raw.pick("eeg") if "eeg" in raw.get_channel_types() else None
     raw.load_data()
     raw.set_eeg_reference("average", projection=False, verbose=False)
     if raw.info["sfreq"] > resample:
         raw.resample(resample, verbose=False)
+    if ALL_CHANNELS:
+        return raw.get_data(), float(raw.info["sfreq"]), list(raw.ch_names)
     names = [c for c in picks_pref if c in raw.ch_names]
     if not names:
         raise RuntimeError(f"none of {picks_pref[:4]}... in {raw.ch_names[:8]}")
@@ -276,7 +281,11 @@ def main():
     p.add_argument("--out", required=True)
     p.add_argument("--restarts", type=int, default=2)
     p.add_argument("--limit", type=int, default=0, help="stop after this many rows (0 = all)")
+    p.add_argument("--reduce", choices=["posterior", "hosvd"], default="posterior",
+                   help="posterior: fixed posterior-channel mean; hosvd: leading channel factor of the (channel x freq x segment) log-spectrum tensor over the whole cap")
     a = p.parse_args()
+    global ALL_CHANNELS
+    ALL_CHANNELS = a.reduce == "hosvd"
 
     rows = []
     if os.path.exists(a.out):
@@ -298,6 +307,14 @@ def main():
             for h in (1, 2):
                 mask &= np.abs(f - h * tag) > 0.75
             extra.update({"ssvep_hz": tag, "ssvep_snr": snr, "mask_excluded_bins": int((~mask).sum())})
+        elif a.reduce == "hosvd":
+            from neurojax.bsd.multiway import hosvd_spectrum, spectral_tensor
+            f, T, n_seg = spectral_tensor(data, fs)
+            red = hosvd_spectrum(T)
+            lp = red["log_psd"]; mask = None
+            top = np.argsort(-red["channel_weights"])[:8]
+            extra.update({"reduce": "hosvd", "channel_weights": {names[i]: round(float(red["channel_weights"][i]), 4) for i in top},
+                          "energy_channel_1": red["energy_channel_1"], "energy_segment_1": red["energy_segment_1"]})
         else:
             f, lp, n_seg = mean_log_psd(data, fs)
             mask = None
