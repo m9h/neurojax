@@ -33,6 +33,7 @@ pip install neurojax
 tutorials/meg_pipeline
 tutorials/mrs_mega_press
 tutorials/sindy_dynamics
+tutorials/bsd
 tutorials/koopman_operator
 tutorials/ica_source_separation
 tutorials/preprocessing_asr
