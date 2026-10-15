@@ -167,3 +167,22 @@ def parafac_components(data, fs, rank=3, segment_s=2.0, f_lo=2.0, f_hi=45.0, n_i
         comps.append({"spatial": A[:, r], "log_psd": np.log(np.maximum(B[:, r], 1e-300)), "temporal": C[:, r],
                       "power_share": float(B[:, r].sum() / total), "alpha_fraction": float(B[band, r].sum() / B[:, r].sum())})
     return f, comps, fit, n_seg
+
+
+def tucker_energy_denoise(epochs, energy=0.99):
+    """Truncated HOSVD on ``(trials, channels, time)`` keeping the smallest rank per mode that
+    retains *energy* of that mode's singular-value spectrum (the "trilinear basis" denoiser).
+
+    Returns the reconstruction from the retained basis and the ranks kept.
+    """
+    X = np.asarray(epochs, dtype=float)
+    ranks = []
+    for mode in range(3):
+        s = np.linalg.svd(np.asarray(unfold(X, mode)), compute_uv=False)
+        c = np.cumsum(s ** 2) / np.sum(s ** 2)
+        ranks.append(int(np.searchsorted(c, energy) + 1))
+    core, factors = hosvd(X, ranks=ranks)
+    out = np.asarray(core)
+    for mode, U in enumerate(factors):
+        out = np.asarray(fold(np.asarray(U) @ np.asarray(unfold(out, mode)), mode, tuple(out.shape[:mode]) + (U.shape[0],) + tuple(out.shape[mode + 1:])))
+    return out, ranks

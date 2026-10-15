@@ -11,6 +11,9 @@ can adjudicate between them:
 | `DampedOscillators` | K stochastically driven second-order oscillators plus a white floor | per oscillator frequency / damping / peak power, floor |
 | `DampingDistribution` | one oscillator family with a log-normal spread of damping rates; the 1/f tail comes from the spread, not from a separate process (Liley) | centre, median damping, spread, peak power, floor |
 | `XiAlpha` | a zero-frequency Matérn process ξ plus a frequency-shifted Matérn process α, two separate Hida-Matérn processes (Valdes-Sosa; ξ-α NET) | per process power / rate / smoothness, alpha centre, floor |
+| `DampedMixture` | Liley's full picture: a damping-distributed background family plus one resonant alpha oscillator and a floor | background centre / damping / spread / power, alpha centre / damping / power, floor |
+| `DampedMixture2` | `DampedMixture` plus a beta resonance whose centre is a ratio above alpha (no label swapping) | + beta ratio / damping / power |
+| `CMCSpectrum` | canonical-microcircuit transfer function (SPM DCM-CSD priors), single source | 16 log-scaling parameters; inversion not yet reliable, see `docs/bsd_results.md` |
 
 All positive quantities are carried as logs, so the Gaussian priors are
 log-normal; peak heights in `SpecParam` are linear so that zero means "no peak"

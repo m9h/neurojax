@@ -169,12 +169,12 @@ def _eig(A):
     return out[0], out[1]
 
 
-def transfer_function(Jd, dfdu_d, L, w):
+def transfer_function(Jd, dfdu_d, L, w, conditioning="exp"):
     """Modulation transfer function S(w, i, j) via the eigen-solution (spm_dcm_mtf), with SPM's mode conditioning."""
     # eigen-solution with eigenvector derivatives enabled (eigenvalues are distinct
     # for these models; SPM uses the same decomposition without derivatives)
     s, v = _eig(Jd)
-    if float(jnp.max(w)) > 1:
+    if conditioning == "exp":   # SPM: max(w) > 1 (any Hz grid); "min" otherwise; static for tracing
         s = 1j * s.imag + s.real - jnp.exp(s.real)
     else:
         s = 1j * s.imag + jnp.minimum(s.real, -1.0 / 32.0)
@@ -240,7 +240,7 @@ def lead_field(P, n_sources, n_channels, U=None):
     return L
 
 
-def cmc_csd(P, w, X, x0=None, U=None, n_channels=None, pF=CMC_DEFAULTS):
+def cmc_csd(P, w, X, x0=None, U=None, n_channels=None, pF=CMC_DEFAULTS, conditioning="exp"):
     """Predicted cross-spectral densities, one ``(nw, nc, nc)`` complex array per row of *X*."""
     n = P["G"].shape[0]
     nc = n if n_channels is None else n_channels
@@ -256,7 +256,7 @@ def cmc_csd(P, w, X, x0=None, U=None, n_channels=None, pF=CMC_DEFAULTS):
         Jd, Qop = delayed_jacobian(J, D)
         dfdu_d = Qop @ dfdu
         L = lead_field(Q, n, nc, U)
-        S = transfer_function(Jd, dfdu_d, L, w)          # (nw, nc, nu)
+        S = transfer_function(Jd, dfdu_d, L, w, conditioning)   # (nw, nc, nu)
         G = jnp.einsum("wik,wk,wjk->wij", S, Gu.astype(S.dtype), jnp.conj(S))
         G = G + jnp.einsum("wi,ij->wij", Gs.astype(S.dtype), jnp.eye(nc, dtype=S.dtype))
         G = G + Gn[:, None, None]

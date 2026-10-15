@@ -76,7 +76,7 @@ def _kl_gaussians(mq, Sq, mp, Sp):
 
 def variational_laplace(model, freqs, log_psd, likelihood="gaussian", n_segments=None,
                         init=None, max_steps=2000, rtol=1e-6, atol=1e-8, restarts=0,
-                        restart_scale=0.5, seed=0, hyper_sd=1.0, jitter=1e-8) -> VLResult:
+                        restart_scale=0.5, seed=0, hyper_sd=1.0, jitter=1e-8, prefit=True) -> VLResult:
     """Invert *model* on one log spectrum; see the module docstring."""
     f = jnp.asarray(freqs, dtype=float)
     y = jnp.asarray(log_psd, dtype=float)
@@ -93,8 +93,14 @@ def variational_laplace(model, freqs, log_psd, likelihood="gaussian", n_segments
         return jnp.sum((model.log_psd(f, theta) - y) ** 2)
 
     theta0 = mu_t if init is None else jnp.asarray(init, dtype=float)
-    pre = optx.minimise(sse, optx.BFGS(rtol=1e-4, atol=1e-6), theta0, max_steps=500, throw=False)
-    resid_var = jnp.maximum(sse(pre.value, None) / f.shape[0], 1e-6)
+    if prefit:
+        pre = optx.minimise(sse, optx.BFGS(rtol=1e-4, atol=1e-6), theta0, max_steps=500, throw=False)
+        pre_value = pre.value
+    else:
+        # mechanistic models with tight log-scaling priors: an unconstrained pre-fit wanders
+        # tens of prior SDs away, so start the MAP search at the prior mean instead
+        pre_value = theta0
+    resid_var = jnp.maximum(sse(pre_value, None) / f.shape[0], 1e-6)
     lam0 = -jnp.log(resid_var)
 
     if use_whittle:
@@ -117,7 +123,7 @@ def variational_laplace(model, freqs, log_psd, likelihood="gaussian", n_segments
                             max_steps=max_steps, throw=False)
         return sol.value, -neg_log_joint(sol.value, None), sol.result == optx.RESULTS.successful
 
-    start = jnp.concatenate([pre.value, jnp.array([lam0])]) if not use_whittle else pre.value
+    start = jnp.concatenate([pre_value, jnp.array([lam0])]) if not use_whittle else pre_value
     if not bool(jnp.isfinite(start).all()):
         start = mu  # the pre-fit diverged; start from the prior mean
     best = solve(start)

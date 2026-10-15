@@ -25,6 +25,7 @@ PARAM_KEYS = {
     "specparam2": ("exponent", "knee", "cf0", "pw0", "cf1", "pw1"),
     "liley": ("f0", "gamma_median", "spread"),
     "liley_mix": ("f_alpha", "gamma_alpha", "peak_alpha", "f_bg", "gamma_bg_median", "spread_bg"),
+    "liley_mix2": ("f_alpha", "gamma_alpha", "peak_alpha", "f_beta", "gamma_beta", "peak_beta", "gamma_bg_median"),
     "xialpha": ("f_alpha", "lam_alpha", "nu_alpha", "lam_xi", "nu_xi"),
 }
 

@@ -190,3 +190,35 @@ def test_free_energy_is_differentiable_in_the_data():
         return variational_laplace(SpecParam(), FREQS, y + s, max_steps=300).free_energy
     a, b = F_of_scale(0.0), F_of_scale(0.5)
     assert np.isfinite(a) and np.isfinite(b)
+
+
+def test_damped_mixture2_beta_above_alpha():
+    """The beta resonance is a ratio above alpha, so the two labels cannot swap under any parameters."""
+    import jax.numpy as jnp
+    from neurojax.bsd import DampedMixture2
+    m = DampedMixture2(centre=10.0, beta_centre=20.0)
+    assert len(m.names) == 11
+    nat = m.natural(m.prior_mean)
+    assert abs(nat["f_beta"] - 20.0) < 1e-6 and abs(nat["f_alpha"] - 10.0) < 1e-6
+    key = jax.random.PRNGKey(0)
+    thetas = m.prior_mean + 3.0 * m.prior_sd * jax.random.normal(key, (50, 11))
+    for th in thetas:
+        d = m.natural(th)
+        assert d["f_beta"] > d["f_alpha"]
+    f = jnp.linspace(2.0, 45.0, 100)
+    assert jnp.all(jnp.isfinite(m.log_psd(f, m.prior_mean)))
+
+
+def test_damped_mixture2_recovers_beta_peak():
+    """A spectrum with alpha and beta resonances is fitted with the beta at the right place."""
+    import numpy as np
+    import jax.numpy as jnp
+    from neurojax.bsd import DampedMixture2, variational_laplace
+    m = DampedMixture2(centre=10.0, beta_centre=20.0)
+    f = jnp.linspace(2.0, 45.0, 120)
+    truth = m.prior_mean.at[6].set(2.0).at[10].set(1.0).at[8].set(float(np.log(22.0 / 10.0 - 1.0)))
+    y = m.log_psd(f, truth) + 0.05 * jax.random.normal(jax.random.PRNGKey(1), f.shape)
+    res = variational_laplace(m, f, y, restarts=1)
+    nat = res.natural()
+    assert abs(nat["f_alpha"] - 10.0) < 1.0
+    assert abs(nat["f_beta"] - 22.0) < 2.0

@@ -41,6 +41,7 @@ from neurojax.bsd.inference import VLResult, variational_laplace
 from neurojax.bsd.likelihood import gaussian_log_likelihood, whittle_log_likelihood
 from neurojax.bsd.models import (
     DampedMixture,
+    DampedMixture2,
     DampedOscillators,
     DampingDistribution,
     SpecParam,
@@ -48,9 +49,10 @@ from neurojax.bsd.models import (
     XiAlpha,
 )
 from neurojax.bsd.simulate import psd_from_timeseries, simulate_log_psd
+from neurojax.bsd.cmc_model import CMCSpectrum
 
 __all__ = [
-    "SpectralModel", "SpecParam", "DampedOscillators", "DampingDistribution", "DampedMixture", "XiAlpha",
+    "SpectralModel", "SpecParam", "DampedOscillators", "DampingDistribution", "DampedMixture", "DampedMixture2", "XiAlpha", "CMCSpectrum",
     "gaussian_log_likelihood", "whittle_log_likelihood",
     "VLResult", "variational_laplace",
     "log_bayes_factors", "posterior_model_probabilities", "fixed_effects_bms",

@@ -36,14 +36,14 @@ import jax.numpy as jnp  # noqa: E402
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from neurojax.bsd import (  # noqa: E402
-    DampedMixture, DampingDistribution, SpecParam, XiAlpha, posterior_model_probabilities, variational_laplace,
+    DampedMixture, DampedMixture2, DampingDistribution, SpecParam, XiAlpha, posterior_model_probabilities, variational_laplace,
 )
 
 POSTERIOR_1010 = ["O1", "O2", "Oz", "PO3", "PO4", "POz", "PO7", "PO8", "P3", "P4", "Pz"]
 POSTERIOR_EGI = ["E70", "E75", "E83", "E71", "E76", "E74", "E82"]  # O1, Oz, O2 and neighbours
 MODELS = {"specparam": SpecParam, "specparam_knee": lambda **kw: SpecParam(knee=True, **kw),
           "specparam2": lambda peak_centres=(10.0,), **kw: SpecParam(knee=True, peak_centres=(peak_centres[0], 20.0), **kw),
-          "liley": DampingDistribution, "liley_mix": DampedMixture, "xialpha": XiAlpha}
+          "liley": DampingDistribution, "liley_mix": DampedMixture, "liley_mix2": DampedMixture2, "xialpha": XiAlpha}
 
 
 # ---------------------------------------------------------------------------
@@ -94,6 +94,38 @@ def fit_models(freqs, log_psd, mask=None, restarts=2, centre=10.0):
     p = posterior_model_probabilities(F)
     out["p_model"] = {k: float(v) for k, v in zip(MODELS, p)}
     out["winner"] = list(MODELS)[int(np.argmax(F))]
+    return out
+
+
+def refit_models(row, names, restarts=2):
+    """Refit the named models into an existing row from its stored spectrum and re-rank every model."""
+    f = np.asarray(row["freqs"]); y = np.asarray(row["log_psd"]) - row["fits"]["log_power_offset"]
+    mask = None
+    if "ssvep_hz" in row:
+        mask = np.ones_like(f, dtype=bool)
+        for h in (1, 2):
+            mask &= np.abs(f - h * row["ssvep_hz"]) > 0.75
+        f, y = f[mask], y[mask]
+    centre = row["alpha_centre_prior"]
+    out = row["fits"]
+    for name in names:
+        make = MODELS[name]
+        m = make(peak_centres=(centre,)) if name.startswith("specparam") else make(centre=centre)
+        t = time.time()
+        r = variational_laplace(m, jnp.asarray(f), jnp.asarray(y), restarts=restarts)
+        out[name] = {"F": r.free_energy, "accuracy": r.accuracy, "complexity": r.complexity,
+                     "converged": r.converged, "params": r.natural(),
+                     "rmse": float(np.sqrt(np.mean(np.asarray(r.residual) ** 2))), "seconds": round(time.time() - t, 1)}
+    present = [k for k in MODELS if k in out]
+    best_rmse = min(out[k]["rmse"] for k in present)
+    for k in present:
+        out[k]["collapsed"] = bool(out[k]["rmse"] > 10.0 * best_rmse + 0.5)
+        if out[k]["collapsed"]:
+            out[k]["F"] = float("-inf")
+    F = [out[k]["F"] for k in present]
+    p = posterior_model_probabilities(F)
+    out["p_model"] = {k: float(v) for k, v in zip(present, p)}
+    out["winner"] = present[int(np.argmax(F))]
     return out
 
 
@@ -151,7 +183,7 @@ def _prep(raw, picks_pref, resample=250.0):
 
 
 def _read_events(path):
-    with open(path) as fh:
+    with open(path, encoding="utf-8-sig") as fh:
         return list(csv.DictReader(fh, delimiter="\t"))
 
 
@@ -268,8 +300,52 @@ def iter_chennu(root):
             yield sub, run, cond, fs, data, names, extra
 
 
+def iter_ds004541(root, max_window_s=300.0):
+    """ds004541 (Saini Ferron et al., CC0): EEG-fNIRS during general anaesthesia, 58 EEG channels, 1 kHz, EDF.
+
+    The anaesthetic agent is not documented in the release (README "in preparation",
+    participants.tsv all n/a), so the conditions are purely procedural, cut from the
+    event markers: ``baseline`` = up to ``max_window_s`` before ``start`` (drug
+    delivery), ``induction`` = start..loc (loss of consciousness), ``maintenance`` =
+    loc..end (end of delivery; contains tetanic stimuli), ``emergence`` = end..roc
+    (return of consciousness).  Channels flagged bad in channels.tsv are dropped
+    before the average reference.
+    """
+    mne = _mne()
+    for edf in sorted(glob.glob(os.path.join(root, "sub-*", "ses-*", "eeg", "*_eeg.edf"))):
+        base = os.path.basename(edf)[:-8]
+        sub = base.split("_")[0]
+        ev = {r["trial_type"]: float(r["onset"]) for r in _read_events(edf.replace("_eeg.edf", "_events.tsv"))
+              if r["trial_type"] in ("start", "loc", "end", "roc")}
+        if "start" not in ev:
+            print(f"skip {base}: no start marker"); continue
+        bad = [r["name"] for r in _read_events(edf.replace("_eeg.edf", "_channels.tsv")) if r.get("status") == "bad"]
+        try:
+            raw = mne.io.read_raw_edf(edf, preload=True, verbose=False)
+        except Exception as exc:  # noqa: BLE001
+            print(f"skip {base}: {exc}"); continue
+        raw.drop_channels([c for c in bad if c in raw.ch_names])
+        raw.drop_channels([c for c in raw.ch_names if raw.get_channel_types(picks=[c])[0] != "eeg"])
+        t_end = raw.times[-1]
+        windows = {"baseline": (max(0.0, ev["start"] - max_window_s), ev["start"])}
+        if "loc" in ev:
+            windows["induction"] = (ev["start"], ev["loc"])
+            if "end" in ev:
+                windows["maintenance"] = (ev["loc"], min(ev["end"], ev["loc"] + max_window_s))
+                if "roc" in ev:
+                    windows["emergence"] = (max(ev["end"], ev["roc"] - max_window_s), ev["roc"])
+        for i, (cond, (t0, t1)) in enumerate(windows.items(), 1):
+            t1 = min(t1, t_end)
+            if t1 - t0 < 20.0:
+                print(f"skip {base} {cond}: {t1 - t0:.0f} s"); continue
+            seg = raw.copy().crop(t0, t1)
+            data, fs, names = _prep(seg, POSTERIOR_1010 + ["PO3", "PO4", "POz", "P1", "P2"])
+            yield sub, str(i), cond, fs, data, names, {"t0": t0, "t1": t1, "n_bad": len(bad)}
+
+
 ADAPTERS = {"hbn-rest": iter_hbn_rest, "hbn-ss": iter_hbn_ss, "lemon": iter_lemon,
-            "ds005620": iter_ds005620, "nimh": iter_nimh, "chennu": iter_chennu}
+            "ds005620": iter_ds005620, "nimh": iter_nimh, "chennu": iter_chennu,
+            "ds004541": iter_ds004541}
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +360,23 @@ def main():
     p.add_argument("--reduce", choices=["posterior", "hosvd", "parafac", "parafac-weights"], default="posterior",
                    help="posterior: fixed posterior-channel mean; hosvd: leading channel factor of the log-spectrum tensor; parafac: one row per non-negative space-frequency-time component (rank --rank) of the whole-cap power tensor; parafac-weights: the alpha component's spatial factor weights the whole-cap mean log spectrum")
     p.add_argument("--rank", type=int, default=3)
+    p.add_argument("--refit", nargs="+", default=None, metavar="MODEL",
+                   help="refit only these models into the rows already in --out (no data read) and re-rank")
     a = p.parse_args()
+    if a.refit:
+        rows = json.load(open(a.out))
+        seen = set(); kept = []
+        for r in rows:   # drop exact duplicate rows left by an earlier run
+            key = (r["subject"], r["run"], r["condition"])
+            if key not in seen:
+                seen.add(key); kept.append(r)
+        for i, r in enumerate(kept):
+            refit_models(r, a.refit, restarts=a.restarts)
+            print(f"{r['subject']} {r['run']} {r['condition']}: winner {r['fits']['winner']} "
+                  + " ".join(f"{k}={r['fits'][k]['F']:.1f}" for k in a.refit), flush=True)
+            json.dump(kept, open(a.out, "w"))
+        print(f"refit {a.refit} in {len(kept)} rows of {a.out}")
+        return
     global ALL_CHANNELS
     ALL_CHANNELS = a.reduce in ("hosvd", "parafac", "parafac-weights")
 
@@ -352,7 +444,7 @@ def main():
         row = {"dataset": a.dataset, "subject": sub, "run": run, "condition": cond, "fs": fs,
                "channels": names, "n_segments": int(n_seg), "duration_s": float(data.shape[-1] / fs) if not extra.get("epoched") else float(data.shape[0] * data.shape[-1] / fs),
                "alpha_centre_prior": centre, "freqs": f.tolist(), "log_psd": lp.tolist(), "fits": fits, **extra}
-        rows.append(row)
+        rows.append(row); done.add((sub, run, cond))
         print(f"{sub} {run} {cond}: n_seg {n_seg} winner {fits['winner']} p={ {k: round(v,2) for k,v in fits['p_model'].items()} } "
               f"alpha~{centre:.1f} Hz" + (f" ssvep {extra['ssvep_hz']:.1f} Hz snr {extra['ssvep_snr']:.1f}" if "ssvep_hz" in extra else ""), flush=True)
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)

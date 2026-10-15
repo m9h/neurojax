@@ -321,3 +321,33 @@ class DampedMixture(SpectralModel):
                 "spread_bg": float(jnp.exp(theta[2])), "peak_bg": float(jnp.exp(theta[3])),
                 "f_alpha": float(jnp.exp(theta[4])), "gamma_alpha": float(jnp.exp(theta[5])),
                 "peak_alpha": float(jnp.exp(theta[6])), "floor": float(jnp.exp(theta[7]))}
+
+
+class DampedMixture2(DampedMixture):
+    """Liley mixture with a second resonance (beta): background family + alpha + beta oscillators + floor, 11 parameters."""
+
+    def __init__(self, centre=10.0, beta_centre=20.0, n_quad=24, centre_sd=0.3, background_centre=3.0,
+                 bg_damping_prior=(np.log(TWO_PI * 2.0), 1.0), bg_spread_prior=(np.log(1.0), 0.7),
+                 alpha_damping_prior=(np.log(TWO_PI * 1.0), 1.0), peak_prior=(0.0, 3.0), floor_prior=(-3.0, 3.0)):
+        super().__init__(centre, n_quad, centre_sd, background_centre, bg_damping_prior, bg_spread_prior,
+                         alpha_damping_prior, peak_prior, floor_prior)
+        # the beta centre is parametrised as a ratio above alpha, f_beta = f_alpha * (1 + exp(theta)),
+        # so the two resonances can never swap labels (the first batch swapped 13 of 60 LEMON rows)
+        self.names = self.names + ("log_beta_ratio", "log_gamma_beta", "log_peak_beta")
+        ratio0 = np.log(float(beta_centre) / float(centre) - 1.0)
+        self.prior_mean = jnp.concatenate([self.prior_mean, jnp.asarray([ratio0, alpha_damping_prior[0], peak_prior[0] - 1.0])])
+        self.prior_sd = jnp.concatenate([self.prior_sd, jnp.asarray([2.0 * centre_sd, alpha_damping_prior[1], peak_prior[1]])])
+
+    def f_beta(self, theta):
+        return jnp.exp(theta[4]) * (1.0 + jnp.exp(theta[8]))
+
+    def log_psd(self, freqs, theta):
+        base = jnp.exp(super().log_psd(freqs, theta[:8]))
+        omega = TWO_PI * jnp.asarray(freqs, dtype=float)
+        beta = _oscillator_psd(omega, TWO_PI * self.f_beta(theta), jnp.exp(theta[9]), jnp.exp(theta[10]))
+        return jnp.log(base + beta)
+
+    def natural(self, theta):
+        d = super().natural(theta[:8])
+        d.update({"f_beta": float(self.f_beta(theta)), "gamma_beta": float(jnp.exp(theta[9])), "peak_beta": float(jnp.exp(theta[10]))})
+        return d
