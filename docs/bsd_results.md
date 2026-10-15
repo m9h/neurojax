@@ -386,3 +386,22 @@ OpenNeuro's `advancedSearch` with drug keywords, restricted to EEG/MEG/iEEG:
 - The usable open human pharmaco-EEG for spectral model comparison is
   therefore propofol only (Chennu, ds005620), which is why the propofol beta
   is the benchmark the mechanistic models have to pass.
+
+### Sarasso/Massimini anaesthesia EEG (Zenodo 806176) — restricted, not yet processed
+
+The dataset behind Sarasso et al. 2015 (Curr Biol), Colombo et al. 2019
+(NeuroImage, spectral exponent), Toker et al. 2022 (PNAS, chaoticity) and
+Maschke et al. 2024 (Commun Biol 7:946, criticality → PCI): 15 healthy
+adults, 60-channel Nexstim EEG, 5 each under propofol (TCI 3 µg/ml), xenon
+(62.5 %) and ketamine (2 mg/kg), 10 min pre-drug rest plus 3–5 min at the
+target state, with TMS-EEG PCI for every subject and condition, plus 4 N3
+sleep recordings. Ketamine is the within-dataset dissociation of
+unresponsiveness from unconsciousness (vivid dreams), which is the
+contrast a 5-MeO readout must survive: propofol and xenon steepen the
+slope, lower complexity and move away from criticality; ketamine does none
+of that despite equal unresponsiveness. Zenodo record 10.5281/zenodo.806176
+(Massimini & Laureys 2017) is **restricted**: access must be requested
+from the depositors through Zenodo; no file list is visible. Analysis code
+is public (github.com/BIAPT/Criticality_PCI_Anesthesia, edgeofpy). Nothing
+has been requested; this is the three-drug set to run the seven-model
+batch and the propofol-beta question on once access exists.
