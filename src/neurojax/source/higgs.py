@@ -460,8 +460,12 @@ def _hermitian(A):
     return 0.5 * (A + jnp.swapaxes(A, -1, -2).conj())
 
 
-def _higgs_one_freq(S_y, G, alpha, n_iter, glasso_iter, noise_floor):
-    """HIGGS EM at a single frequency from the sensor CSD ``S_y`` (M, M)."""
+def _higgs_one_freq(S_y, G, alpha, n_iter, glasso_iter, noise_floor, noise_alpha=None):
+    """HIGGS EM at a single frequency from the sensor CSD ``S_y`` (M, M).
+
+    ``noise_alpha=None`` keeps a diagonal sensor noise; a float runs the full
+    HIGGS noise model — an hgLASSO GGM on the expected residual cross-spectrum.
+    """
     M, N = G.shape
     cdtype = S_y.dtype
     G_c = G.astype(cdtype)
@@ -488,16 +492,26 @@ def _higgs_one_freq(S_y, G, alpha, n_iter, glasso_iter, noise_floor):
         # Noise: diagonal of the expected residual cross-spectrum (kept diagonal
         # for stability; a full hgLASSO noise GGM is the HIGGS generalisation)
         GT_S = G_c @ T @ S_y
-        R = S_y - GT_S - GT_S.conj().T + G_c @ S_x @ G_c.conj().T
+        R = _hermitian(S_y - GT_S - GT_S.conj().T + G_c @ S_x @ G_c.conj().T)
         r = jnp.maximum(jnp.real(jnp.diag(R)), noise_floor * sensor_power)
-        Sigma_e_new = jnp.diag(r).astype(cdtype)
+        if noise_alpha is None:
+            Sigma_e_new = jnp.diag(r).astype(cdtype)
+        else:
+            # full noise GGM: floor the diagonal, then sparse Hermitian precision
+            R_f = R + jnp.diag(r - jnp.real(jnp.diag(R))).astype(cdtype)
+            # penalty relative to the residual's own power, as alpha is to the data's
+            r_mean = jnp.mean(r)
+            Theta_e = hermitian_glasso(R_f / r_mean, alpha=noise_alpha,
+                                       max_iter=glasso_iter) / r_mean
+            Sigma_e_new = _hermitian(jnp.linalg.inv(Theta_e))
         return (Theta_new, Sigma_e_new), nll
 
     Theta0 = I_N
     Sigma_e0 = (0.1 * sensor_power) * I_M
     (Theta_x, Sigma_e), nll = jax.lax.scan(em_step, (Theta0, Sigma_e0), None, length=n_iter)
     T, S_x, _ = e_step(Theta_x, Sigma_e)
-    return Theta_x, S_x, Sigma_e, T, nll
+    Theta_e = _hermitian(jnp.linalg.inv(Sigma_e))
+    return Theta_x, S_x, Sigma_e, Theta_e, T, nll
 
 
 @partial(jax.jit, static_argnames=("n_iter", "glasso_iter"))
@@ -508,6 +522,7 @@ def higgs_spectral(
     n_iter: int = 20,
     glasso_iter: int = 50,
     noise_floor: float = 1e-3,
+    noise_alpha: float | None = None,
 ) -> dict:
     """Frequency-domain HIGGS: joint source CSD + sparse source precision per frequency.
 
@@ -523,29 +538,98 @@ def higgs_spectral(
     csd : (n_freqs, n_sensors, n_sensors) complex sensor cross-spectral density
         (e.g. multitaper; see :mod:`neurojax.analysis.multitaper`).
     leadfield : (n_sensors, n_sources) real gain matrix.
-    alpha : hgLASSO sparsity penalty on off-diagonal source precision.
+    alpha : hgLASSO sparsity penalty on off-diagonal source precision, relative
+        to unit mean sensor power (each frequency's CSD is normalised internally).
     n_iter : EM iterations.
     glasso_iter : ADMM iterations per M-step.
     noise_floor : minimum noise variance as a fraction of mean sensor power.
+    noise_alpha : ``None`` keeps the sensor noise diagonal; a float estimates
+        the full HIGGS noise model, an hgLASSO GGM on the expected residual
+        cross-spectrum with this off-diagonal penalty (relative to unit power).
 
     Returns
     -------
     dict with ``precision`` (F, N, N) sparse Hermitian source precision,
     ``source_csd`` (F, N, N) expected source cross-spectrum, ``noise_cov``
-    (F, M, M) diagonal sensor noise, ``kernel`` (F, N, M) final MAP inverse
+    (F, M, M) sensor noise (diagonal unless ``noise_alpha``), ``noise_precision``
+    (F, M, M) its inverse (sparse with ``noise_alpha``), ``kernel`` (F, N, M) final MAP inverse
     operators, and ``nll`` (n_iter,) sensor negative log-likelihood summed over
-    frequencies (Gaussian CSD likelihood, up to constants).
+    frequencies (Gaussian CSD likelihood, up to constants, on the unit-power scale).
     """
     csd = jnp.asarray(csd)
     if not jnp.iscomplexobj(csd):
         csd = csd.astype(jnp.complex64)
     leadfield = jnp.asarray(leadfield, dtype=jnp.real(csd).dtype)
-    run = jax.vmap(lambda S: _higgs_one_freq(S, leadfield, alpha, n_iter, glasso_iter, noise_floor))
-    Theta, S_x, Sigma_e, T, nll = run(csd)
+    # The unit source prior (Theta0 = I), the hgLASSO penalty and the numerical
+    # jitter are all absolute, so the EM runs on CSDs of unit mean sensor power
+    # per frequency and the outputs are scaled back. Without this a CSD in
+    # physical units (~1e-4 per MEG channel) oscillates instead of converging.
+    scale = jnp.real(jnp.trace(csd, axis1=1, axis2=2)) / csd.shape[1]
+    scale = jnp.maximum(scale, jnp.finfo(scale.dtype).tiny)
+    run = jax.vmap(lambda S: _higgs_one_freq(S, leadfield, alpha, n_iter, glasso_iter,
+                                             noise_floor, noise_alpha))
+    # GPUs default to TF32 matmuls for float32/complex64; 20 EM iterations of
+    # 273x273 inverses on them give a different graph every run (WAND
+    # sub-01187: edge density 0.88 vs 0.94 between identical runs). Full
+    # precision makes GPU runs reproducible and equal to the CPU result.
+    with jax.default_matmul_precision("highest"):
+        Theta, S_x, Sigma_e, Theta_e, T, nll = run(csd / scale[:, None, None])
+    s3 = scale[:, None, None].astype(csd.dtype)
     return {
-        "precision": Theta,
-        "source_csd": S_x,
-        "noise_cov": Sigma_e,
+        "precision": Theta / s3,
+        "source_csd": S_x * s3,
+        "noise_cov": Sigma_e * s3,
+        "noise_precision": Theta_e / s3,
         "kernel": T,
         "nll": jnp.sum(nll, axis=0),
+    }
+
+
+def higgs_select_alpha(
+    csd: jnp.ndarray,
+    leadfield: jnp.ndarray,
+    alphas,
+    n_eff: int,
+    gamma: float = 0.5,
+    **kwargs,
+) -> dict:
+    """Choose the hgLASSO penalty of :func:`higgs_spectral` by extended BIC.
+
+    For each candidate ``alpha`` the EM is run and scored with
+
+        EBIC = 2 * n_eff * nll + k * log(n_eff) + 4 * gamma * k * log(P)
+
+    where ``nll`` is the final sensor negative log-likelihood summed over
+    frequencies (unit-power scale), ``k`` the number of non-zero off-diagonal
+    source-precision edges summed over frequencies, ``P = N (N - 1) / 2`` the
+    number of possible edges per frequency and ``n_eff`` the number of
+    independent CSD estimates (windows × tapers for a multitaper CSD).
+    ``gamma = 0`` is plain BIC; ``gamma = 0.5`` is the Foygel & Drton (2010)
+    default for graphs with many more edges than samples.
+
+    Returns
+    -------
+    dict with ``alphas``, ``ebic`` (per alpha), ``n_edges`` (per alpha),
+    ``nll`` (per alpha), the selected ``alpha`` and its full ``result``.
+    """
+    alphas = list(alphas)
+    N = leadfield.shape[1]
+    off = ~jnp.eye(N, dtype=bool)
+    P = N * (N - 1) / 2
+    results, ebic, n_edges, nll = [], [], [], []
+    for a in alphas:
+        out = higgs_spectral(csd, leadfield, alpha=a, **kwargs)
+        edges = jnp.sum((jnp.abs(out["precision"]) > 1e-6) & off[None]) / 2
+        score = (2.0 * n_eff * out["nll"][-1] + edges * jnp.log(n_eff)
+                 + 4.0 * gamma * edges * jnp.log(P))
+        results.append(out); ebic.append(score); n_edges.append(edges); nll.append(out["nll"][-1])
+    ebic = jnp.stack(ebic)
+    best = int(jnp.argmin(ebic))
+    return {
+        "alphas": alphas,
+        "ebic": ebic,
+        "n_edges": jnp.stack(n_edges).astype(int),
+        "nll": jnp.stack(nll),
+        "alpha": alphas[best],
+        "result": results[best],
     }
