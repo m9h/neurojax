@@ -108,4 +108,58 @@ def morlet_transform(
         return out[0]
     return out
 
-from functools import partial
+
+# ---------------------------------------------------------------------------
+# EEGLAB-style complex Morlet (analytic, frequency-domain) — newtimef/timefreq
+# ---------------------------------------------------------------------------
+
+
+def eeglab_cycles(freqs, c0: float = 3.0, expansion: float = 0.5):
+    """EEGLAB ``cycles = [c0, expansion]`` -> number of cycles per frequency.
+
+    ``c0`` cycles at the lowest frequency; the count rises linearly in frequency,
+    reaching a fraction ``expansion`` of the constant-window-length case at the
+    top frequency (expansion=0 -> constant cycles / constant-Q; 1 -> constant time
+    window, cycles proportional to frequency).
+    """
+    freqs = jnp.asarray(freqs, dtype=jnp.float32)
+    fmin = jnp.min(freqs)
+    fmax = jnp.max(freqs)
+    span = jnp.where(fmax > fmin, fmax - fmin, 1.0)
+    frac = (freqs - fmin) / span
+    return c0 * (1.0 + frac * expansion * (fmax / fmin - 1.0))
+
+
+def morlet_cwt(x, sfreq: float, freqs, n_cycles=7.0):
+    """Complex Morlet transform (analytic; amplitude + phase preserved).
+
+    EEGLAB-convention complex Morlet implemented in the frequency domain: a
+    Gaussian on the positive-frequency axis with std ``sigma_f = f / n_cycles``
+    (constant ``n_cycles`` -> constant-Q), giving analytic amplitude (|C| recovers
+    the band amplitude) and phase (for ``analysis.waves``).
+
+    Parameters
+    ----------
+    x : (..., n_times) real signal(s).
+    sfreq : sampling frequency (Hz).
+    freqs : (n_freqs,) center frequencies (Hz).
+    n_cycles : scalar or (n_freqs,) cycles per frequency (use ``eeglab_cycles``).
+
+    Returns
+    -------
+    (..., n_freqs, n_times) complex analytic coefficients.
+    """
+    x = jnp.asarray(x)
+    T = x.shape[-1]
+    freqs = jnp.atleast_1d(jnp.asarray(freqs, dtype=jnp.float32))
+    nc = jnp.broadcast_to(jnp.asarray(n_cycles, dtype=jnp.float32), freqs.shape)
+    Xf = jnp.fft.fft(x, axis=-1)
+    fftf = jnp.fft.fftfreq(T, d=1.0 / sfreq)
+    pos = fftf > 0
+
+    def one_freq(f, c):
+        sigma_f = f / c
+        W = 2.0 * jnp.where(pos, jnp.exp(-((fftf - f) ** 2) / (2.0 * sigma_f ** 2)), 0.0)
+        return jnp.fft.ifft(Xf * W, axis=-1)
+
+    return jnp.moveaxis(jax.vmap(one_freq)(freqs, nc), 0, -2)

@@ -1,0 +1,8 @@
+{
+  "n_states": 4,
+  "n_channels": 8,
+  "n_epochs": 200,
+  "sequence_length": 1000,
+  "elapsed_seconds": 11.749992370605469,
+  "final_loss": 9.621081352233887
+}
