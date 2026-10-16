@@ -111,3 +111,56 @@ def test_real_fslr_32k():
     assert s.n_mesh_vertices["CIFTI_STRUCTURE_CORTEX_LEFT"] == 32492
     assert surface_vertex_mask(s).sum() == 59412
     assert s.tr == pytest.approx(1.761)
+
+
+class TestConnectomes:
+    """pconn / dconn writers on the same grayordinate contract (step 7)."""
+
+    def _parcels(self):
+        return [("lh.A", {"CIFTI_STRUCTURE_CORTEX_LEFT": np.array([0, 1, 2])}),
+                ("lh.B", {"CIFTI_STRUCTURE_CORTEX_LEFT": np.array([3, 5, 7])}),
+                ("rh.A", {"CIFTI_STRUCTURE_CORTEX_RIGHT": np.array([2, 3, 4, 5])})]
+
+    def test_pconn_roundtrip(self, tmp_path):
+        from neurojax.io.cifti import load_pconn, save_pconn
+        parcels = self._parcels()
+        C = np.array([[1.0, 0.3, 0.1], [0.3, 1.0, 0.2], [0.1, 0.2, 1.0]], np.float32)
+        path = tmp_path / "test.pconn.nii"
+        save_pconn(path, C, parcels, n_mesh_vertices={
+            "CIFTI_STRUCTURE_CORTEX_LEFT": N_LEFT, "CIFTI_STRUCTURE_CORTEX_RIGHT": N_RIGHT})
+        img = nib.load(str(path))
+        assert img.nifti_header.get_intent()[0] == "ConnParcels"
+        for i in range(2):
+            assert isinstance(img.header.get_axis(i), axes.ParcelsAxis)
+        names, M = load_pconn(path)
+        assert names == ["lh.A", "lh.B", "rh.A"]
+        np.testing.assert_allclose(M, C)
+        ax = img.header.get_axis(0)
+        np.testing.assert_array_equal(ax.vertices[2]["CIFTI_STRUCTURE_CORTEX_RIGHT"], [2, 3, 4, 5])
+        assert ax.nvertices["CIFTI_STRUCTURE_CORTEX_LEFT"] == N_LEFT
+
+    def test_pconn_rejects_shape_mismatch(self, tmp_path):
+        from neurojax.io.cifti import save_pconn
+        with pytest.raises(ValueError):
+            save_pconn(tmp_path / "bad.pconn.nii", np.eye(2, dtype=np.float32), self._parcels())
+
+    def test_pconn_stack_of_frequencies(self, tmp_path):
+        """A (F, P, P) stack is written as F pconn files, one per frequency."""
+        from neurojax.io.cifti import load_pconn, save_pconn
+        C = np.stack([np.eye(3, dtype=np.float32) * (f + 1) for f in range(2)])
+        paths = save_pconn(tmp_path / "band.pconn.nii", C, self._parcels(), names=["8Hz", "9Hz"])
+        assert [p.name for p in paths] == ["band_8Hz.pconn.nii", "band_9Hz.pconn.nii"]
+        np.testing.assert_allclose(load_pconn(paths[1])[1], 2 * np.eye(3))
+
+    def test_dconn_on_grayordinates(self, dtseries, tmp_path):
+        from neurojax.io.cifti import save_dconn
+        s = load_dtseries(dtseries[0])
+        G = s.data.shape[1]
+        C = np.corrcoef(np.random.RandomState(0).randn(G, T)).astype(np.float32)
+        path = tmp_path / "test.dconn.nii"
+        save_dconn(path, C, s)
+        img = nib.load(str(path))
+        assert img.nifti_header.get_intent()[0] == "ConnDense"
+        assert img.shape == (G, G)
+        assert len(img.header.get_axis(0)) == G and isinstance(img.header.get_axis(1), axes.BrainModelAxis)
+        np.testing.assert_allclose(np.asarray(img.dataobj), C)
