@@ -1,0 +1,151 @@
+# © NeuroJAX developers
+#
+# License: BSD (3-clause)
+"""Benchmark harness: complexity / NLTSA measures across states of consciousness.
+
+Modelled on the McGill/Milan/Liège comparison of criticality and complexity
+measures under propofol, xenon and ketamine (Maschke et al. 2024, *Commun.
+Biol.*) and extended to psychedelic EEG (DMT, psilocybin). Each measure in
+:data:`neurojax.analysis.nltsa.MEASURES` is scored per epoch and channel, then
+summarised per subject × condition; :func:`contrast` gives paired effect
+sizes, and :func:`decompose_contrast` splits every measure's between-condition
+change into the part reproduced by phase-randomised surrogates (spectral) and
+the remainder (phasic; Mediano et al. 2020) — the control the bare measure
+comparisons lack.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import jax
+import numpy as np
+import pandas as pd
+from joblib import Parallel, delayed
+from scipy.stats import mannwhitneyu, wilcoxon
+
+from neurojax.analysis.complexity import spectral_phase_decomposition
+from neurojax.analysis.nltsa import MEASURES, Measure
+
+__all__ = ["Recording", "epoch_recording", "score_recording", "score_recordings",
+           "contrast", "decompose_contrast"]
+
+
+@dataclass
+class Recording:
+    dataset: str
+    subject: str
+    condition: str
+    data: np.ndarray  # (C, T)
+    fs: float
+    channels: list[str] = field(default_factory=list)
+    meta: dict = field(default_factory=dict)
+
+
+def epoch_recording(rec: Recording, epoch_s: float = 10.0, max_epochs: int | None = None) -> np.ndarray:
+    """Non-overlapping (E, C, T_epoch) epochs; a trailing partial epoch is dropped
+    and, with ``max_epochs``, epochs are taken evenly across the recording."""
+    n = int(round(epoch_s * rec.fs))
+    E = rec.data.shape[1] // n
+    ep = rec.data[:, : E * n].reshape(rec.data.shape[0], E, n).transpose(1, 0, 2)
+    if max_epochs is not None and E > max_epochs:
+        ep = ep[np.linspace(0, E - 1, max_epochs).round().astype(int)]
+    return ep
+
+
+def _score_epoch(X, fs, measures):
+    out = {}
+    for name, m in measures.items():
+        if m.multivariate:
+            out[name] = m(X, fs)
+        else:
+            out[name] = float(np.mean([m(X[c], fs) for c in range(X.shape[0])]))
+    return out
+
+
+def score_recording(rec: Recording, measures: dict[str, Measure] | None = None, epoch_s: float = 10.0,
+                    max_epochs: int | None = None, n_jobs: int = 1) -> dict[str, np.ndarray]:
+    """Per-epoch values (E,) of each measure; univariate measures averaged over channels."""
+    measures = measures or MEASURES
+    ep = epoch_recording(rec, epoch_s, max_epochs)
+    rows = Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, rec.fs, measures) for X in ep)
+    return {k: np.array([r[k] for r in rows]) for k in measures}
+
+
+def score_recordings(recordings: list[Recording], measures=None, epoch_s=10.0, max_epochs=None,
+                     n_jobs: int = 1) -> pd.DataFrame:
+    """Long table: dataset, subject, condition, measure, value (mean over epochs), sd, n_epochs."""
+    measures = measures or MEASURES
+    rows = []
+    for rec in recordings:
+        per = score_recording(rec, measures, epoch_s, max_epochs, n_jobs)
+        for k, v in per.items():
+            rows.append(dict(dataset=rec.dataset, subject=rec.subject, condition=rec.condition,
+                             measure=k, value=float(np.nanmean(v)), sd=float(np.nanstd(v)),
+                             n_epochs=int(np.sum(np.isfinite(v)))))
+    return pd.DataFrame(rows)
+
+
+def contrast(df: pd.DataFrame, cond_a: str, cond_b: str) -> pd.DataFrame:
+    """Per measure, ``cond_b`` − ``cond_a`` across subjects: paired Cohen's d
+    (mean diff / SD of diffs), Wilcoxon signed-rank p, AUC (unpaired
+    Mann-Whitney), fraction of subjects increasing. Subjects missing either
+    condition are dropped (``n`` reports the pairs used)."""
+    rows = []
+    for meas, g in df.groupby("measure"):
+        a = g[g.condition == cond_a].set_index("subject")["value"]
+        b = g[g.condition == cond_b].set_index("subject")["value"]
+        common = a.index.intersection(b.index)
+        a, b = a.loc[common].to_numpy(), b.loc[common].to_numpy()
+        diff = b - a
+        n = len(diff)
+        d = float(diff.mean() / diff.std(ddof=1)) if n > 1 and diff.std(ddof=1) > 0 else np.nan
+        p = float(wilcoxon(diff).pvalue) if n > 1 and np.any(diff != 0) else np.nan
+        u = mannwhitneyu(b, a).statistic if n > 0 else np.nan
+        rows.append(dict(measure=meas, n=n, mean_a=a.mean(), mean_b=b.mean(), mean_diff=diff.mean(),
+                         cohen_d=d, p_wilcoxon=p, auc=float(u / (n * n)) if n else np.nan,
+                         frac_increase=float(np.mean(diff > 0)) if n else np.nan))
+    return pd.DataFrame(rows).sort_values("cohen_d", key=np.abs, ascending=False).reset_index(drop=True)
+
+
+def decompose_contrast(recordings: list[Recording], measures, cond_a: str, cond_b: str, key: jax.Array,
+                       epoch_s: float = 10.0, max_epochs: int | None = None, n_surrogates: int = 20,
+                       channels: list[int] | None = None, n_jobs: int = 1) -> pd.DataFrame:
+    """Spectral/phasic decomposition of each measure's ``cond_b − cond_a``
+    change, per subject, then averaged: the feature is the epoch- and
+    channel-mean measure of a recording, and surrogates phase-randomise each
+    channel of the whole recording. ``spectral_fraction`` = spectral / total.
+    Restrict ``channels`` for the O(T²) measures."""
+    measures = measures or MEASURES
+    by_subj: dict[str, dict[str, Recording]] = {}
+    for r in recordings:
+        by_subj.setdefault(r.subject, {})[r.condition] = r
+    rows = []
+    for s, conds in by_subj.items():
+        if cond_a not in conds or cond_b not in conds:
+            continue
+        key, k = jax.random.split(key)
+        ra, rb = conds[cond_a], conds[cond_b]
+        sel = slice(None) if channels is None else channels
+        fs = ra.fs
+
+        def feature(x):  # x: (T, C) as the surrogate routine expects
+            rec = Recording("", s, "", np.asarray(x).T.astype(np.float32), fs)
+            per = score_recording(rec, measures, epoch_s, max_epochs, n_jobs)
+            return np.array([np.nanmean(per[m]) for m in measures])
+
+        d = spectral_phase_decomposition(feature, ra.data[sel].T, rb.data[sel].T, k, n_surrogates)
+        for i, m in enumerate(measures):
+            rows.append(dict(subject=s, measure=m, total=d["total"][i], spectral=d["spectral"][i],
+                             phasic=d["phasic"][i], spectral_std=d["spectral_std"][i],
+                             phasic_std=d["phasic_std"][i]))
+    per = pd.DataFrame(rows)
+    out = per.groupby("measure").agg(n=("subject", "count"), total=("total", "mean"),
+                                     spectral=("spectral", "mean"), phasic=("phasic", "mean"),
+                                     phasic_std=("phasic_std", lambda v: float(np.sqrt(np.mean(np.square(v)) / len(v)))),
+                                     spectral_std=("spectral_std", lambda v: float(np.sqrt(np.mean(np.square(v)) / len(v))))
+                                     ).reset_index()
+    out["spectral_fraction"] = out["spectral"] / out["total"]
+    out["phasic_z"] = out["phasic"] / out["phasic_std"]
+    out.attrs["per_subject"] = per
+    return out
