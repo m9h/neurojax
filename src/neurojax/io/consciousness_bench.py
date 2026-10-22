@@ -118,33 +118,30 @@ def load_dmt(root: Path | None = None, resample: float | None = 250.0,
 # --------------------------------------------------------------------------
 
 def load_psilocybin_microdose(root: Path | None = None, resample: float | None = 250.0,
-                              subjects: list[str] | None = None) -> list[Recording]:
-    """Placebo vs 0.5 g psilocybe, eyes-closed rest. Walks the extracted
-    archive for EEG files whose path names the condition; the archive layout
-    is read at load time (see ``meta['file']``)."""
-    d = (root or cb_root()) / "psilocybin-microdose-cavanna2022" / "unrar"
-    files = sorted(p for p in d.rglob("*") if p.suffix.lower() in (".bdf", ".edf", ".set", ".fif", ".vhdr"))
+                              subjects: list[str] | None = None, eyes: str = "EC") -> list[Recording]:
+    """Placebo vs 0.5 g psilocybe, eyes-closed (``eyes="EC"``) or eyes-open
+    rest ~1.5 h post dose. Archive layout
+    ``Data/rsEEG/<EC|EO>/<Placebo|Psilo>/S##_EC_Post_Cond<A|B>.bdf`` (~3 min,
+    24 EEG + Status at 500 Hz; 3 of 68 EC recordings are XDF and skipped).
+    The authors' ``*_clean_epo.fif`` beside them hold only ~35 × 0.7 s epochs,
+    too short for the 10 s measures, so the raw BDF is used; mastoids M1/M2
+    are dropped before average referencing."""
+    d = (root or cb_root()) / "psilocybin-microdose-cavanna2022" / "unrar" / "Data" / "rsEEG" / eyes
+    files = sorted(d.glob("*/S*.bdf")) if d.exists() else []
     if not files:
         raise FileNotFoundError(d)
     recs = []
     for p in files:
-        s = str(p).lower()
-        cond = "psilocybin" if re.search(r"psilo|active|dose|mush", s) else "placebo" if "placebo" in s else None
-        if cond is None:
-            continue
-        msub = re.search(r"(?:sub|s|subject)[-_]?(\d+)", p.stem.lower())
-        subject = f"S{int(msub.group(1)):02d}" if msub else p.stem
+        cond = "psilocybin" if p.parent.name.lower().startswith("psilo") else "placebo"
+        subject = f"S{int(re.match(r'S(\d+)', p.name).group(1)):02d}"
         if subjects and subject not in subjects:
             continue
-        if p.suffix.lower() == ".set":
-            raw = mne.io.read_raw_eeglab(p, preload=True, verbose=False)
-        elif p.suffix.lower() == ".vhdr":
-            raw = mne.io.read_raw_brainvision(p, preload=True, verbose=False)
-        else:
-            raw = mne.io.read_raw(p, preload=True, verbose=False)
+        raw = mne.io.read_raw_bdf(p, preload=True, verbose=False)
+        raw.pick([c for c in raw.ch_names if c not in ("M1", "M2", "Status")])
         data, fs = _finish(raw, resample)
-        recs.append(Recording("psilocybin-microdose-cavanna2022", subject, cond, data, fs,
-                              list(raw.ch_names), dict(file=str(p.relative_to(d)))))
+        recs.append(Recording("psilocybin-microdose-cavanna2022", subject, cond, data, fs, list(raw.ch_names),
+                              dict(file=str(p.relative_to(d.parent.parent)), eyes=eyes,
+                                   session=re.search(r"Cond([AB])", p.name).group(1))))
     return recs
 
 

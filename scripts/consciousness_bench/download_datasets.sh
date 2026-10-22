@@ -38,10 +38,11 @@ echo "== psilocybin-microdose-cavanna2022"
 d="$CB_ROOT/psilocybin-microdose-cavanna2022"; mkdir -p "$d"
 [ -f "$d/Data.rar" ] || \
   curl -L --retry 5 -C - -o "$d/Data.rar" "https://zenodo.org/records/5745892/files/Data.rar?download=1"
-if ! [ -d "$d/unrar" ]; then
+# RAR5: p7zip 16 writes empty files ("Unsupported Method"); libarchive's bsdtar (>=3.4) or unrar work.
+if ! [ -d "$d/unrar/Data/rsEEG" ]; then
   mkdir -p "$d/unrar"
-  if command -v unrar >/dev/null; then unrar x -o+ "$d/Data.rar" "$d/unrar/" >/dev/null
-  elif command -v 7z >/dev/null; then 7z x -y -o"$d/unrar" "$d/Data.rar" >/dev/null
-  else echo "   no unrar/7z: extract $d/Data.rar manually"; rmdir "$d/unrar"; fi
+  if command -v bsdtar >/dev/null; then bsdtar -xf "$d/Data.rar" -C "$d/unrar"
+  elif command -v unrar >/dev/null; then unrar x -o+ "$d/Data.rar" "$d/unrar/" >/dev/null
+  else echo "   need bsdtar (libarchive) or unrar for RAR5: extract $d/Data.rar to $d/unrar manually"; fi
 fi
 echo "done"
