@@ -27,7 +27,7 @@ from scipy.stats import mannwhitneyu, wilcoxon
 import jax.numpy as jnp
 
 from neurojax.analysis.nltsa import MEASURES, Measure
-from neurojax.analysis.surrogates import phase_randomized_surrogate
+from neurojax.analysis.surrogates import multivariate_phase_surrogate
 
 __all__ = ["Recording", "epoch_recording", "score_recording", "score_recordings",
            "contrast", "decompose_contrast"]
@@ -115,8 +115,10 @@ def decompose_contrast(recordings: list[Recording], measures, cond_a: str, cond_
                        channels: list[int] | None = None, n_jobs: int = 1) -> pd.DataFrame:
     """Spectral/phasic decomposition of each measure's ``cond_b − cond_a``
     change, per subject, then averaged: the feature is the epoch- and
-    channel-mean measure of a recording, and surrogates phase-randomise each
-    channel of the whole recording. ``spectral_fraction`` = spectral / total.
+    channel-mean measure of a recording, and surrogates are Prichard-Theiler
+    multivariate phase surrogates of the whole recording (per-channel spectra
+    and cross-spectra kept; phase structure and nonstationarity destroyed).
+    ``spectral_fraction`` = spectral / total.
     Restrict ``channels`` for the O(T²) measures."""
     measures = measures or MEASURES
     by_subj: dict[str, dict[str, Recording]] = {}
@@ -133,7 +135,9 @@ def decompose_contrast(recordings: list[Recording], measures, cond_a: str, cond_
         key, ka, kb = jax.random.split(key, 3)
         for cond, rec, kc in ((cond_a, ra, ka), (cond_b, rb, kb)):
             X = rec.data[sel]
-            variants = [X] + [np.asarray(phase_randomized_surrogate(jnp.asarray(X.T), k)).T
+            # Prichard-Theiler surrogates: one phase rotation shared by all channels,
+            # so cross-spectra survive and the multivariate measures see a fair null
+            variants = [X] + [np.asarray(multivariate_phase_surrogate(jnp.asarray(X.T), k)).T
                               for k in jax.random.split(kc, n_surrogates)]
             for v, Xv in enumerate(variants):
                 for X_ep in epoch_recording(Recording("", s, cond, Xv, rec.fs), epoch_s, max_epochs):

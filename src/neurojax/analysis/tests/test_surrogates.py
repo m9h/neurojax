@@ -103,3 +103,19 @@ class TestSurrogateTest:
         result = surrogate_test(x, acf1, shuffle_surrogate, n_surrogates=50)
         # White noise ACF should not be significant
         assert result["p_value"] > 0.01
+
+
+class TestMultivariatePhaseSurrogate:
+    def test_preserves_spectra_and_cross_spectra(self):
+        from neurojax.analysis.surrogates import multivariate_phase_surrogate
+        rng = np.random.RandomState(0)
+        s = rng.randn(1000)
+        x = jnp.asarray(np.stack([s, np.roll(s, 3) + 0.3 * rng.randn(1000)], axis=1))
+        y = multivariate_phase_surrogate(x, jr.PRNGKey(1))
+        assert y.shape == x.shape
+        assert not np.allclose(np.asarray(y), np.asarray(x))
+        Xf, Yf = np.fft.rfft(np.asarray(x), axis=0), np.fft.rfft(np.asarray(y), axis=0)
+        np.testing.assert_allclose(np.abs(Yf), np.abs(Xf), rtol=1e-4, atol=1e-6)
+        # cross-spectrum X0 * conj(X1) is invariant to a shared phase rotation
+        np.testing.assert_allclose(Yf[:, 0] * np.conj(Yf[:, 1]), Xf[:, 0] * np.conj(Xf[:, 1]), rtol=1e-4, atol=1e-6)
+        np.testing.assert_allclose(np.corrcoef(np.asarray(y).T)[0, 1], np.corrcoef(np.asarray(x).T)[0, 1], atol=1e-3)

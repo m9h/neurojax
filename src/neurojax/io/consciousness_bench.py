@@ -176,7 +176,7 @@ def load_sarasso_anesthesia(root: Path | None = None, resample: float | None = 2
 LOADERS = {
     "propofol-chennu2016": (load_chennu_propofol, [("baseline", "mild"), ("baseline", "moderate"),
                                                    ("baseline", "recovery")]),
-    "dmt-pallavicini2021": (load_dmt, [("EC", "DMT"), ("EC", "EO")]),
+    "dmt-pallavicini2021": (load_dmt, [("EC", "DMT"), ("EC", "EO"), ("EO", "DMT")]),
     "psilocybin-microdose-cavanna2022": (load_psilocybin_microdose, [("placebo", "psilocybin")]),
     "anesthesia-sarasso2015": (load_sarasso_anesthesia, [("wake", "propofol"), ("wake", "xenon"),
                                                          ("wake", "ketamine")]),
