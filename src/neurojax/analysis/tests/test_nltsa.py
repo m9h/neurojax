@@ -103,6 +103,19 @@ class TestChaos:
         assert 0.7 < d2 < 1.3
 
 
+class TestRQA:
+    def test_determinism_matches_reference_line_counter(self):
+        from neurojax.analysis.nltsa import _diagonal_line_points, rqa_determinism
+        from neurojax.analysis.recurrence import determinism
+        rng_ = np.random.RandomState(3)
+        R = (rng_.rand(60, 60) < 0.2).astype(np.float32)
+        R = np.maximum(R, R.T)
+        np.fill_diagonal(R, 1)
+        on, tot = _diagonal_line_points(R, 2)
+        assert on / tot == pytest.approx(float(determinism(R, l_min=2)))
+        assert rqa_determinism(SINE[:1500]) > rqa_determinism(WHITE[:1500])
+
+
 class TestEntropyScales:
     def test_multiscale_entropy_white_noise_decreases(self):
         mse = multiscale_entropy(WHITE, scales=10, m=2, r=0.15)

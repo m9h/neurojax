@@ -24,8 +24,10 @@ import pandas as pd
 from joblib import Parallel, delayed
 from scipy.stats import mannwhitneyu, wilcoxon
 
-from neurojax.analysis.complexity import spectral_phase_decomposition
+import jax.numpy as jnp
+
 from neurojax.analysis.nltsa import MEASURES, Measure
+from neurojax.analysis.surrogates import phase_randomized_surrogate
 
 __all__ = ["Recording", "epoch_recording", "score_recording", "score_recordings",
            "contrast", "decompose_contrast"]
@@ -120,25 +122,44 @@ def decompose_contrast(recordings: list[Recording], measures, cond_a: str, cond_
     by_subj: dict[str, dict[str, Recording]] = {}
     for r in recordings:
         by_subj.setdefault(r.subject, {})[r.condition] = r
+    pairs = [(s, c[cond_a], c[cond_b]) for s, c in by_subj.items() if cond_a in c and cond_b in c]
+    sel = slice(None) if channels is None else channels
+
+    # One flat job list over (subject, condition, original + surrogates, epoch) so
+    # the parallel pool is saturated; a per-subject loop would only parallelise
+    # over the handful of epochs of one recording.
+    jobs, index = [], []
+    for s, ra, rb in pairs:
+        key, ka, kb = jax.random.split(key, 3)
+        for cond, rec, kc in ((cond_a, ra, ka), (cond_b, rb, kb)):
+            X = rec.data[sel]
+            variants = [X] + [np.asarray(phase_randomized_surrogate(jnp.asarray(X.T), k)).T
+                              for k in jax.random.split(kc, n_surrogates)]
+            for v, Xv in enumerate(variants):
+                for X_ep in epoch_recording(Recording("", s, cond, Xv, rec.fs), epoch_s, max_epochs):
+                    jobs.append((X_ep, rec.fs))
+                    index.append((s, cond, v))
+    vals = Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, fs, measures) for X, fs in jobs)
+    names = list(measures)
+    table = pd.DataFrame(index, columns=["subject", "condition", "variant"])
+    for m in names:
+        table[m] = [v[m] for v in vals]
+    feat = table.groupby(["subject", "condition", "variant"])[names].mean()  # epoch mean
+
     rows = []
-    for s, conds in by_subj.items():
-        if cond_a not in conds or cond_b not in conds:
-            continue
-        key, k = jax.random.split(key)
-        ra, rb = conds[cond_a], conds[cond_b]
-        sel = slice(None) if channels is None else channels
-        fs = ra.fs
-
-        def feature(x):  # x: (T, C) as the surrogate routine expects
-            rec = Recording("", s, "", np.asarray(x).T.astype(np.float32), fs)
-            per = score_recording(rec, measures, epoch_s, max_epochs, n_jobs)
-            return np.array([np.nanmean(per[m]) for m in measures])
-
-        d = spectral_phase_decomposition(feature, ra.data[sel].T, rb.data[sel].T, k, n_surrogates)
-        for i, m in enumerate(measures):
-            rows.append(dict(subject=s, measure=m, total=d["total"][i], spectral=d["spectral"][i],
-                             phasic=d["phasic"][i], spectral_std=d["spectral_std"][i],
-                             phasic_std=d["phasic_std"][i]))
+    for s, _, _ in pairs:
+        fa, fb = feat.loc[(s, cond_a)], feat.loc[(s, cond_b)]
+        oa, ob = fa.loc[0].to_numpy(), fb.loc[0].to_numpy()
+        sa, sb = fa.loc[1:].to_numpy(), fb.loc[1:].to_numpy()
+        total = ob - oa
+        spectral = sb.mean(0) - sa.mean(0)
+        va, vb = sa.var(0, ddof=1), sb.var(0, ddof=1)
+        spectral_std = np.sqrt((va + vb) / n_surrogates)
+        phasic_std = np.sqrt((va + vb) * (1.0 + 1.0 / n_surrogates))  # as complexity.spectral_phase_decomposition
+        for i, m in enumerate(names):
+            rows.append(dict(subject=s, measure=m, total=total[i], spectral=spectral[i],
+                             phasic=total[i] - spectral[i], spectral_std=spectral_std[i],
+                             phasic_std=phasic_std[i]))
     per = pd.DataFrame(rows)
     out = per.groupby("measure").agg(n=("subject", "count"), total=("total", "mean"),
                                      spectral=("spectral", "mean"), phasic=("phasic", "mean"),

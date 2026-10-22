@@ -36,7 +36,7 @@ from scipy.signal import butter, hilbert, sosfiltfilt, welch
 
 from neurojax.analysis.complexity import lz_complexity
 from neurojax.analysis.entropy import _chebyshev_count, _embed, spectral_entropy, svd_entropy
-from neurojax.analysis.recurrence import determinism, recurrence_matrix
+from neurojax.analysis.recurrence import recurrence_matrix
 
 __all__ = [
     "FAMILIES", "MEASURES", "Measure", "compute_measures",
@@ -293,12 +293,29 @@ def correlation_dimension(x, m: int = 2, tau: int = 1, n_r: int = 10, **_) -> fl
     return float(np.polyfit(np.log(rs), np.log(C), 1)[0])
 
 
+def _diagonal_line_points(R: np.ndarray, l_min: int) -> tuple[int, int]:
+    """(recurrent points on diagonal lines of length >= l_min, recurrent points),
+    main diagonal excluded. Diagonals of R are laid out as columns of a skewed
+    (T, 2T-1) array so run lengths come from one vectorised diff."""
+    T = R.shape[0]
+    R = R.astype(bool) & ~np.eye(T, dtype=bool)
+    rows = np.arange(T)[:, None]
+    B = np.zeros((T + 2, 2 * T - 1), dtype=bool)
+    B[rows + 1, np.arange(T)[None, :] - rows + T - 1] = R
+    d = np.diff(B.astype(np.int8), axis=0)
+    starts, ends = np.nonzero(d.T == 1), np.nonzero(d.T == -1)
+    lengths = ends[1] - starts[1]  # same column order, runs are nested start<end
+    return int(lengths[lengths >= l_min].sum()), int(R.sum())
+
+
 def rqa_determinism(x, m: int = 3, tau: int = 1, recurrence_rate: float = 0.05,
                     l_min: int = 2, **_) -> float:
-    """RQA determinism at a fixed recurrence rate (Marwan et al. 2007)."""
+    """RQA determinism at a fixed recurrence rate (Marwan et al. 2007): share
+    of recurrent points (off the main diagonal) on diagonal lines >= l_min."""
     emb = _embed(jnp.asarray(np.asarray(x, float)), m, tau)
-    R = recurrence_matrix(emb, recurrence_rate=recurrence_rate)
-    return float(determinism(R, l_min=l_min))
+    R = np.asarray(recurrence_matrix(emb, recurrence_rate=recurrence_rate))
+    on_lines, total = _diagonal_line_points(R, l_min)
+    return float(on_lines / total) if total else 0.0
 
 
 # --------------------------------------------------------------------------
