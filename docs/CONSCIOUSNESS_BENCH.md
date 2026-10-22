@@ -156,7 +156,21 @@ residual −0.51): the only non-spectral signal in that dataset. The measures
 that are *not* spectral (0-1 chaos, branching ratio, alpha-envelope DFA)
 carry no contrast at these doses.
 
-### Spectral/phasic decomposition (DMT study, per-channel surrogates; rerun with the multivariate null pending)
+### Spectral/phasic decomposition, propofol (Prichard-Theiler multivariate null, 10 surrogates)
+
+- Mild − baseline: every NLTSA measure is spectral (fraction 0.78–1.06,
+  |phasic z| < 2.6 except Higuchi, whose phasic part is 0.005). The pair
+  correlation effect that survived the univariate spectral regression is
+  reproduced once cross-spectra are preserved.
+- Moderate − baseline: multiscale entropy is 60 % phasic (total −1.27,
+  spectral −0.50, phasic −0.76, z = −13); alpha-envelope DFA rises
+  (+0.017) where the spectrum predicts a fall (−0.043), so its change is
+  entirely non-Gaussian; LZ variants are 82–85 % spectral with a detectable
+  but few-percent phasic residue.
+- Recovery − baseline: all spectral (largest |phasic z| 3.2 on the aperiodic
+  exponent with phasic part 0.012).
+
+### Spectral/phasic decomposition (DMT study, first run with per-channel surrogates; rerun with the multivariate null in progress)
 
 LZ, DFA, permutation entropy and the fractal dimensions are fully reproduced
 by phase-randomised surrogates (spectral fraction 0.8–1.5). The 0-1 chaos
