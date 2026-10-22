@@ -36,7 +36,6 @@ from scipy.signal import butter, hilbert, sosfiltfilt, welch
 
 from neurojax.analysis.complexity import lz_complexity
 from neurojax.analysis.entropy import _chebyshev_count, _embed, spectral_entropy, svd_entropy
-from neurojax.analysis.recurrence import recurrence_matrix
 
 __all__ = [
     "FAMILIES", "MEASURES", "Measure", "compute_measures",
@@ -312,8 +311,10 @@ def rqa_determinism(x, m: int = 3, tau: int = 1, recurrence_rate: float = 0.05,
                     l_min: int = 2, **_) -> float:
     """RQA determinism at a fixed recurrence rate (Marwan et al. 2007): share
     of recurrent points (off the main diagonal) on diagonal lines >= l_min."""
-    emb = _embed(jnp.asarray(np.asarray(x, float)), m, tau)
-    R = np.asarray(recurrence_matrix(emb, recurrence_rate=recurrence_rate))
+    emb = np.asarray(_embed(jnp.asarray(np.asarray(x, float)), m, tau))
+    D = np.sqrt(((emb[:, None, :] - emb[None, :, :]) ** 2).sum(-1))
+    # numpy percentile (introselect) rather than jnp's full sort: 1 s -> 50 ms at T=2500
+    R = D <= np.percentile(D, recurrence_rate * 100)
     on_lines, total = _diagonal_line_points(R, l_min)
     return float(on_lines / total) if total else 0.0
 
