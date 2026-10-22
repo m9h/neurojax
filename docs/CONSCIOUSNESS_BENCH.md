@@ -20,9 +20,12 @@ by phase-randomised surrogates with the same spectrum.
 | Measure registry (23 named estimators, parameters, references) | `src/neurojax/analysis/nltsa.py` (`MEASURES`) |
 | LZ variants + spectral/phasic decomposition | `src/neurojax/analysis/complexity.py` |
 | Harness: epoching, scoring, paired contrasts, decomposition | `src/neurojax/bench/consciousness_bench.py` |
+| Spectral baselines: specparam/FOOOF, band powers, SEF95, alpha peak | `src/neurojax/analysis/spectral_baselines.py` (`SPECTRAL_MEASURES`) |
+| Reference-library parity (antropy, NeuroKit2, nolds) | `src/neurojax/analysis/tests/test_nltsa_oracles.py` |
 | Dataset loaders (skip if missing) | `src/neurojax/io/consciousness_bench.py` |
 | Downloads | `scripts/consciousness_bench/download_datasets.sh` |
-| Driver (Slurm) | `scripts/consciousness_bench/run_bench.py`, `run_bench.sbatch` |
+| Driver (Slurm) | `scripts/consciousness_bench/run_bench.py` (`--measures all|nltsa|spectral`, `--tag`), `run_bench.sbatch` |
+| Spectral-explained analysis | `scripts/consciousness_bench/spectral_explained.py` → `bench.consciousness_bench.spectral_explained` |
 | Tests | `src/neurojax/analysis/tests/test_nltsa.py`, `src/neurojax/bench/tests/test_consciousness_bench.py`, `src/neurojax/io/tests/test_consciousness_bench_io.py` |
 
 ## Measures
@@ -51,6 +54,33 @@ by phase-randomised surrogates with the same spectrum.
 | rqa_determinism | recurrence | m=3, RR=5 %, l_min=2 | Marwan 2007 |
 | pair_correlation | criticality (multivariate) | N·Var|R(t)|, alpha band | Yoon 2015; Maschke 2024 |
 | branching_ratio | criticality (multivariate) | |z|≥2 SD events, 4 ms bins | Beggs & Plenz 2003; Maschke 2024 |
+
+### Spectral baselines (`SPECTRAL_MEASURES`)
+
+| name | estimator |
+|---|---|
+| specparam_exponent, specparam_offset, specparam_r2 | specparam 2.0rc7, fixed aperiodic mode, 1–40 Hz, Welch 2 s segments, max 6 peaks |
+| specparam_alpha_cf, specparam_alpha_power | strongest fitted peak in 7–13 Hz (power over the aperiodic fit; 0 / NaN when none) |
+| relpow_delta … relpow_gamma | Welch relative power, bands 1–4, 4–8, 8–13, 13–30, 30–45 Hz, fraction of 1–45 Hz |
+| log_total_power | log10 Welch power 1–45 Hz |
+| spectral_edge_95 | SEF95 below 45 Hz |
+| alpha_peak_frequency | raw PSD argmax in 7–13 Hz |
+
+`spectral_explained(scores, spectral_scores, a, b)` regresses each NLTSA
+measure (subject × condition values) on z-scored specparam exponent, offset,
+alpha power and relative delta/theta/beta power and reports `r2`, the paired
+Cohen's d of the raw measure and of the residual. A measure with high `r2` and
+`d_residual ≈ 0` is a re-expression of the FOOOF/band-power parameters.
+
+### Reference-library parity
+
+`test_nltsa_oracles.py` checks the neurojax estimators against antropy 0.2.3
+(permutation, sample, spectral and SVD entropy, Higuchi/Petrosian/Katz FD,
+LZ76, DFA), NeuroKit2 0.2.13 (Hjorth) and nolds (Rosenstein Lyapunov,
+correlation dimension), with the tolerance and the algorithmic reason for any
+difference stated in the test. Katz FD follows the antropy/NeuroKit
+amplitude-only convention (scale-free); DFA differs from antropy only in the
+window set.
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
@@ -81,4 +111,9 @@ be requested by the user and unpacked under `$CB_ROOT/anesthesia-sarasso2015/`.
 `run_bench.py` writes, per dataset, `scores.csv` (subject × condition ×
 measure), `contrast_<a>_vs_<b>.csv` (paired Cohen's d, Wilcoxon p, AUC) and
 `decomposition_<a>_vs_<b>.csv` (spectral / phasic parts, `spectral_fraction`,
-`phasic_z`) to `/data/datasets/consciousness-bench/<dataset>/`.
+`phasic_z`) to `/data/datasets/consciousness-bench/<dataset>/`; the spectral
+baselines go to `*_spectral.csv` (`--measures spectral --tag spectral`) and
+`spectral_explained.py` joins the two into `spectral_explained_<a>_vs_<b>.csv`.
+
+Run settings used for the first pass (CPU, 20 cores): 10 evenly spaced
+channels, 6 × 10 s epochs per recording, 10 Prichard-Theiler surrogates.

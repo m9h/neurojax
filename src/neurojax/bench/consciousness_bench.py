@@ -29,7 +29,7 @@ import jax.numpy as jnp
 from neurojax.analysis.nltsa import MEASURES, Measure
 from neurojax.analysis.surrogates import multivariate_phase_surrogate
 
-__all__ = ["Recording", "epoch_recording", "score_recording", "score_recordings",
+__all__ = ["Recording", "epoch_recording", "score_recording", "score_recordings", "spectral_explained",
            "contrast", "decompose_contrast"]
 
 
@@ -174,3 +174,45 @@ def decompose_contrast(recordings: list[Recording], measures, cond_a: str, cond_
     out["phasic_z"] = out["phasic"] / out["phasic_std"]
     out.attrs["per_subject"] = per
     return out
+
+
+def spectral_explained(scores: pd.DataFrame, spectral_scores: pd.DataFrame, cond_a: str, cond_b: str,
+                       predictors=("specparam_exponent", "specparam_offset", "specparam_alpha_power",
+                                   "relpow_delta", "relpow_theta", "relpow_beta")) -> pd.DataFrame:
+    """How much of each NLTSA measure is linear in the standard spectral
+    parameters. Per measure, over all subject × condition rows: ``r2`` of an
+    OLS fit on ``predictors`` (z-scored, intercept), then the paired
+    ``cond_b − cond_a`` Cohen's d of the measure (``d_raw``) and of its
+    residual after that fit (``d_residual``). ``d_residual`` ≈ 0 means FOOOF
+    and band powers already carry the contrast."""
+    wide = scores.pivot_table(index=["subject", "condition"], columns="measure", values="value")
+    spec = spectral_scores.pivot_table(index=["subject", "condition"], columns="measure", values="value")
+    preds = [p for p in predictors if p in spec.columns]
+    both = wide.join(spec[preds], how="inner").dropna(subset=preds)
+    Z = (both[preds] - both[preds].mean()) / both[preds].std(ddof=1)
+    A = np.column_stack([np.ones(len(Z)), Z.to_numpy()])
+    rows = []
+    for m in wide.columns:
+        y = both[m].to_numpy(float)
+        ok = np.isfinite(y)
+        if ok.sum() < len(preds) + 3:
+            continue
+        beta, *_ = np.linalg.lstsq(A[ok], y[ok], rcond=None)
+        resid = np.full_like(y, np.nan)
+        resid[ok] = y[ok] - A[ok] @ beta
+        r2 = 1 - np.nanvar(resid) / np.nanvar(y)
+        tmp = both[[m]].copy()
+        tmp["resid"] = resid
+        d_raw = _paired_d(tmp[m], cond_a, cond_b)
+        d_res = _paired_d(tmp["resid"], cond_a, cond_b)
+        rows.append(dict(measure=m, n=int(ok.sum()), r2=float(r2), d_raw=d_raw, d_residual=d_res,
+                         **{f"beta_{p}": float(b) for p, b in zip(preds, beta[1:])}))
+    return pd.DataFrame(rows).sort_values("r2", ascending=False).reset_index(drop=True)
+
+
+def _paired_d(series: pd.Series, cond_a: str, cond_b: str) -> float:
+    a = series.xs(cond_a, level="condition")
+    b = series.xs(cond_b, level="condition")
+    common = a.index.intersection(b.index)
+    diff = (b.loc[common] - a.loc[common]).dropna()
+    return float(diff.mean() / diff.std(ddof=1)) if len(diff) > 1 and diff.std(ddof=1) > 0 else np.nan

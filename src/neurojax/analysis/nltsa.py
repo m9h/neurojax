@@ -139,11 +139,13 @@ def mse_sum(x, scales: int = 20, m: int = 2, r: float = 0.15, **_) -> float:
 # --------------------------------------------------------------------------
 
 def katz_fd(x, **_) -> float:
-    """Katz (1988) fractal dimension; a straight line gives 1."""
+    """Katz (1988) fractal dimension in the amplitude-only convention used by
+    antropy / NeuroKit (L = Σ|Δx|, d = max|x − x₀|, n = number of steps), so
+    it is scale-free; a monotone ramp gives 1."""
     x = np.asarray(x, dtype=float)
-    dx = np.diff(x)
-    L = np.sum(np.sqrt(1.0 + dx ** 2))
-    d = np.max(np.sqrt(np.arange(len(x)) ** 2 + (x - x[0]) ** 2))
+    dx = np.abs(np.diff(x))
+    L = dx.sum()
+    d = np.max(np.abs(x - x[0]))
     n = len(dx)
     return float(np.log10(n) / (np.log10(n) + np.log10(d / L)))
 

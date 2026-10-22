@@ -20,12 +20,14 @@ import jax
 import numpy as np
 
 from neurojax.analysis.nltsa import MEASURES
+from neurojax.analysis.spectral_baselines import SPECTRAL_MEASURES
 from neurojax.bench.consciousness_bench import contrast, decompose_contrast, score_recordings
 from neurojax.io.consciousness_bench import LOADERS
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--dataset", required=True, choices=list(LOADERS))
-ap.add_argument("--measures", default="all")
+ap.add_argument("--measures", default="all", help="all | nltsa | spectral | comma list")
+ap.add_argument("--tag", default="", help="suffix for output files, e.g. spectral")
 ap.add_argument("--epoch-s", type=float, default=10.0)
 ap.add_argument("--max-epochs", type=int, default=12)
 ap.add_argument("--n-channels", type=int, default=0, help="evenly spaced channel subset (0 = all)")
@@ -38,7 +40,10 @@ args = ap.parse_args()
 
 out = Path(os.environ.get("CB_OUT", "/data/datasets/consciousness-bench")) / args.dataset
 out.mkdir(parents=True, exist_ok=True)
-measures = MEASURES if args.measures == "all" else {k: MEASURES[k] for k in args.measures.split(",")}
+ALL = {**MEASURES, **SPECTRAL_MEASURES}
+measures = {"all": ALL, "nltsa": MEASURES, "spectral": SPECTRAL_MEASURES}.get(
+    args.measures) or {k: ALL[k] for k in args.measures.split(",")}
+tag = f"_{args.tag}" if args.tag else ""
 loader, contrasts = LOADERS[args.dataset]
 
 t0 = time.time()
@@ -54,18 +59,18 @@ print(f"[load] {len(recs)} recordings, {sorted({r.condition for r in recs})}, "
 json.dump(dict(vars(args), measures={k: dict(family=m.family, params=m.params, reference=m.reference,
                                             multivariate=m.multivariate) for k, m in measures.items()},
                n_recordings=len(recs), fs=recs[0].fs, n_channels=recs[0].data.shape[0]),
-          open(out / "params.json", "w"), indent=1, default=str)
+          open(out / f"params{tag}.json", "w"), indent=1, default=str)
 
 t0 = time.time()
 df = score_recordings(recs, measures, args.epoch_s, args.max_epochs, n_jobs=args.n_jobs)
-df.to_csv(out / "scores.csv", index=False)
+df.to_csv(out / f"scores{tag}.csv", index=False)
 print(f"[score] {len(df)} rows in {time.time()-t0:.0f}s", flush=True)
 
 for a, b in contrasts:
     if not ({a, b} <= set(df.condition)):
         continue
     c = contrast(df, a, b)
-    c.to_csv(out / f"contrast_{a}_vs_{b}.csv", index=False)
+    c.to_csv(out / f"contrast_{a}_vs_{b}{tag}.csv", index=False)
     print(f"\n[contrast] {b} - {a} (n={int(c.n.max())}):")
     print(c[["measure", "cohen_d", "p_wilcoxon", "auc", "frac_increase"]].to_string(index=False, float_format="%.3f"))
     if args.no_decompose:
@@ -73,8 +78,8 @@ for a, b in contrasts:
     t0 = time.time()
     d = decompose_contrast(recs, measures, a, b, jax.random.PRNGKey(args.seed), args.epoch_s,
                            args.max_epochs, args.n_surrogates, n_jobs=args.n_jobs)
-    d.to_csv(out / f"decomposition_{a}_vs_{b}.csv", index=False)
-    d.attrs["per_subject"].to_csv(out / f"decomposition_{a}_vs_{b}_per_subject.csv", index=False)
+    d.to_csv(out / f"decomposition_{a}_vs_{b}{tag}.csv", index=False)
+    d.attrs["per_subject"].to_csv(out / f"decomposition_{a}_vs_{b}_per_subject{tag}.csv", index=False)
     print(f"[decompose] {b} - {a}, {args.n_surrogates} surrogates, {time.time()-t0:.0f}s:")
     print(d[["measure", "total", "spectral", "phasic", "spectral_fraction", "phasic_z"]]
           .to_string(index=False, float_format="%.3f"))

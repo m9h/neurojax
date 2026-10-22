@@ -68,3 +68,16 @@ def test_decomposition_is_spectral_for_linear_shift(recordings):
     row = d.set_index("measure").loc["lz76_mean"]
     assert row["spectral_fraction"] > 0.7
     assert abs(row["phasic"]) < 3 * row["phasic_std"]
+
+
+def test_spectral_explained_catches_a_spectral_measure(recordings):
+    pytest.importorskip("specparam")
+    from neurojax.analysis.spectral_baselines import SPECTRAL_MEASURES
+    from neurojax.bench.consciousness_bench import spectral_explained
+    df = score_recordings(recordings, SUBSET, epoch_s=5.0, max_epochs=3)
+    sp = score_recordings(recordings, SPECTRAL_MEASURES, epoch_s=5.0, max_epochs=3)
+    ex = spectral_explained(df, sp, "awake", "drug").set_index("measure")
+    assert {"r2", "d_raw", "d_residual"} <= set(ex.columns)
+    # hjorth mobility is a spectral moment: the spectral parameters explain most of it
+    assert ex.loc["hjorth_mobility", "r2"] > 0.7
+    assert abs(ex.loc["hjorth_mobility", "d_residual"]) < abs(ex.loc["hjorth_mobility", "d_raw"])
