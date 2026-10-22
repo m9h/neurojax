@@ -117,3 +117,60 @@ baselines go to `*_spectral.csv` (`--measures spectral --tag spectral`) and
 
 Run settings used for the first pass (CPU, 20 cores): 10 evenly spaced
 channels, 6 × 10 s epochs per recording, 10 Prichard-Theiler surrogates.
+
+## First-pass results (2026-10-22; 10 channels, 6 × 10 s epochs, paired Cohen's d)
+
+Full tables: `/data/datasets/consciousness-bench/<dataset>/`.
+
+### Spectral tools beat the NLTSA measures on every contrast
+
+| dataset / contrast | n | best spectral feature (d) | best NLTSA feature (d) |
+|---|---|---|---|
+| propofol mild − baseline | 20 | relpow_theta −1.49, relpow_beta +1.13 | hjorth_mobility +0.86, lz78 +0.83 |
+| propofol moderate − baseline | 20 | relpow_beta +1.41, relpow_theta −1.12, relpow_alpha −1.03 | katz_fd +0.89, mse_sum −0.90 |
+| propofol recovery − baseline | 20 | specparam_alpha_cf −0.87, relpow_delta −0.87 | dfa −0.91 |
+| DMT − eyes closed | 34 | specparam_alpha_power −2.30, relpow_alpha −1.70 | dfa +1.22, mse_sum −0.94 |
+| eyes open − eyes closed (DMT study) | 34 | specparam_alpha_power −1.88, specparam_exponent +0.94 | dfa +1.02 |
+| DMT − eyes open | 34 | specparam_exponent −0.67 | hjorth_complexity +0.44 |
+| psilocybin microdose − placebo | 31 | specparam_offset −0.52, specparam_exponent −0.47 | aperiodic_exponent −0.61 (itself spectral); all others |d| < 0.2 |
+
+### Most NLTSA measures are re-expressions of six spectral parameters
+
+R² of each measure on z-scored specparam exponent, offset, alpha peak power
+and relative delta/theta/beta power (all subject × condition rows):
+
+| measure | propofol | DMT | psilocybin |
+|---|---|---|---|
+| dfa | 0.97 | 0.68 | 0.88 |
+| hjorth_mobility | 0.95 | – | – |
+| lz76_mean / lz78 | 0.94 / 0.94 | 0.60 / – | 0.57 / 0.51 |
+| permutation_entropy | 0.90 | – | – |
+| higuchi_fd | 0.88 | 0.40 | 0.51 |
+| mse_sum | 0.43 | 0.82 | 0.82 |
+| pair_correlation | 0.23 | 0.68 | 0.64 |
+| chaos_01 / branching_ratio / dfa_alpha_envelope | 0.13 / 0.11 / 0.05 | – | – |
+
+After regressing the spectral parameters out, every propofol NLTSA contrast
+falls below |d| = 0.4 except pair_correlation at mild sedation (raw −0.52,
+residual −0.51): the only non-spectral signal in that dataset. The measures
+that are *not* spectral (0-1 chaos, branching ratio, alpha-envelope DFA)
+carry no contrast at these doses.
+
+### Spectral/phasic decomposition (DMT study, per-channel surrogates; rerun with the multivariate null pending)
+
+LZ, DFA, permutation entropy and the fractal dimensions are fully reproduced
+by phase-randomised surrogates (spectral fraction 0.8–1.5). The 0-1 chaos
+test and the Lyapunov exponent are the only univariate measures whose change
+is mostly phasic; on the eyes-open contrast multiscale entropy, SVD entropy
+and the Lyapunov exponent move *against* their spectral prediction.
+
+### Caveats
+
+- The DMT recordings (~7 min) are longer than the rest recordings (~5 min)
+  and the Zenodo record has no event timing, so they include pre-inhalation
+  and comedown; the DMT − eyes-closed contrast is mostly the loss of the
+  eyes-closed alpha state. DMT − eyes-open isolates the drug.
+- Psilocybin 0.5 g microdose is a null for every complexity measure; only the
+  aperiodic offset/exponent move.
+- The Maschke/Sarasso propofol-xenon-ketamine data (Zenodo 806176) are
+  restricted and not yet requested.
