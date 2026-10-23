@@ -210,6 +210,31 @@ residual −0.51): the only non-spectral signal in that dataset. The measures
 that are *not* spectral (0-1 chaos, branching ratio, alpha-envelope DFA)
 carry no contrast at these doses.
 
+### Measure overlap (within-subject change correlations, 30 NLTSA measures; `overlap/`)
+
+| | propofol (3 contrasts) | DMT / psilocybin | eyes-open control |
+|---|---|---|---|
+| mean |r| of changes | 0.57–0.61 | 0.39–0.46 | 0.48 |
+| participation ratio | 1.9–2.1 | 3.0–3.8 | 3.1 |
+| first-PC share | 67–72 % | 44–53 % | 53 % |
+
+Propofol compresses the set onto one axis (one cluster of ~20 measures:
+LZ, entropies, fractal dimensions, Hjorth mobility, correlation dimension,
+Lyapunov, RQA; DFA + Hjorth complexity as a second); psychedelics split it
+into an amplitude-based block and an ordinal block (permutation entropy,
+statistical complexity, Petrosian, Higuchi, Lyapunov). Mantel r between
+contrasts: 0.90 within class, 0.81 anaesthesia-vs-psychedelic; mean
+matrices r = 0.86 (p < 0.001, 5000 permutations), RV = 0.89. Largest
+coupling changes: Higuchi–spectral entropy +0.69 → −0.32, permutation
+entropy–spectral entropy +0.58 → −0.33, permutation entropy–SVD entropy
++0.83 → +0.15. Partialling the six spectral parameters lowers the mean |r|
+only from 0.61 to 0.48–0.52 (propofol): the shared variance is the common
+dependence on the full spectral shape, not on six summary parameters.
+
+Recurrence family on propofol (moderate − baseline): laminarity d = −0.50,
+network clustering −0.48, transitivity −0.43, all spectral (fraction
+0.8–1.0); none adds a phasic effect. On psilocybin: null.
+
 ### Spectral/phasic decomposition, propofol (Prichard-Theiler multivariate null, 10 surrogates)
 
 - Mild − baseline: every NLTSA measure is spectral (fraction 0.78–1.06,
