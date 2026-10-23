@@ -95,3 +95,22 @@ class TestNeuroKitAndNolds:
         ref = nolds.corr_dim(x, emb_dim=2, fit="poly")
         # different r ranges (ours: 5th-50th percentile of distances); both near 1
         assert abs(ours - ref) < 0.3
+
+
+class TestPyunicorn:
+    def test_rqa_and_recurrence_network_match_pyunicorn(self):
+        pu = pytest.importorskip("pyunicorn.timeseries")
+        x = PINK[:1500]
+        ours = nltsa.rqa_profile(x, m=3, tau=1, recurrence_rate=0.05, l_min=2, v_min=2)
+        rp = pu.RecurrencePlot(x, dim=3, tau=1, recurrence_rate=0.05, metric="euclidean", silence_level=2)
+        rn = pu.RecurrenceNetwork(x, dim=3, tau=1, recurrence_rate=0.05, metric="euclidean", silence_level=2)
+        # pyunicorn's threshold search is approximate -> small recurrence-rate differences
+        assert ours["recurrence_rate"] == pytest.approx(rp.recurrence_rate(), rel=0.05)
+        assert ours["determinism"] == pytest.approx(rp.determinism(l_min=2), rel=0.02)
+        assert ours["laminarity"] == pytest.approx(rp.laminarity(v_min=2), rel=0.02)
+        assert ours["trapping_time"] == pytest.approx(rp.trapping_time(v_min=2), rel=0.05)
+        assert ours["mean_diag_length"] == pytest.approx(rp.average_diaglength(l_min=2), rel=0.05)
+        assert ours["diag_entropy"] == pytest.approx(rp.diag_entropy(l_min=2), rel=0.05)
+        assert ours["mean_recurrence_time"] == pytest.approx(rp.mean_recurrence_time(), rel=0.05)
+        assert ours["rn_transitivity"] == pytest.approx(rn.transitivity(), rel=0.03)
+        assert ours["rn_global_clustering"] == pytest.approx(rn.global_clustering(), rel=0.03)

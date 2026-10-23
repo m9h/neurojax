@@ -51,7 +51,8 @@ by phase-randomised surrogates with the same spectrum.
 | chaos_01 | chaos | modified 0-1 test, median K over 100 c | Gottwald & Melbourne 2009; Maschke 2024 |
 | lyapunov | chaos | Rosenstein, m=2, τ=1, Theiler fs/10, 20 steps | Rosenstein 1993; Maschke 2024 |
 | correlation_dimension | chaos | Grassberger-Procaccia, m=5 | GP 1983 |
-| rqa_determinism | recurrence | m=3, RR=5 %, l_min=2 | Marwan 2007 |
+| rqa_determinism, rqa_laminarity, rqa_trapping_time, rqa_mean_diag_length, rqa_diag_entropy, rqa_mean_recurrence_time | recurrence | m=3, τ=1, Euclidean, RR=5 %, l_min=v_min=2; vectorised line counting, pyunicorn conventions (verified against pyunicorn 1.0) | Marwan 2007; Ngamga 2007 |
+| rn_transitivity, rn_global_clustering | recurrence network | recurrence matrix as adjacency, self-loops removed | Donges, Marwan, Kurths 2011/2012 |
 | pair_correlation | criticality (multivariate) | N·Var|R(t)|, alpha band | Yoon 2015; Maschke 2024 |
 | branching_ratio | criticality (multivariate) | |z|≥2 SD events, 4 ms bins | Beggs & Plenz 2003; Maschke 2024 |
 
@@ -81,6 +82,32 @@ correlation dimension), with the tolerance and the algorithmic reason for any
 difference stated in the test. Katz FD follows the antropy/NeuroKit
 amplitude-only convention (scale-free); DFA differs from antropy only in the
 window set.
+
+### Peers, not add-ons (roadmap)
+
+Recurrence methods, SINDy and DMD are to be treated as full peers of the
+scalar-measure set in the pharmaco-EEG and EEG-fMRI modelling, not as extra
+columns:
+
+- **Recurrence** (pyunicorn as oracle): the RQA/recurrence-network family is
+  in the registry; still to add are *twin surrogates* (Thiel 2006) as a
+  recurrence-preserving null to set beside the Prichard-Theiler spectral
+  null in the decomposition, cross-/joint-recurrence between channel pairs
+  (multivariate measures), and for EEG-fMRI the joint recurrence of the EEG
+  state with the BOLD state (pyunicorn `JointRecurrencePlot`,
+  `InterSystemRecurrenceNetwork`).
+- **SINDy** (weak-form + ensemble, PySINDy): fit a low-dimensional
+  generative model per subject × condition on reduced state (PCA/DMD modes,
+  band envelopes + phase, or connectome-harmonic coefficients), compare
+  conditions on coefficient inclusion probabilities and linearisation
+  eigenvalues, and simulate from the fitted model to compute every scalar
+  measure — the generative counterpart of the surrogate decomposition.
+  Unfiltered data + weak-form SINDy makes drift a state variable instead of
+  something to filter.
+- **DMD / Koopman**: `bench.sensitivity.dmd_lowmode_removal` is the
+  low-frequency treatment; the same Hankel-DMD spectrum per epoch (mode
+  frequencies, growth rates, mode amplitudes) is the modal description of
+  the state and belongs in the measure table beside the specparam fit.
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the

@@ -24,7 +24,7 @@ of them into spectral and phasic parts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import partial
+from functools import lru_cache, partial
 from itertools import permutations
 from math import factorial
 from typing import Callable
@@ -42,7 +42,7 @@ __all__ = [
     "permutation_entropy", "statistical_complexity", "sample_entropy",
     "multiscale_entropy", "katz_fd", "higuchi_fd", "petrosian_fd", "dfa",
     "dfa_envelope", "aperiodic_exponent", "hjorth", "chaos_01",
-    "lyapunov_rosenstein", "correlation_dimension", "rqa_determinism",
+    "lyapunov_rosenstein", "correlation_dimension", "rqa_determinism", "rqa_profile",
     "pair_correlation", "branching_ratio",
 ]
 
@@ -294,31 +294,94 @@ def correlation_dimension(x, m: int = 2, tau: int = 1, n_r: int = 10, **_) -> fl
     return float(np.polyfit(np.log(rs), np.log(C), 1)[0])
 
 
+def _run_lengths_along_axis0(B: np.ndarray) -> np.ndarray:
+    """Lengths of all runs of True down the columns of a boolean matrix."""
+    P = np.zeros((B.shape[0] + 2, B.shape[1]), dtype=np.int8)
+    P[1:-1] = B
+    d = np.diff(P, axis=0)
+    starts, ends = np.nonzero(d.T == 1), np.nonzero(d.T == -1)
+    return ends[1] - starts[1]
+
+
 def _diagonal_line_points(R: np.ndarray, l_min: int) -> tuple[int, int]:
     """(recurrent points on diagonal lines of length >= l_min, recurrent points),
     main diagonal excluded. Diagonals of R are laid out as columns of a skewed
     (T, 2T-1) array so run lengths come from one vectorised diff."""
+    lengths, total = _diagonal_lines(R)
+    return int(lengths[lengths >= l_min].sum()), total
+
+
+def _diagonal_lines(R: np.ndarray) -> tuple[np.ndarray, int]:
     T = R.shape[0]
     R = R.astype(bool) & ~np.eye(T, dtype=bool)
     rows = np.arange(T)[:, None]
-    B = np.zeros((T + 2, 2 * T - 1), dtype=bool)
-    B[rows + 1, np.arange(T)[None, :] - rows + T - 1] = R
-    d = np.diff(B.astype(np.int8), axis=0)
-    starts, ends = np.nonzero(d.T == 1), np.nonzero(d.T == -1)
-    lengths = ends[1] - starts[1]  # same column order, runs are nested start<end
-    return int(lengths[lengths >= l_min].sum()), int(R.sum())
+    B = np.zeros((T, 2 * T - 1), dtype=bool)
+    B[rows, np.arange(T)[None, :] - rows + T - 1] = R
+    return _run_lengths_along_axis0(B), int(R.sum())
+
+
+def _recurrence_matrix(x, m, tau, recurrence_rate):
+    emb = np.asarray(_embed(jnp.asarray(np.asarray(x, float)), m, tau))
+    D = np.sqrt(((emb[:, None, :] - emb[None, :, :]) ** 2).sum(-1))
+    # numpy percentile (introselect) rather than jnp's full sort: 1 s -> 50 ms at T=2500
+    return D <= np.percentile(D, recurrence_rate * 100)
+
+
+@lru_cache(maxsize=64)
+def _rqa_cached(x_bytes: bytes, n: int, m: int, tau: int, recurrence_rate: float, l_min: int, v_min: int) -> dict:
+    x = np.frombuffer(x_bytes, dtype=np.float64, count=n)
+    R = _recurrence_matrix(x, m, tau, recurrence_rate)
+    T = R.shape[0]
+    diag, total = _diagonal_lines(R)
+    dl = diag[diag >= l_min]
+    vert = _run_lengths_along_axis0(R)
+    vl = vert[vert >= v_min]
+    white = _run_lengths_along_axis0(~R)
+    pd_ = np.bincount(dl) / len(dl) if len(dl) else np.array([1.0])
+    pd_ = pd_[pd_ > 0]
+    # recurrence network: R without self-loops as adjacency (Donges et al. 2011)
+    A = (R & ~np.eye(T, dtype=bool)).astype(np.float32)
+    k = A.sum(1)
+    A2 = A @ A
+    triangles = float((A2 * A).sum())  # 6 × number of triangles
+    triples = float((k * (k - 1)).sum())
+    local_c = np.divide(np.einsum("ij,ij->i", A2, A), k * (k - 1), out=np.zeros(T), where=k > 1)
+    return dict(
+        recurrence_rate=float(total / (T * (T - 1))),
+        determinism=float(dl.sum() / total) if total else 0.0,
+        laminarity=float(vl.sum() / vert.sum()) if vert.sum() else 0.0,
+        trapping_time=float(vl.mean()) if len(vl) else 0.0,
+        mean_diag_length=float(dl.mean()) if len(dl) else 0.0,
+        max_diag_length=float(dl.max()) if len(dl) else 0.0,
+        diag_entropy=float(-(pd_ * np.log(pd_)).sum()),
+        mean_recurrence_time=float(white.mean()) if len(white) else 0.0,
+        rn_transitivity=float(triangles / triples) if triples else 0.0,
+        rn_global_clustering=float(local_c.mean()),
+    )
+
+
+def rqa_profile(x, m: int = 3, tau: int = 1, recurrence_rate: float = 0.05, l_min: int = 2, v_min: int = 2,
+                **_) -> dict:
+    """Recurrence quantification (Marwan et al. 2007) and recurrence-network
+    measures (Donges, Marwan, Kurths 2011/2012) of one epoch at a fixed
+    recurrence rate: determinism, laminarity, trapping time, mean / max
+    diagonal line length, diagonal-line entropy, mean recurrence time (mean
+    white vertical line), network transitivity and global clustering.
+    Vectorised line counting; conventions match pyunicorn (main diagonal
+    excluded from diagonal lines; vertical lines include it)."""
+    x = np.ascontiguousarray(np.asarray(x, np.float64))
+    return _rqa_cached(x.tobytes(), len(x), m, tau, float(recurrence_rate), l_min, v_min)
 
 
 def rqa_determinism(x, m: int = 3, tau: int = 1, recurrence_rate: float = 0.05,
                     l_min: int = 2, **_) -> float:
     """RQA determinism at a fixed recurrence rate (Marwan et al. 2007): share
     of recurrent points (off the main diagonal) on diagonal lines >= l_min."""
-    emb = np.asarray(_embed(jnp.asarray(np.asarray(x, float)), m, tau))
-    D = np.sqrt(((emb[:, None, :] - emb[None, :, :]) ** 2).sum(-1))
-    # numpy percentile (introselect) rather than jnp's full sort: 1 s -> 50 ms at T=2500
-    R = D <= np.percentile(D, recurrence_rate * 100)
-    on_lines, total = _diagonal_line_points(R, l_min)
-    return float(on_lines / total) if total else 0.0
+    return rqa_profile(x, m, tau, recurrence_rate, l_min)["determinism"]
+
+
+def _rqa(key):
+    return lambda x, fs, **kw: rqa_profile(x, **kw)[key]
 
 
 # --------------------------------------------------------------------------
@@ -404,6 +467,20 @@ MEASURES: dict[str, Measure] = _reg(
     Measure("correlation_dimension", correlation_dimension, "chaos", "Grassberger & Procaccia 1983",
             params=dict(m=5, tau=1)),
     Measure("rqa_determinism", rqa_determinism, "recurrence", "Marwan 2007",
+            params=dict(m=3, tau=1, recurrence_rate=0.05)),
+    Measure("rqa_laminarity", _rqa("laminarity"), "recurrence", "Marwan 2007 (pyunicorn convention)",
+            params=dict(m=3, tau=1, recurrence_rate=0.05, v_min=2)),
+    Measure("rqa_trapping_time", _rqa("trapping_time"), "recurrence", "Marwan 2007",
+            params=dict(m=3, tau=1, recurrence_rate=0.05, v_min=2)),
+    Measure("rqa_mean_diag_length", _rqa("mean_diag_length"), "recurrence", "Marwan 2007",
+            params=dict(m=3, tau=1, recurrence_rate=0.05, l_min=2)),
+    Measure("rqa_diag_entropy", _rqa("diag_entropy"), "recurrence", "Marwan 2007",
+            params=dict(m=3, tau=1, recurrence_rate=0.05, l_min=2)),
+    Measure("rqa_mean_recurrence_time", _rqa("mean_recurrence_time"), "recurrence", "Ngamga 2007; pyunicorn",
+            params=dict(m=3, tau=1, recurrence_rate=0.05)),
+    Measure("rn_transitivity", _rqa("rn_transitivity"), "recurrence", "Donges, Marwan, Kurths 2011 recurrence network",
+            params=dict(m=3, tau=1, recurrence_rate=0.05)),
+    Measure("rn_global_clustering", _rqa("rn_global_clustering"), "recurrence", "Donges 2011; Marwan 2009",
             params=dict(m=3, tau=1, recurrence_rate=0.05)),
     Measure("pair_correlation", pair_correlation, "criticality", "Yoon 2015; Maschke 2024 (alpha)",
             multivariate=True, params=dict(band=(8.0, 13.0))),
