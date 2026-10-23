@@ -114,7 +114,8 @@ if any(m["cls"] == "anaesthesia" for m in mats.values()) and any(m["cls"] == "ps
     print("pairs whose coupling changes most (r psychedelic - r anaesthesia):")
     print(c["pairs"].head(15).to_string(index=False, float_format="%.2f"))
 
-    order = cluster_measures(An, 0.5).attrs["order"]
+    common = [c for c in An.columns if c in Ps.columns]
+    order = [m for m in cluster_measures(An.loc[common, common], 0.5).attrs["order"]]
     fig, axes = plt.subplots(1, 3, figsize=(20, 6.5))
     for ax, M, t in zip(axes, (An, Ps, c["diff"]), ("anaesthesia (propofol, mean of 3 contrasts)",
                                                       "psychedelic (DMT, psilocybin; mean of 3)", "psychedelic − anaesthesia")):
