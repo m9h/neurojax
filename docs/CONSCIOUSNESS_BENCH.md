@@ -232,6 +232,34 @@ test and the Lyapunov exponent are the only univariate measures whose change
 is mostly phasic; on the eyes-open contrast multiscale entropy, SVD entropy
 and the Lyapunov exponent move *against* their spectral prediction.
 
+### DMT time course (n=34; `scripts/consciousness_bench/dmt_timecourse.py`, outputs in `dmt-pallavicini2021/timecourse/`)
+
+t = 0 is exhalation (recording starts at exhalation per Pallavicini 2021);
+10 s windows, 5 s step, z vs each subject's own eyes-closed windows.
+
+- Every feature is already at or near its extreme in the first window:
+  inhaled DMT acts within seconds, so no absorption phase is resolved and
+  Bateman fits succeed in only 35–59 % of subjects (ordinal measures best:
+  Higuchi/Petrosian/permutation entropy 56–59 %, alpha peak power 50 %).
+  Time-to-peak medians 35–95 s (specparam offset 35 s, Lyapunov 49 s, alpha
+  power 54 s, ordinal measures 70–90 s).
+- Shape: alpha power −3.7 z at onset, −4.5 z at 45 s, recovering only to
+  −2.8 z by 8 min; LZ −3 z at onset recovering to −1.3 z by 150 s then flat;
+  delta power +5 z → +2.8 z; DFA +3.7 → +1.5 z. The aperiodic exponent is
+  the one feature with a biphasic course: +1.5 z (steeper) at onset, baseline
+  by 100 s, −1 z (flatter) after 5 min.
+- TDE-HMM (15 lags, PCA 30, 6 states, pooled EC + DMT): one state is a
+  transient peaking at 45 s (+6 z) and gone by 2 min; a second is elevated
+  for the first 2 min then halves; a third rises monotonically from 2 min on;
+  one state is suppressed throughout (−2.5 z). Switching rate barely moves.
+  So the HMM resolves an early (0–2 min) and a late (>2 min) DMT regime that
+  the scalar measures only show as a monotone recovery.
+- **No feature returns to baseline by the end of the recording** (all |z| > 1
+  at 465 s) although subjects reported return to baseline at 6 ± 1.4 min.
+  Without a post-drug eyes-closed recording this plateau cannot be separated
+  from a session/state difference (posture, sweating, residual arousal) —
+  the drift problem again, on the slowest time scale.
+
 ### Caveats
 
 - The DMT recordings (~7 min) are longer than the rest recordings (~5 min)
