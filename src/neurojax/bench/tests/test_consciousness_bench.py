@@ -11,6 +11,7 @@ from neurojax.bench.consciousness_bench import (
     contrast,
     decompose_contrast,
     epoch_recording,
+    score_epochs,
     score_recordings,
 )
 
@@ -81,3 +82,15 @@ def test_spectral_explained_catches_a_spectral_measure(recordings):
     # hjorth mobility is a spectral moment: the spectral parameters explain most of it
     assert ex.loc["hjorth_mobility", "r2"] > 0.7
     assert abs(ex.loc["hjorth_mobility", "d_residual"]) < abs(ex.loc["hjorth_mobility", "d_raw"])
+
+
+def test_score_epochs_batched_matches_scalar():
+    rec = Recording("syn", "s0", "a", _ar2(3, 1500, 10.0, 0.95, 3), FS)
+    ep = epoch_recording(rec, 5.0)
+    ms = {k: MEASURES[k] for k in ("lyapunov", "rqa_determinism", "rn_transitivity", "chaos_01", "lz76_mean")}
+    a = score_epochs(ep, FS, ms, batched=False)
+    b = score_epochs(ep, FS, ms, batched=True)
+    assert [set(r) for r in a] == [set(r) for r in b]
+    for ra, rb in zip(a, b):
+        for k in ms:
+            assert ra[k] == pytest.approx(rb[k], rel=2e-2, abs=0.02), k

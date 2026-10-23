@@ -29,12 +29,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from joblib import Parallel, delayed
 from scipy.optimize import curve_fit
 
 from neurojax.analysis.nltsa import MEASURES
 from neurojax.analysis.spectral_baselines import SPECTRAL_MEASURES
-from neurojax.bench.consciousness_bench import _score_epoch
+from neurojax.bench.consciousness_bench import score_epochs
 from neurojax.io.consciousness_bench import load_dmt
 from neurojax.models.hmm import GaussianHMM, HMMConfig
 
@@ -84,7 +83,7 @@ for s in subjects:
             jobs.append(W)
             idx.append((s, cond, t))
 t0 = time.time()
-vals = Parallel(n_jobs=args.n_jobs)(delayed(_score_epoch)(W, fs, measures) for W in jobs)
+vals = score_epochs(jobs, fs, measures, n_jobs=args.n_jobs)
 M = pd.DataFrame(idx, columns=["subject", "condition", "t"])
 for m in measures:
     M[m] = [v[m] for v in vals]

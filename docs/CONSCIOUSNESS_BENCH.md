@@ -17,16 +17,17 @@ by phase-randomised surrogates with the same spectrum.
 
 | Piece | Where |
 |---|---|
-| Measure registry (23 named estimators, parameters, references) | `src/neurojax/analysis/nltsa.py` (`MEASURES`) |
+| Measure registry (30 named estimators, parameters, references) | `src/neurojax/analysis/nltsa.py` (`MEASURES`) |
+| Batched GPU versions of the O(T²) measures (recurrence profile, Lyapunov, correlation dimension, 0-1 chaos) | `src/neurojax/analysis/nltsa_batched.py` (`BATCHED`, `score_batched`); used automatically by `bench.consciousness_bench.score_epochs` when the default JAX device is an accelerator |
 | LZ variants + spectral/phasic decomposition | `src/neurojax/analysis/complexity.py` |
 | Harness: epoching, scoring, paired contrasts, decomposition | `src/neurojax/bench/consciousness_bench.py` |
 | Spectral baselines: specparam/FOOOF, band powers, SEF95, alpha peak | `src/neurojax/analysis/spectral_baselines.py` (`SPECTRAL_MEASURES`) |
 | Reference-library parity (antropy, NeuroKit2, nolds) | `src/neurojax/analysis/tests/test_nltsa_oracles.py` |
 | Dataset loaders (skip if missing) | `src/neurojax/io/consciousness_bench.py` |
 | Downloads | `scripts/consciousness_bench/download_datasets.sh` |
-| Driver (Slurm) | `scripts/consciousness_bench/run_bench.py` (`--measures all|nltsa|spectral`, `--tag`), `run_bench.sbatch` |
+| Driver (Slurm) | `scripts/consciousness_bench/run_bench.py` (`--measures all|nltsa|spectral`, `--tag`), `run_bench.sbatch` (cpu partition, 20 workers) or `gpu.sbatch <script.py> …` (GB10 + 4 CPU workers; `gpu_check.py` validates parity and timing) |
 | Spectral-explained analysis | `scripts/consciousness_bench/spectral_explained.py` → `bench.consciousness_bench.spectral_explained` |
-| Tests | `src/neurojax/analysis/tests/test_nltsa.py`, `src/neurojax/bench/tests/test_consciousness_bench.py`, `src/neurojax/io/tests/test_consciousness_bench_io.py` |
+| Tests | `src/neurojax/analysis/tests/test_nltsa.py`, `test_nltsa_batched.py` (batched = scalar numpy), `src/neurojax/bench/tests/test_consciousness_bench.py`, `src/neurojax/io/tests/test_consciousness_bench_io.py` |
 
 ## Measures
 

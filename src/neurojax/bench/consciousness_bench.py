@@ -16,6 +16,7 @@ comparisons lack.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 import jax
@@ -27,10 +28,11 @@ from scipy.stats import mannwhitneyu, wilcoxon
 import jax.numpy as jnp
 
 from neurojax.analysis.nltsa import MEASURES, Measure
+from neurojax.analysis.nltsa_batched import BATCHED, accelerator_available, score_batched
 from neurojax.analysis.surrogates import multivariate_phase_surrogate
 
-__all__ = ["Recording", "epoch_recording", "score_recording", "score_recordings", "spectral_explained",
-           "contrast", "decompose_contrast"]
+__all__ = ["Recording", "epoch_recording", "score_epochs", "score_recording", "score_recordings",
+           "spectral_explained", "contrast", "decompose_contrast"]
 
 
 @dataclass
@@ -65,22 +67,55 @@ def _score_epoch(X, fs, measures):
     return out
 
 
+def score_epochs(epochs, fs: float, measures: dict[str, Measure] | None = None, n_jobs: int = 1,
+                 batched: bool | None = None) -> list[dict]:
+    """One measure dict per (C, T) epoch. With ``batched`` (default: whenever the
+    default JAX device is an accelerator) the O(T²) measures in
+    :data:`nltsa_batched.BATCHED` are scored on the device over all epochs ×
+    channels in one call and the rest go through joblib on the CPU; the joblib
+    workers are pinned to the CPU backend so they do not each claim the GPU."""
+    measures = measures or MEASURES
+    epochs = list(epochs)
+    if batched is None:
+        batched = accelerator_available()
+    names_b = [n for n in measures if n in BATCHED] if batched else []
+    rows = [dict() for _ in epochs]
+    if names_b and epochs:
+        by_shape: dict[tuple, list[int]] = {}
+        for i, X in enumerate(epochs):
+            by_shape.setdefault(tuple(np.shape(X)), []).append(i)
+        for (C, T), idx in by_shape.items():
+            stack = np.stack([epochs[i] for i in idx]).reshape(-1, T)  # (E·C, T)
+            out = score_batched(stack, fs, {n: measures[n] for n in names_b})
+            for n, v in out.items():
+                v = np.nanmean(v.reshape(len(idx), C), axis=1)  # channel mean, as _score_epoch
+                for j, i in enumerate(idx):
+                    rows[i][n] = float(v[j])
+        if accelerator_available():
+            os.environ["JAX_PLATFORMS"] = "cpu"  # inherited by loky workers spawned from here on; this process keeps its device
+    rest = {n: m for n, m in measures.items() if n not in names_b}
+    if rest:
+        for r, v in zip(rows, Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, fs, rest) for X in epochs)):
+            r.update(v)
+    return rows
+
+
 def score_recording(rec: Recording, measures: dict[str, Measure] | None = None, epoch_s: float = 10.0,
-                    max_epochs: int | None = None, n_jobs: int = 1) -> dict[str, np.ndarray]:
+                    max_epochs: int | None = None, n_jobs: int = 1, batched: bool | None = None) -> dict[str, np.ndarray]:
     """Per-epoch values (E,) of each measure; univariate measures averaged over channels."""
     measures = measures or MEASURES
     ep = epoch_recording(rec, epoch_s, max_epochs)
-    rows = Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, rec.fs, measures) for X in ep)
+    rows = score_epochs(ep, rec.fs, measures, n_jobs, batched)
     return {k: np.array([r[k] for r in rows]) for k in measures}
 
 
 def score_recordings(recordings: list[Recording], measures=None, epoch_s=10.0, max_epochs=None,
-                     n_jobs: int = 1) -> pd.DataFrame:
+                     n_jobs: int = 1, batched: bool | None = None) -> pd.DataFrame:
     """Long table: dataset, subject, condition, measure, value (mean over epochs), sd, n_epochs."""
     measures = measures or MEASURES
     rows = []
     for rec in recordings:
-        per = score_recording(rec, measures, epoch_s, max_epochs, n_jobs)
+        per = score_recording(rec, measures, epoch_s, max_epochs, n_jobs, batched)
         for k, v in per.items():
             rows.append(dict(dataset=rec.dataset, subject=rec.subject, condition=rec.condition,
                              measure=k, value=float(np.nanmean(v)), sd=float(np.nanstd(v)),
@@ -143,7 +178,9 @@ def decompose_contrast(recordings: list[Recording], measures, cond_a: str, cond_
                 for X_ep in epoch_recording(Recording("", s, cond, Xv, rec.fs), epoch_s, max_epochs):
                     jobs.append((X_ep, rec.fs))
                     index.append((s, cond, v))
-    vals = Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, fs, measures) for X, fs in jobs)
+    fss = {fs for _, fs in jobs}
+    assert len(fss) <= 1, f"mixed sampling rates in one decomposition: {fss}"
+    vals = score_epochs([X for X, _ in jobs], fss.pop() if fss else 0.0, measures, n_jobs)
     names = list(measures)
     table = pd.DataFrame(index, columns=["subject", "condition", "variant"])
     for m in names:
