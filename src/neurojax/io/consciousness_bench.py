@@ -32,7 +32,8 @@ def cb_root() -> Path:
     return Path(os.environ.get("CB_ROOT", "/data/raw/consciousness-bench"))
 
 
-def _finish(raw: mne.io.BaseRaw, resample: float | None, l_freq=0.5, h_freq=45.0) -> tuple[np.ndarray, float]:
+def _finish(raw: mne.io.BaseRaw, resample: float | None, l_freq: float | None = 0.5,
+            h_freq: float | None = 45.0) -> tuple[np.ndarray, float]:
     raw.pick("eeg")
     raw.load_data()
     raw.filter(l_freq, h_freq, verbose=False)
@@ -47,7 +48,7 @@ def _finish(raw: mne.io.BaseRaw, resample: float | None, l_freq=0.5, h_freq=45.0
 # --------------------------------------------------------------------------
 
 def load_chennu_propofol(root: Path | None = None, resample: float | None = 250.0,
-                         subjects: list[str] | None = None) -> list[Recording]:
+                         subjects: list[str] | None = None, l_freq: float | None = 0.5) -> list[Recording]:
     """20 subjects × {baseline, mild, moderate, recovery}; 91-channel EEGLAB
     epochs (10 s, already 0.5-45 Hz filtered and artefact-rejected) are
     concatenated into one (C, T) array per recording. ``datainfo.mat`` gives
@@ -74,7 +75,7 @@ def load_chennu_propofol(root: Path | None = None, resample: float | None = 250.
         fs = float(ep.info["sfreq"])
         data = np.concatenate(list(X), axis=1)
         raw = mne.io.RawArray(data, mne.create_info(ep.ch_names, fs, "eeg"), verbose=False)
-        data, fs = _finish(raw, resample)
+        data, fs = _finish(raw, resample, l_freq)
         recs.append(Recording("propofol-chennu2016", subject, CHENNU_LEVELS[level], data, fs,
                               list(raw.ch_names),
                               dict(propofol_ugml=float(row[2]), rt_ms=float(row[3]), hits=float(row[4]),
@@ -90,7 +91,7 @@ _DMT_RE = re.compile(r"^[sS](\d+)[-_](DMT|EC|EO|Ec)\.(bdf|xdf)$")
 
 
 def load_dmt(root: Path | None = None, resample: float | None = 250.0,
-             subjects: list[str] | None = None) -> list[Recording]:
+             subjects: list[str] | None = None, l_freq: float | None = 0.5) -> list[Recording]:
     """35 subjects × {EC (eyes closed rest), EO, DMT}; BDF files (two XDF
     recordings are skipped unless ``pyxdf`` is installed)."""
     d = (root or cb_root()) / "dmt-pallavicini2021"
@@ -107,7 +108,7 @@ def load_dmt(root: Path | None = None, resample: float | None = 250.0,
             continue  # pyxdf not a dependency; 2 of 105 files
         raw = mne.io.read_raw_bdf(p, preload=True, verbose=False)
         raw.pick("eeg")
-        data, fs = _finish(raw, resample)
+        data, fs = _finish(raw, resample, l_freq)
         recs.append(Recording("dmt-pallavicini2021", subject, cond.upper(), data, fs, list(raw.ch_names),
                               dict(file=p.name)))
     return recs
@@ -118,7 +119,7 @@ def load_dmt(root: Path | None = None, resample: float | None = 250.0,
 # --------------------------------------------------------------------------
 
 def load_psilocybin_microdose(root: Path | None = None, resample: float | None = 250.0,
-                              subjects: list[str] | None = None, eyes: str = "EC") -> list[Recording]:
+                              subjects: list[str] | None = None, eyes: str = "EC", l_freq: float | None = 0.5) -> list[Recording]:
     """Placebo vs 0.5 g psilocybe, eyes-closed (``eyes="EC"``) or eyes-open
     rest ~1.5 h post dose. Archive layout
     ``Data/rsEEG/<EC|EO>/<Placebo|Psilo>/S##_EC_Post_Cond<A|B>.bdf`` (~3 min,
@@ -138,7 +139,7 @@ def load_psilocybin_microdose(root: Path | None = None, resample: float | None =
             continue
         raw = mne.io.read_raw_bdf(p, preload=True, verbose=False)
         raw.pick([c for c in raw.ch_names if c not in ("M1", "M2", "Status")])
-        data, fs = _finish(raw, resample)
+        data, fs = _finish(raw, resample, l_freq)
         recs.append(Recording("psilocybin-microdose-cavanna2022", subject, cond, data, fs, list(raw.ch_names),
                               dict(file=str(p.relative_to(d.parent.parent)), eyes=eyes,
                                    session=re.search(r"Cond([AB])", p.name).group(1))))
@@ -149,7 +150,8 @@ def load_psilocybin_microdose(root: Path | None = None, resample: float | None =
 # Sarasso 2015 / Maschke 2024 propofol-xenon-ketamine (Zenodo 806176, restricted)
 # --------------------------------------------------------------------------
 
-def load_sarasso_anesthesia(root: Path | None = None, resample: float | None = 250.0) -> list[Recording]:
+def load_sarasso_anesthesia(root: Path | None = None, resample: float | None = 250.0,
+                            l_freq: float | None = 0.5) -> list[Recording]:
     """Wake vs drug for propofol, xenon, ketamine (N=5 each). Expects the
     requested archive unpacked under ``anesthesia-sarasso2015/<drug>/<subject>/``
     with one readable EEG file per state whose name contains ``wake`` or the
@@ -167,7 +169,7 @@ def load_sarasso_anesthesia(root: Path | None = None, resample: float | None = 2
         cond = "wake" if "wake" in p.name.lower() or "baseline" in p.name.lower() else drug
         subject = f"{drug}-{p.parent.name}"
         raw = mne.io.read_raw(p, preload=True, verbose=False)
-        data, fs = _finish(raw, resample)
+        data, fs = _finish(raw, resample, l_freq)
         recs.append(Recording("anesthesia-sarasso2015", subject, cond, data, fs, list(raw.ch_names),
                               dict(drug=drug, file=str(p.relative_to(d)))))
     return recs

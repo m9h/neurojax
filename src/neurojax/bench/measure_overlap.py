@@ -93,7 +93,8 @@ def overlap_matrix(scores: pd.DataFrame, cond_a: str, cond_b: str, unit: str = "
     X = X.dropna(axis=1, how="all")
     if method == "spearman":
         r, p = spearmanr(X.to_numpy(float), nan_policy="omit")
-        r, p = np.atleast_2d(r), np.atleast_2d(p)
+        if np.ndim(r) == 0:  # scipy returns scalars for exactly two columns
+            r, p = np.array([[1.0, r], [r, 1.0]]), np.array([[0.0, p], [p, 0.0]])
     elif method == "pearson":
         r = X.corr(method="pearson").to_numpy()
         n = len(X)
