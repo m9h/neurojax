@@ -104,10 +104,37 @@ columns:
   measure — the generative counterpart of the surrogate decomposition.
   Unfiltered data + weak-form SINDy makes drift a state variable instead of
   something to filter.
+- **AI Institute in Dynamic Systems (Brunton/Kutz) methods to add**: SHRED
+  (shallow recurrent decoder; SINDy-SHRED for sparse latent dynamics from a
+  few sensors), HAVOK (Hankel alternative view of Koopman, delay-embedded
+  DMD + forcing), SINDy autoencoders (Champion 2019), PyKoopman, PySensors
+  (optimal sensor/channel selection).
 - **DMD / Koopman**: `bench.sensitivity.dmd_lowmode_removal` is the
   low-frequency treatment; the same Hankel-DMD spectrum per epoch (mode
   frequencies, growth rates, mode amplitudes) is the modal description of
   the state and belongs in the measure table beside the specparam fit.
+
+### Drug time course (roadmap)
+
+- **PK/PD**: effect-site concentration (Sheiner k_e0 hysteresis) from
+  plasma or infusion schedule, sigmoid Emax per measure; compare measures by
+  PD consistency (EC50/hysteresis across subjects). Anchors: propofol
+  slow-wave saturation (Ní Mhuircheartaigh 2013, Warnaby 2017); DMT plasma +
+  real-time intensity (Timmermann 2019/2023); 5-HT2A occupancy (Madsen 2019).
+- **State models (OHBA)**: TDE-HMM / DyNeMo (osl-dynamics; ports in
+  `neurojax.models`) fitted on pooled placebo + drug, then state occupancy,
+  lifetimes, switching rate and TINDA cycle strength as PD outputs; burst
+  detection (Quinn 2019); multitaper state spectra + sign flipping already in
+  `neurojax.analysis`.
+- **Change-point / regime models**: Bayesian online change-point, kernel CPD
+  (ruptures); regime-switching and (DCC-)GARCH from econometrics for envelope
+  and dynamic-connectivity volatility; critical slowing down (Scheffer /
+  Dakos; Maturana 2020 in epilepsy) as early-warning statistics along the
+  time course; state-space oscillator models (Beck & Purdon 2022).
+- **Foundation models as detectors**: EEG FMs (LaBraM, EEGPT, BIOT, BENDR)
+  and generic TS FMs (Chronos, TimesFM, Moirai) give embedding trajectories
+  and change scores over the time course; treat as detectors to be explained,
+  not explanations.
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
