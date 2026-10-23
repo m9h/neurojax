@@ -289,7 +289,13 @@ def correlation_dimension(x, m: int = 2, tau: int = 1, n_r: int = 10, **_) -> fl
     D = np.sqrt(((emb[:, None, :] - emb[None, :, :]) ** 2).sum(-1))
     iu = np.triu_indices(len(emb), 1)
     d = D[iu]
-    rs = np.logspace(np.log10(np.percentile(d, 5)), np.log10(np.percentile(d, 50)), n_r)
+    d = d[d > 0]  # quantised / flat stretches give exact ties; a zero radius breaks the log-log fit
+    if d.size < 10:
+        return float("nan")
+    lo, hi = np.percentile(d, 5), np.percentile(d, 50)
+    if not hi > lo:
+        return float("nan")
+    rs = np.logspace(np.log10(lo), np.log10(hi), n_r)
     C = np.array([np.mean(d < r) for r in rs])
     return float(np.polyfit(np.log(rs), np.log(C), 1)[0])
 

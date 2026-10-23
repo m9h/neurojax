@@ -61,7 +61,7 @@ def _score_epoch(X, fs, measures):
         if m.multivariate:
             out[name] = m(X, fs)
         else:
-            out[name] = float(np.mean([m(X[c], fs) for c in range(X.shape[0])]))
+            out[name] = float(np.nanmean([m(X[c], fs) for c in range(X.shape[0])]))  # one flat channel must not void the epoch
     return out
 
 

@@ -285,12 +285,59 @@ t = 0 is exhalation (recording starts at exhalation per Pallavicini 2021);
   from a session/state difference (posture, sweating, residual arousal) —
   the drift problem again, on the slowest time scale.
 
+### Windowing and low-frequency sensitivity, propofol baseline → moderate (`sensitivity_baseline_vs_moderate.csv/.png`)
+
+`scripts/consciousness_bench/run_sensitivity.py`: 8 preprocessings
+(demean, linear detrend, HPF 0.1/0.5/1/2 Hz, EMD with IMFs below 0.5 Hz
+dropped, Hankel-DMD with modes below 0.5 Hz removed) × epoch lengths
+2/5/10/20 s, 10 channels, 60 s per recording, 30 measures, n = 20.
+Reference setting is HPF 0.5 Hz, 10 s. `rho_ref` is the Spearman
+correlation of per-subject changes against the reference (does the
+setting re-rank subjects?), `mantel` the Mantel r of the 30 × 30
+overlap matrix against the reference (does it change the pattern?).
+
+| setting (10 s) | mean \|d\| | max \|d − d_ref\| | mean rho_ref | Mantel vs ref |
+|---|---|---|---|---|
+| demean / detrend / EMD 0.5 / DMD 0.5 | 0.34 | 0.05–0.06 | 0.98 | 0.99 |
+| HPF 0.1 | 0.35 | 0.10 | 0.97 | 0.99 |
+| HPF 0.5 (reference) | 0.35 | 0 | 1.00 | 1.00 |
+| HPF 1.0 | 0.40 | 0.38 | 0.92 | 0.99 |
+| HPF 2.0 | 0.43 | 0.74 | 0.85 | 0.98 |
+
+- **The Chennu data are not a test of the sub-0.5 Hz alternatives.** The
+  authors released them already band-passed 0.5–45 Hz, so demean, detrend,
+  EMD and DMD have nothing below 0.5 Hz to remove and reproduce the 0.5 Hz
+  reference to within d ± 0.06. The informative run is the raw-BDF DMT
+  study (job re-queued after a crash; see below).
+- **Raising the HPF cutoff is not neutral.** 1 Hz moves DFA, Hjorth
+  complexity, Lyapunov, spectral entropy and recurrence-network clustering
+  by 0.3–0.7 in d; 2 Hz turns DFA from a null (−0.07) into −0.81, doubles
+  Hjorth complexity (−0.50 → −1.22) and flips the Lyapunov sign
+  (−0.41 → +0.13). The top-5 ranking is stable (MSE, LZ78, LZ76, Katz,
+  Hjorth mobility) for every setting up to 0.5 Hz and changes to Hjorth
+  complexity / spectral entropy / clustering at 1–2 Hz. These measures are
+  reading the delta band, which 1–2 Hz filters remove: a cutoff choice
+  silently selects which spectral band the "complexity" summarises.
+- **Epoch length matters more than preprocessing for the scaling
+  measures.** With the reference HPF, 2 s epochs make DFA (−0.83) and the
+  DFA alpha envelope (−0.83) look like strong effects that vanish at 10 s
+  (−0.07, +0.17): the scaling range on 2 s is too short and the fit picks
+  up the filter edge. Branching ratio and 0–1 chaos change sign across
+  epoch lengths (±0.4). MSE sum weakens from −1.22 (2 s) to −0.62 (20 s)
+  as the coarse scales get enough samples. LZ, Katz, Hjorth, permutation
+  entropy and the RQA profile are stable within 0.1 across 2–20 s.
+- **Subject ranking is the more sensitive readout.** Even where group d is
+  unchanged, branching ratio (rho_ref 0.12–0.64), chaos_01 (0.74–0.98) and
+  MSE (0.63–0.97) re-rank subjects between settings; the overlap structure
+  itself is invariant (Mantel ≥ 0.96 everywhere).
+
 ### Caveats
 
-- The DMT recordings (~7 min) are longer than the rest recordings (~5 min)
-  and the Zenodo record has no event timing, so they include pre-inhalation
-  and comedown; the DMT − eyes-closed contrast is mostly the loss of the
-  eyes-closed alpha state. DMT − eyes-open isolates the drug.
+- The DMT recordings start at exhalation and run until the self-reported
+  return (6 ± 1.4 min), with no event markers; they contain the whole
+  time course from peak to comedown. The DMT − eyes-closed contrast is
+  mostly the loss of the eyes-closed alpha state. DMT − eyes-open isolates
+  the drug, but is also nonstationary (see the time course above).
 - Psilocybin 0.5 g microdose is a null for every complexity measure; only the
   aperiodic offset/exponent move.
 - The Maschke/Sarasso propofol-xenon-ketamine data (Zenodo 806176) are

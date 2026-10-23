@@ -160,3 +160,14 @@ class TestRegistry:
             assert m.family in nltsa.FAMILIES
             assert m.reference
             assert isinstance(m.multivariate, bool)
+
+
+def test_correlation_dimension_handles_quantised_flat_signal():
+    # raw BDF with a flat / heavily quantised stretch gives many exactly-zero pairwise distances;
+    # the 5th-percentile radius was 0 -> log10(0) -> polyfit LinAlgError (DMT sensitivity job 1847)
+    rng = np.random.default_rng(0)
+    x = np.round(rng.normal(size=600), 1)
+    x[:400] = 0.0
+    val = correlation_dimension(x)
+    assert np.isfinite(val)
+    assert np.isnan(correlation_dimension(np.zeros(600)))
