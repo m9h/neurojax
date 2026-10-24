@@ -383,7 +383,7 @@ overlap matrix against the reference (does it change the pattern?).
   authors released them already band-passed 0.5–45 Hz, so demean, detrend,
   EMD and DMD have nothing below 0.5 Hz to remove and reproduce the 0.5 Hz
   reference to within d ± 0.06. The informative run is the raw-BDF DMT
-  study (job re-queued after a crash; see below).
+  study (next section).
 - **Raising the HPF cutoff is not neutral.** 1 Hz moves DFA, Hjorth
   complexity, Lyapunov, spectral entropy and recurrence-network clustering
   by 0.3–0.7 in d; 2 Hz turns DFA from a null (−0.07) into −0.81, doubles
@@ -405,6 +405,70 @@ overlap matrix against the reference (does it change the pattern?).
   unchanged, branching ratio (rho_ref 0.12–0.64), chaos_01 (0.74–0.98) and
   MSE (0.63–0.97) re-rank subjects between settings; the overlap structure
   itself is invariant (Mantel ≥ 0.96 everywhere).
+
+### Windowing and low-frequency sensitivity, DMT eyes-open → DMT (`dmt-pallavicini2021/sensitivity_EO_vs_DMT.csv/.png`)
+
+Same sweep on the raw BDF recordings (only the 45 Hz low-pass and
+average reference before the alternatives are applied), n = 34, 10
+channels, 60 s per recording. This is the run where demean, detrend,
+EMD and DMD actually have sub-0.5 Hz content to act on. GPU job: 3.1 h
+for 8 × 4 settings × 30 measures (the propofol sweep took ~11 h on 20
+CPU cores with n = 20).
+
+| setting (10 s) | mean \|d\| | #p<0.05 | max \|d − d_ref\| | mean rho_ref | Mantel vs ref |
+|---|---|---|---|---|---|
+| demean | 0.26 | 6 | 0.46 | 0.63 | 0.90 |
+| detrend linear | 0.48 | 22 | 0.87 | 0.64 | 0.89 |
+| HPF 0.1 | 0.43 | 19 | 0.78 | 0.78 | 0.94 |
+| HPF 0.5 (reference) | 0.19 | 3 | 0 | 1.00 | 1.00 |
+| HPF 1.0 | 0.22 | 8 | 0.34 | 0.89 | 0.96 |
+| HPF 2.0 | 0.25 | 13 | 0.51 | 0.80 | 0.90 |
+| EMD 0.5 | 0.28 | 12 | 0.95 | 0.70 | 0.80 |
+| DMD 0.5 | 0.45 | 21 | 0.99 | 0.77 | 0.93 |
+
+- **Below 0.5 Hz the "effect" is drift.** With the 0.5 Hz reference the
+  drug contrast is small: aperiodic exponent (−0.70) and the symbolic
+  measures (permutation entropy +0.38, Petrosian +0.36, statistical
+  complexity −0.32) and nothing else past |d| 0.3. Every setting that
+  leaves sub-0.5 Hz content in (demean, detrend, HPF 0.1, DMD 0.5)
+  roughly doubles the mean |d| and makes spectral entropy (−0.57 to
+  −1.10), SVD entropy, MSE sum, LZ76/78, RQA diagonal entropy and
+  recurrence-network clustering/transitivity look like large effects
+  (|d| 0.6–1.1) that the 0.5 Hz filter removes entirely. DMT sessions
+  have more sweating, movement and breathing drift than eyes-open rest,
+  and these measures read it as "lower complexity / more determinism".
+  The strongest published DMT complexity findings are at risk from exactly
+  this unless the cutoff is reported.
+- **HPF 1–2 Hz again flips signs, in the same measures as propofol.** DFA
+  goes +0.04 → −0.40, Hjorth complexity +0.21 → −0.28, LZ76/78 and
+  spectral entropy change sign, SVD entropy grows to +0.52. The
+  aperiodic exponent is the one measure whose d grows monotonically with
+  the cutoff (−0.66 → −0.83) because the 1/f fit range shrinks.
+- **The symbolic/ordinal measures are cutoff-invariant.** Permutation
+  entropy, Petrosian, Higuchi, statistical complexity, pair correlation
+  and the DFA alpha envelope have rho_ref ≥ 0.98 and d within 0.05 under
+  every HPF, demean, detrend and DMD. They are also the only measures that
+  survive the 0.5 Hz reference, so the robust DMT signature is the
+  ordinal-pattern one (consistent with Pallavicini's own LZ/PE result).
+- **EMD is not an alternative to a high-pass.** It is the only setting
+  that breaks the invariant measures too (permutation entropy +0.38 →
+  +0.05, Petrosian 0.36 → 0.00, pair correlation 0.30 → 0.03, rho_ref
+  0.5–0.9) and it flips the aperiodic exponent (−0.70 → +0.25) and
+  chaos_01 (−0.12 → −0.69). Dropping whole IMFs by mean Hilbert
+  frequency removes broadband mode-mixed components, not a band, so it
+  alters fine-scale structure per subject in a way the other settings
+  do not (Mantel 0.80, the lowest of the sweep).
+- **DMD low-mode removal ≈ linear detrend here.** DMD 0.5 and
+  detrend_linear agree within 0.25 in d for 27/30 measures
+  (the exceptions are chaos_01, Lyapunov and RQA mean diagonal length), both well
+  away from HPF 0.5: with 15 s windows and rank ≤ 60 the retained slow
+  modes do not capture the 0.1–0.5 Hz content that the Butterworth
+  removes. It is not a substitute for the filter at this cutoff.
+- **Epoch length matters less than on propofol.** Under the reference HPF
+  every measure stays within 0.35 across 2–20 s except chaos_01 (range
+  0.44); recurrence time and trapping time are strongest on 2 s epochs
+  (0.48/0.37 vs 0.19/0.15 at 10 s), and chaos_01, branching ratio and DFA
+  again change sign across lengths.
 
 ### Caveats
 
