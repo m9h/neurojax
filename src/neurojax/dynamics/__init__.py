@@ -24,6 +24,8 @@ Modules:
     sindy: SINDy re-exports from jaxctrl.
     koopman: Koopman/DMD re-exports from jaxctrl.
     windowed: Windowed systems-identification for MEG dynamics comparison.
+    smni: Ingber SMNI / Canonical Momenta Indicators / PATHINT re-exports from
+        the smni-cmi peer package (optional; inert when not installed).
 
 References:
     Brunton, S. L., Proctor, J. L., & Kutz, J. N. (2016).
@@ -40,31 +42,152 @@ See Also:
         used by :func:`windowed_signatures`.
 """
 
-from jaxctrl import (
-    KoopmanEstimator,
-    SINDyOptimizer,
-    fourier_library,
-    polynomial_library,
-)
+# SINDy/Koopman/windowed wrap jaxctrl; keep them optional so the contrastive
+# (CEBRA) leg, which only needs equinox, imports without jaxctrl installed.
+# SINDy / Koopman / windowed / CEBRA all live in jaxctrl; keep them optional so
+# neurojax still imports in a lean env without jaxctrl installed.
+try:
+    from jaxctrl import (
+        KoopmanEstimator,
+        SINDyOptimizer,
+        fourier_library,
+        polynomial_library,
+        smap_predict,
+        smap_nonlinearity,
+        svht_rank,
+        svht_denoise,
+        optimal_shrinkage_denoise,
+        shrink_covariance,
+        l1_statistical_dimension,
+        donoho_tanner_threshold,
+        donoho_tanner_regime,
+        DonohoTannerRegime,
+        CEBRA,
+        ContrastiveEncoder,
+        info_nce,
+        DYSCO,
+        LatentFlow,
+        LinearLangevin,
+        fit_linear_langevin,
+        langevin_gradient_part,
+        langevin_solenoidal_part,
+        langevin_entropy_production,
+        langevin_solenoidal_frequency,
+        transition_flux,
+        discrete_entropy_production,
+        levy_area,
+        levy_rate,
+        circulation_strength,
+        expected_levy_rate,
+        solenoidal_circulation,
+        gaussian_cmi,
+        transfer_entropy,
+        mvte_matrix,
+        te_permutation_test,
+    )
+    from neurojax.dynamics.windowed import (
+        windowed_sindy,
+        windowed_dmd,
+        windowed_signatures,
+        WindowedSINDyResult,
+        WindowedDMDResult,
+        WindowedSignatureResult,
+    )
+    _HAS_JAXCTRL = True
+except ImportError:  # jaxctrl not installed (e.g. lean GPU env)
+    _HAS_JAXCTRL = False
 
-from neurojax.dynamics.windowed import (
-    windowed_sindy,
-    windowed_dmd,
-    windowed_signatures,
-    WindowedSINDyResult,
-    WindowedDMDResult,
-    WindowedSignatureResult,
-)
+# SMNI / CMI / PATHINT — Ingber's path-integral statistical mechanics, the
+# canonical-momenta view of the Langevin/Fokker-Planck dynamics above.  Optional
+# peer package (smni-cmi); keep inert when absent, like the jaxctrl block.
+try:
+    from neurojax.dynamics import smni as smni
+    from neurojax.dynamics.smni import (
+        DT,
+        FS_HZ,
+        SMNIDrift,
+        canonical_momenta,
+        drift,
+        fit_linear_drift,
+        momentum_magnitude,
+        smni_log_likelihood,
+        velocity,
+        FitResult,
+        MLEConfig,
+        fit_mle,
+        action,
+        coherence,
+        nonlinear,
+        pathint,
+    )
+    _HAS_SMNI = True
+except ImportError:  # smni-cmi not installed
+    _HAS_SMNI = False
 
-__all__ = [
-    "SINDyOptimizer",
-    "KoopmanEstimator",
-    "polynomial_library",
-    "fourier_library",
-    "windowed_sindy",
-    "windowed_dmd",
-    "windowed_signatures",
-    "WindowedSINDyResult",
-    "WindowedDMDResult",
-    "WindowedSignatureResult",
-]
+__all__ = []
+if _HAS_JAXCTRL:
+    __all__ += [
+        "SINDyOptimizer",
+        "KoopmanEstimator",
+        "polynomial_library",
+        "fourier_library",
+        "smap_predict",
+        "smap_nonlinearity",
+        "svht_rank",
+        "svht_denoise",
+        "optimal_shrinkage_denoise",
+        "shrink_covariance",
+        "l1_statistical_dimension",
+        "donoho_tanner_threshold",
+        "donoho_tanner_regime",
+        "DonohoTannerRegime",
+        "CEBRA",
+        "ContrastiveEncoder",
+        "info_nce",
+        "DYSCO",
+        "LatentFlow",
+        "LinearLangevin",
+        "fit_linear_langevin",
+        "langevin_gradient_part",
+        "langevin_solenoidal_part",
+        "langevin_entropy_production",
+        "langevin_solenoidal_frequency",
+        "transition_flux",
+        "discrete_entropy_production",
+        "levy_area",
+        "levy_rate",
+        "circulation_strength",
+        "expected_levy_rate",
+        "solenoidal_circulation",
+        "gaussian_cmi",
+        "transfer_entropy",
+        "mvte_matrix",
+        "te_permutation_test",
+        "windowed_sindy",
+        "windowed_dmd",
+        "windowed_signatures",
+        "WindowedSINDyResult",
+        "WindowedDMDResult",
+        "WindowedSignatureResult",
+    ]
+
+if _HAS_SMNI:
+    __all__ += [
+        "smni",
+        "DT",
+        "FS_HZ",
+        "SMNIDrift",
+        "canonical_momenta",
+        "drift",
+        "fit_linear_drift",
+        "momentum_magnitude",
+        "smni_log_likelihood",
+        "velocity",
+        "FitResult",
+        "MLEConfig",
+        "fit_mle",
+        "action",
+        "coherence",
+        "nonlinear",
+        "pathint",
+    ]

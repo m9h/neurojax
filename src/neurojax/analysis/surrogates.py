@@ -199,3 +199,28 @@ def surrogate_test(
         "p_value": p_value,
         "significant": p_value < 0.05,
     }
+
+
+def multivariate_phase_surrogate(x: jnp.ndarray, key: jax.Array) -> jnp.ndarray:
+    """Prichard & Theiler (1994) multivariate phase surrogate.
+
+    The same random phase rotation is added to every channel at each
+    frequency, so each channel's power spectrum *and* all cross-spectra
+    (coherence, phase lags, zero-lag correlations) are preserved while
+    nonlinear and nonstationary structure is destroyed. This is the right
+    null for multivariate measures (pair correlation, branching ratio);
+    :func:`phase_randomized_surrogate` draws independent phases per channel
+    and so also destroys inter-channel coupling.
+
+    Parameters
+    ----------
+    x : (T, C) time series.
+    key : PRNG key.
+    """
+    T = x.shape[0]
+    Xf = jnp.fft.rfft(x, axis=0)
+    phi = jr.uniform(key, (Xf.shape[0],), minval=0, maxval=2 * jnp.pi)
+    phi = phi.at[0].set(0.0)
+    if T % 2 == 0:
+        phi = phi.at[-1].set(0.0)
+    return jnp.fft.irfft(Xf * jnp.exp(1j * phi)[:, None], n=T, axis=0).real

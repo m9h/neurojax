@@ -19,3 +19,8 @@ from neurojax.source.source_gnn import (
     truncated_svd_inverse,
     train_source_gnn,
 )
+from neurojax.source.leadfield import (
+    Leadfield,
+    leadfield_qc,
+    point_spread_width,
+)
