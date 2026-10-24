@@ -178,6 +178,10 @@ Same propofol job (80 recordings × 6 epochs × 10 channels, 43 measures):
 | `run_bench.sbatch` (cpu partition) | 824 s | 20 |
 | `gpu.sbatch` (GB10 + joblib) | 195 s | 8 |
 
+(195 s still paid a recompile per call, fixed afterwards; `gpu_profile_epochs.py`
+on 120 channel-epochs: device part 3.1 s, 8-core joblib part 2.6 s, overlapped
+3.6 s, against 34.3 s for all 30 measures on 8 CPU cores — 9.5× at equal cores.)
+
 Two things that made the GPU path slower than numpy before they were
 fixed, kept here so they are not re-introduced: (1) the run-length
 histogram for RQA lines used a scatter-add; on the GPU every non-line cell
