@@ -215,22 +215,28 @@ carry no contrast at these doses.
 
 | | propofol (3 contrasts) | DMT / psilocybin | eyes-open control |
 |---|---|---|---|
-| mean |r| of changes | 0.57–0.61 | 0.39–0.46 | 0.48 |
-| participation ratio | 1.9–2.1 | 3.0–3.8 | 3.1 |
-| first-PC share | 67–72 % | 44–53 % | 53 % |
+| mean |r| of changes | 0.57–0.61 | 0.40–0.46 | 0.50 |
+| participation ratio | 1.9–2.1 | 3.0–3.8 | 3.2 |
+| first-PC share | 67–72 % | 46–53 % | 53 % |
 
-Propofol compresses the set onto one axis (one cluster of ~20 measures:
+Propofol compresses the set onto one axis (one cluster of 23–25 measures:
 LZ, entropies, fractal dimensions, Hjorth mobility, correlation dimension,
-Lyapunov, RQA; DFA + Hjorth complexity as a second); psychedelics split it
-into an amplitude-based block and an ordinal block (permutation entropy,
-statistical complexity, Petrosian, Higuchi, Lyapunov). Mantel r between
-contrasts: 0.90 within class, 0.81 anaesthesia-vs-psychedelic; mean
-matrices r = 0.86 (p < 0.001, 5000 permutations), RV = 0.89. Largest
-coupling changes: Higuchi–spectral entropy +0.69 → −0.32, permutation
-entropy–spectral entropy +0.58 → −0.33, permutation entropy–SVD entropy
-+0.83 → +0.15. Partialling the six spectral parameters lowers the mean |r|
-only from 0.61 to 0.48–0.52 (propofol): the shared variance is the common
-dependence on the full spectral shape, not on six summary parameters.
+Lyapunov, the whole RQA / recurrence-network family; DFA + Hjorth
+complexity as a second); psychedelics split it into an amplitude-based
+block and an ordinal block (permutation entropy, statistical complexity,
+Petrosian, Higuchi, ± Lyapunov, ± aperiodic exponent), and on DMT − eyes-open
+the diagonal-line RQA measures and spectral entropy form a third block.
+Mantel r between contrasts: 0.91 within class, 0.83 anaesthesia-vs-
+psychedelic; mean matrices r = 0.88 (p < 0.001, 5000 permutations),
+RV = 0.90. Largest coupling changes (propofol → psychedelic): Higuchi–RQA
+diagonal entropy −0.94 → +0.17, Higuchi–spectral entropy +0.69 → −0.32,
+Petrosian–RQA diagonal entropy −0.93 → +0.03, permutation entropy–spectral
+entropy +0.58 → −0.33, permutation entropy–SVD entropy +0.83 → +0.15: under
+propofol the ordinal / fractal measures and the recurrence line structure
+move as one; under DMT they decouple. Partialling the six spectral
+parameters lowers the mean |r| only from 0.61 to 0.48–0.52 (propofol): the
+shared variance is the common dependence on the full spectral shape, not on
+six summary parameters.
 
 Recurrence family on propofol (moderate − baseline): laminarity d = −0.50,
 network clustering −0.48, transitivity −0.43, all spectral (fraction
@@ -250,13 +256,35 @@ network clustering −0.48, transitivity −0.43, all spectral (fraction
 - Recovery − baseline: all spectral (largest |phasic z| 3.2 on the aperiodic
   exponent with phasic part 0.012).
 
-### Spectral/phasic decomposition (DMT study, first run with per-channel surrogates; rerun with the multivariate null in progress)
+### Spectral/phasic decomposition, DMT (Prichard-Theiler multivariate null, 10 surrogates, 30 measures)
 
-LZ, DFA, permutation entropy and the fractal dimensions are fully reproduced
-by phase-randomised surrogates (spectral fraction 0.8–1.5). The 0-1 chaos
-test and the Lyapunov exponent are the only univariate measures whose change
-is mostly phasic; on the eyes-open contrast multiscale entropy, SVD entropy
-and the Lyapunov exponent move *against* their spectral prediction.
+- DMT − eyes-closed: LZ76/78, DFA, permutation entropy, statistical
+  complexity, Petrosian, Higuchi, correlation dimension, Hjorth complexity
+  and the recurrence family are spectral (fraction 0.8–1.5; the LZ
+  "over-prediction" of 1.3–1.5 means the surrogates lose slightly more LZ
+  than the drug does). Multiscale entropy is 27 % phasic (total −6.2,
+  phasic −1.7, z = −12), the Lyapunov exponent 71 % phasic (−0.80, phasic
+  −0.57, z = −9), and the 0-1 chaos test is the only measure whose change is
+  *opposite* to its spectral prediction (total +0.015, spectral −0.083,
+  phasic +0.098, z = 17). Pair correlation is 60 % phasic (z = 11) but tiny
+  (+0.047). Spectral tools remain the strongest contrast (specparam alpha
+  power d = −2.30, relative alpha −1.70, relative delta +1.38; best NLTSA:
+  DFA +1.22, MSE −0.94, permutation entropy +0.82).
+- DMT − eyes-open (the drug contrast): the aperiodic exponent (d = −0.67)
+  is the strongest single feature after the specparam fit error; it is
+  55 % spectral and its phasic 45 % is the within-recording nonstationarity
+  of the drug time course, which the surrogates destroy. MSE, SVD entropy
+  and the Lyapunov exponent again move against or well past their spectral
+  prediction (phasic z = 24, 20, 6); the 0-1 chaos test is again phasic
+  (z = 18). Everything in the ordinal / fractal / recurrence families is
+  spectral (fraction 0.8–1.4). Spectral regression on six parameters
+  explains R² 0.98 of the aperiodic exponent, 0.82 of MSE, 0.73 of SVD
+  entropy, 0.6–0.7 of DFA / LZ / PCF / Hjorth complexity, but only
+  0.1–0.4 of the recurrence, chaos and fractal measures; residual d after
+  that regression stays at 0.4–0.7 for LZ78 (−0.67), RN clustering
+  (+0.66), DFA (+0.53), LZ76 (−0.53), spectral entropy (−0.47) — the part
+  of those measures that six spectral numbers do not carry but the full
+  spectrum (phase surrogates) does.
 
 ### DMT time course (n=34; `scripts/consciousness_bench/dmt_timecourse.py`, outputs in `dmt-pallavicini2021/timecourse/`)
 

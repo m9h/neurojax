@@ -225,6 +225,7 @@ def spectral_explained(scores: pd.DataFrame, spectral_scores: pd.DataFrame, cond
     wide = scores.pivot_table(index=["subject", "condition"], columns="measure", values="value")
     spec = spectral_scores.pivot_table(index=["subject", "condition"], columns="measure", values="value")
     preds = [p for p in predictors if p in spec.columns]
+    wide = wide[[c for c in wide.columns if c in MEASURES]]  # a combined scores table also holds the predictors
     both = wide.join(spec[preds], how="inner").dropna(subset=preds)
     Z = (both[preds] - both[preds].mean()) / both[preds].std(ddof=1)
     A = np.column_stack([np.ones(len(Z)), Z.to_numpy()])
