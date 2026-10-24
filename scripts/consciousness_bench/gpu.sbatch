@@ -2,12 +2,12 @@
 #SBATCH --job-name=cbgpu
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:gb10:1
-#SBATCH --cpus-per-task=4
+#SBATCH --cpus-per-task=8
 #SBATCH --mem=60G
 #SBATCH --output=/home/mhough/cbgpu_%j.log
 # usage: sbatch gpu.sbatch <script.py under scripts/consciousness_bench> [args]
 # The O(T²) measures (recurrence profile, Lyapunov, correlation dimension, 0-1 chaos) run batched on the
-# GB10; the rest on 4 joblib workers pinned to the CPU backend by score_epochs. Preallocation off so the
+# GB10; the rest on 8 joblib workers (LZ76 is sequential and dominates that side) pinned to the CPU backend by score_epochs. Preallocation off so the
 # parent can size its chunks from the real free memory and workers never grab the device.
 set -euo pipefail
 cd /home/mhough/dev/neurojax

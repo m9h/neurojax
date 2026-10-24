@@ -17,6 +17,7 @@ comparisons lack.
 from __future__ import annotations
 
 import os
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 import jax
@@ -79,23 +80,31 @@ def score_epochs(epochs, fs: float, measures: dict[str, Measure] | None = None, 
     if batched is None:
         batched = accelerator_available()
     names_b = [n for n in measures if n in BATCHED] if batched else []
-    rows = [dict() for _ in epochs]
-    if names_b and epochs:
-        by_shape: dict[tuple, list[int]] = {}
-        for i, X in enumerate(epochs):
-            by_shape.setdefault(tuple(np.shape(X)), []).append(i)
-        for (C, T), idx in by_shape.items():
-            stack = np.stack([epochs[i] for i in idx]).reshape(-1, T)  # (E·C, T)
-            out = score_batched(stack, fs, {n: measures[n] for n in names_b})
-            for n, v in out.items():
-                v = np.nanmean(v.reshape(len(idx), C), axis=1)  # channel mean, as _score_epoch
-                for j, i in enumerate(idx):
-                    rows[i][n] = float(v[j])
-        if accelerator_available():
-            os.environ["JAX_PLATFORMS"] = "cpu"  # inherited by loky workers spawned from here on; this process keeps its device
     rest = {n: m for n, m in measures.items() if n not in names_b}
-    if rest:
-        for r, v in zip(rows, Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, fs, rest) for X in epochs)):
+    rows = [dict() for _ in epochs]
+    if names_b and epochs and accelerator_available():
+        os.environ["JAX_PLATFORMS"] = "cpu"  # inherited by loky workers spawned from here on; this process keeps its device
+
+    def cpu_part():
+        if rest and epochs:
+            return Parallel(n_jobs=n_jobs)(delayed(_score_epoch)(X, fs, rest) for X in epochs)
+        return [{} for _ in epochs]
+
+    # the joblib pool and the device run concurrently (XLA releases the GIL while it waits)
+    with ThreadPoolExecutor(1) as pool:
+        fut = pool.submit(cpu_part)
+        if names_b and epochs:
+            by_shape: dict[tuple, list[int]] = {}
+            for i, X in enumerate(epochs):
+                by_shape.setdefault(tuple(np.shape(X)), []).append(i)
+            for (C, T), idx in by_shape.items():
+                stack = np.stack([epochs[i] for i in idx]).reshape(-1, T)  # (E·C, T)
+                out = score_batched(stack, fs, {n: measures[n] for n in names_b})
+                for n, v in out.items():
+                    v = np.nanmean(v.reshape(len(idx), C), axis=1)  # channel mean, as _score_epoch
+                    for j, i in enumerate(idx):
+                        rows[i][n] = float(v[j])
+        for r, v in zip(rows, fut.result()):
             r.update(v)
     return rows
 
@@ -110,15 +119,28 @@ def score_recording(rec: Recording, measures: dict[str, Measure] | None = None, 
 
 
 def score_recordings(recordings: list[Recording], measures=None, epoch_s=10.0, max_epochs=None,
-                     n_jobs: int = 1, batched: bool | None = None) -> pd.DataFrame:
-    """Long table: dataset, subject, condition, measure, value (mean over epochs), sd, n_epochs."""
+                      n_jobs: int = 1, batched: bool | None = None) -> pd.DataFrame:
+    """Long table: dataset, subject, condition, measure, value (mean over epochs), sd, n_epochs.
+    All recordings' epochs go through one :func:`score_epochs` call so the device
+    sees one large batch and the joblib pool one long job list."""
     measures = measures or MEASURES
+    epochs, owner = [], []
+    for i, rec in enumerate(recordings):
+        for X in epoch_recording(rec, epoch_s, max_epochs):
+            epochs.append(X)
+            owner.append(i)
+    fss = {r.fs for r in recordings}
+    assert len(fss) <= 1, f"mixed sampling rates: {fss}"
+    vals = score_epochs(epochs, fss.pop() if fss else 0.0, measures, n_jobs, batched)
+    owner = np.asarray(owner)
     rows = []
-    for rec in recordings:
-        per = score_recording(rec, measures, epoch_s, max_epochs, n_jobs, batched)
-        for k, v in per.items():
+    for i, rec in enumerate(recordings):
+        mine = [vals[j] for j in np.flatnonzero(owner == i)]
+        for k in measures:
+            v = np.array([r[k] for r in mine]) if mine else np.array([])
             rows.append(dict(dataset=rec.dataset, subject=rec.subject, condition=rec.condition,
-                             measure=k, value=float(np.nanmean(v)), sd=float(np.nanstd(v)),
+                             measure=k, value=float(np.nanmean(v)) if v.size else np.nan,
+                             sd=float(np.nanstd(v)) if v.size else np.nan,
                              n_epochs=int(np.sum(np.isfinite(v)))))
     return pd.DataFrame(rows)
 

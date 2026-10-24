@@ -7,7 +7,8 @@ The scalar functions in :mod:`neurojax.analysis.nltsa` are numpy, one channel
 at a time, and are the reference (checked against pyunicorn / nolds). Four of
 them dominate the benchmark cost because they build an N×N distance matrix
 per channel-epoch (recurrence profile, Rosenstein Lyapunov, correlation
-dimension) or loop over 100 test frequencies (0-1 chaos). This module
+dimension, sample / multiscale entropy) or loop over 100 test frequencies
+(0-1 chaos). This module
 re-expresses them as jitted functions over a (B, T) stack so a GPU scores all
 channels × epochs of a recording in one call. Results agree with the scalar
 versions to float32 (test_nltsa_batched.py); recurrence thresholds are
@@ -31,7 +32,8 @@ import numpy as np
 from neurojax.analysis.entropy import _embed
 
 __all__ = ["BATCHED", "batched_rqa_profile", "batched_lyapunov", "batched_correlation_dimension",
-           "batched_chaos_01", "score_batched", "chunk_size", "accelerator_available"]
+           "batched_chaos_01", "batched_sample_entropy", "batched_mse_sum", "score_batched", "chunk_size",
+           "accelerator_available"]
 
 RQA_KEYS = ("recurrence_rate", "determinism", "laminarity", "trapping_time", "mean_diag_length",
             "max_diag_length", "diag_entropy", "mean_recurrence_time", "rn_transitivity", "rn_global_clustering")
@@ -237,11 +239,52 @@ def batched_chaos_01(X, n_c: int = 100, seed: int = 0, chunk: int | None = None,
     return _map(partial(_chaos_one, cs=cs, n_cut=X.shape[1] // 10), X, chunk)
 
 
+def _cheb_count_minus_self(emb, r):
+    """Number of other embedded vectors within Chebyshev distance r of each one,
+    summed; the (N, N) max-distance matrix is accumulated one coordinate at a
+    time so no (N, N, m) intermediate exists."""
+    N, m = emb.shape
+    Dm = jnp.zeros((N, N), jnp.float32)
+    for j in range(m):
+        Dm = jnp.maximum(Dm, jnp.abs(emb[:, j][:, None] - emb[:, j][None, :]))
+    return jnp.sum(Dm <= r) - N
+
+
+def _sampen_one(x, m, r):
+    e1 = _embed(x, m, 1)[:-1]
+    e2 = _embed(x, m + 1, 1)
+    b = _cheb_count_minus_self(e1, r)
+    a = _cheb_count_minus_self(e2, r)
+    return -jnp.log(jnp.clip(a, 1e-10) / jnp.clip(b, 1e-10))
+
+
+def _mse_one(x, scales, m, r):
+    tol = r * jnp.std(x)
+    vals = []
+    for s in range(1, scales + 1):
+        n = x.shape[0] // s
+        cg = x[: n * s].reshape(n, s).mean(1)
+        vals.append(_sampen_one(cg, m, tol))
+    return jnp.nansum(jnp.stack(vals))
+
+
+def batched_sample_entropy(X, m: int = 2, r: float = 0.2, chunk: int | None = None, **_):
+    """:func:`nltsa.sample_entropy` for every row of ``X`` (B, T) → (B,)."""
+    return _map(lambda x: _sampen_one(x, m, r * jnp.std(x)), X, chunk)
+
+
+def batched_mse_sum(X, scales: int = 20, m: int = 2, r: float = 0.15, chunk: int | None = None, **_):
+    """:func:`nltsa.mse_sum` for every row of ``X`` (B, T) → (B,)."""
+    return _map(partial(_mse_one, scales=scales, m=m, r=r), X, chunk)
+
+
 # registry: measure name -> (batched fn, output key or None, params that select the shared computation)
 BATCHED: dict[str, tuple] = {
     "lyapunov": (batched_lyapunov, None),
     "correlation_dimension": (batched_correlation_dimension, None),
     "chaos_01": (batched_chaos_01, None),
+    "sample_entropy": (batched_sample_entropy, None),
+    "mse_sum": (batched_mse_sum, None),
     **{f"rqa_{k}": (batched_rqa_profile, k) for k in
        ("determinism", "laminarity", "trapping_time", "mean_diag_length", "diag_entropy", "mean_recurrence_time")},
     "rn_transitivity": (batched_rqa_profile, "rn_transitivity"),
