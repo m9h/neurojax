@@ -53,7 +53,7 @@ def _device_bytes() -> float:
     return float(psutil.virtual_memory().available)
 
 
-def chunk_size(T: int, m: int, per_item_buffers: int = 8, max_chunk: int = 64, fraction: float = 0.5) -> int:
+def chunk_size(T: int, m: int, per_item_buffers: int = 16, max_chunk: int = 16, fraction: float = 0.5) -> int:
     """Largest batch chunk such that ``per_item_buffers`` N×N float32 buffers per
     item use at most ``fraction`` of device memory. N = T − (m−1)·tau."""
     per_item = per_item_buffers * 4.0 * T * T
@@ -85,14 +85,20 @@ def _dist(emb):
 def _run_length_hist(B):
     """Histogram h[L] (L = 0..T) of lengths of True runs down the columns of a
     boolean (T, K) matrix. Runs end where a True is followed by False (or the
-    bottom); their length is the row distance to the last run start."""
+    bottom); their length is the row distance to the last run start. The
+    histogram is taken by sorting the lengths and counting with searchsorted:
+    a scatter-add would send every non-end cell to bin 0, and on a GPU that
+    many colliding atomics is slower than the whole numpy pipeline."""
     T = B.shape[0]
     P = jnp.concatenate([jnp.zeros((1, B.shape[1]), bool), B, jnp.zeros((1, B.shape[1]), bool)], 0)
     d = jnp.diff(P.astype(jnp.int8), axis=0)  # (T+1, K): +1 at a run start row, −1 one past its end
-    rows = jnp.arange(T + 1)[:, None]
+    rows = jnp.arange(T + 1, dtype=jnp.int32)[:, None]
     last_start = jax.lax.cummax(jnp.where(d == 1, rows, -1), axis=0)
-    length = jnp.where(d == -1, rows - last_start, 0)
-    return jnp.zeros(T + 1, jnp.float32).at[length.ravel()].add(1.0).at[0].set(0.0)
+    length = jnp.where(d == -1, rows - last_start, 0).ravel()
+    srt = jnp.sort(length)
+    edges = jnp.arange(T + 2, dtype=jnp.int32)  # bin L covers [L, L+1)
+    h = jnp.diff(jnp.searchsorted(srt, edges, method="scan")).astype(jnp.float32)
+    return h.at[0].set(0.0)
 
 
 def _line_stats(h, l_min):
