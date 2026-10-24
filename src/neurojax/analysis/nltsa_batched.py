@@ -55,7 +55,7 @@ def _device_bytes() -> float:
     return float(psutil.virtual_memory().available)
 
 
-def chunk_size(T: int, m: int, per_item_buffers: int = 16, max_chunk: int = 16, fraction: float = 0.5) -> int:
+def chunk_size(T: int, m: int, per_item_buffers: int = 24, max_chunk: int = 64, fraction: float = 0.5) -> int:
     """Largest batch chunk such that ``per_item_buffers`` N×N float32 buffers per
     item use at most ``fraction`` of device memory. N = T − (m−1)·tau."""
     per_item = per_item_buffers * 4.0 * T * T
@@ -63,14 +63,29 @@ def chunk_size(T: int, m: int, per_item_buffers: int = 16, max_chunk: int = 16, 
     return int(max(1, min(max_chunk, n)))
 
 
-def _map(f, X, chunk):
-    """vmap ``f`` over the leading axis of ``X`` in chunks of ``chunk`` (lax.map batch_size)."""
+_COMPILED: dict[tuple, callable] = {}
+
+
+def _jitted_map(key: tuple, f, chunk: int):
+    """One compiled chunked map per (function, static params, chunk, T): lax.map
+    outside jit re-traces (and recompiles, ~10 s for the recurrence profile)
+    on every call because the partial() it is handed is a new object, so the
+    cache is keyed on ``key`` alone, never on ``f``."""
+    if key not in _COMPILED:
+        _COMPILED[key] = jax.jit(lambda X, *extra: jax.lax.map(lambda x: f(x, *extra), X, batch_size=chunk))
+    return _COMPILED[key]
+
+
+def _map(f, X, chunk, key: tuple, *extra):
+    """vmap ``f`` over the leading axis of ``X`` in chunks of ``chunk`` (lax.map
+    batch_size). ``key`` identifies ``f`` and its static parameters for the
+    compile cache; ``extra`` arrays are passed to ``f`` as traced arguments."""
     X = jnp.asarray(X, jnp.float32)
     if chunk is None:
         chunk = chunk_size(X.shape[1], 1)
     chunk = int(min(chunk, X.shape[0]))
     with jax.default_matmul_precision("highest"):
-        return jax.lax.map(f, X, batch_size=chunk)
+        return _jitted_map(key + (chunk, X.shape[1]), f, chunk)(X, *extra)
 
 
 def _dist(emb):
@@ -162,7 +177,7 @@ def batched_rqa_profile(X, m: int = 3, tau: int = 1, recurrence_rate: float = 0.
                         v_min: int = 2, chunk: int | None = None, **_) -> dict:
     """:func:`nltsa.rqa_profile` for every row of ``X`` (B, T); dict of (B,) arrays."""
     f = partial(_rqa_one, m=m, tau=tau, recurrence_rate=recurrence_rate, l_min=l_min, v_min=v_min)
-    return _map(f, X, chunk)
+    return _map(f, X, chunk, ("rqa", m, tau, float(recurrence_rate), l_min, v_min))
 
 
 def _lyap_one(x, fs, m, tau, theiler, k_max):
@@ -185,7 +200,8 @@ def batched_lyapunov(X, fs: float, m: int = 2, tau: int = 1, theiler: int | None
                      chunk: int | None = None, **_):
     """:func:`nltsa.lyapunov_rosenstein` for every row of ``X`` (B, T) → (B,)."""
     theiler = int(fs / 10) if theiler is None else theiler
-    return _map(partial(_lyap_one, fs=fs, m=m, tau=tau, theiler=theiler, k_max=k_max), X, chunk)
+    return _map(partial(_lyap_one, fs=fs, m=m, tau=tau, theiler=theiler, k_max=k_max), X, chunk,
+                ("lyap", float(fs), m, tau, theiler, k_max))
 
 
 def _cd_one(x, m, tau, n_r):
@@ -205,10 +221,10 @@ def _cd_one(x, m, tau, n_r):
 
 def batched_correlation_dimension(X, m: int = 2, tau: int = 1, n_r: int = 10, chunk: int | None = None, **_):
     """:func:`nltsa.correlation_dimension` for every row of ``X`` (B, T) → (B,)."""
-    return _map(partial(_cd_one, m=m, tau=tau, n_r=n_r), X, chunk)
+    return _map(partial(_cd_one, m=m, tau=tau, n_r=n_r), X, chunk, ("cd", m, tau, n_r))
 
 
-def _chaos_one(x, cs, n_cut):
+def _chaos_one(x, cs, *, n_cut):
     N = x.shape[0]
     j = jnp.arange(1, N + 1, dtype=jnp.float32)
     p = jnp.cumsum(x[None, :] * jnp.cos(j[None, :] * cs[:, None]), axis=1)  # (n_c, N)
@@ -236,7 +252,7 @@ def batched_chaos_01(X, n_c: int = 100, seed: int = 0, chunk: int | None = None,
     same as the scalar version (masked roll instead of a variable-length slice)."""
     X = np.asarray(X, np.float32)
     cs = jnp.asarray(np.random.RandomState(seed).uniform(np.pi / 5, 4 * np.pi / 5, n_c), jnp.float32)
-    return _map(partial(_chaos_one, cs=cs, n_cut=X.shape[1] // 10), X, chunk)
+    return _map(partial(_chaos_one, n_cut=X.shape[1] // 10), X, chunk, ("chaos", n_c, seed), cs)
 
 
 def _cheb_count_minus_self(emb, r):
@@ -270,12 +286,12 @@ def _mse_one(x, scales, m, r):
 
 def batched_sample_entropy(X, m: int = 2, r: float = 0.2, chunk: int | None = None, **_):
     """:func:`nltsa.sample_entropy` for every row of ``X`` (B, T) → (B,)."""
-    return _map(lambda x: _sampen_one(x, m, r * jnp.std(x)), X, chunk)
+    return _map(lambda x: _sampen_one(x, m, r * jnp.std(x)), X, chunk, ("sampen", m, float(r)))
 
 
 def batched_mse_sum(X, scales: int = 20, m: int = 2, r: float = 0.15, chunk: int | None = None, **_):
     """:func:`nltsa.mse_sum` for every row of ``X`` (B, T) → (B,)."""
-    return _map(partial(_mse_one, scales=scales, m=m, r=r), X, chunk)
+    return _map(partial(_mse_one, scales=scales, m=m, r=r), X, chunk, ("mse", scales, m, float(r)))
 
 
 # registry: measure name -> (batched fn, output key or None, params that select the shared computation)

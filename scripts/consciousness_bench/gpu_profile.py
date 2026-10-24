@@ -42,3 +42,16 @@ timeit("corr dim (vmap)", jax.vmap(partial(nb._cd_one, m=5, tau=1, n_r=10)), X)
 cs = jnp.asarray(np.random.RandomState(0).uniform(np.pi / 5, 4 * np.pi / 5, 100), jnp.float32)
 timeit("chaos_01 (vmap)", jax.vmap(partial(nb._chaos_one, cs=cs, n_cut=T // 10)), X)
 print("[done]")
+
+# entropy family and lax.map (chunked) vs plain vmap
+timeit("sample_entropy (vmap)", jax.vmap(lambda x: nb._sampen_one(x, 2, 0.2 * jnp.std(x))), X)
+timeit("mse_sum (vmap)", jax.vmap(partial(nb._mse_one, scales=20, m=2, r=0.15)), X)
+Xb = jnp.concatenate([X] * (64 // B + 1))[:64]
+for name, f in (("rqa", partial(nb._rqa_one, m=3, tau=1, recurrence_rate=0.05, l_min=2, v_min=2)),
+                ("mse", partial(nb._mse_one, scales=20, m=2, r=0.15))):
+    for chunk in (8, 16, 64):
+        g = lambda Z, f=f, chunk=chunk: jax.lax.map(f, Z, batch_size=chunk)
+        t = time.perf_counter(); r = jax.jit(g)(Xb); jax.block_until_ready(r)
+        t = time.perf_counter(); r = jax.jit(g)(Xb); jax.block_until_ready(r)
+        print(f"{name} lax.map B=64 chunk={chunk:3d}: run {time.perf_counter()-t:7.3f}s  per item {(time.perf_counter()-t)/64*1000:7.1f} ms", flush=True)
+print("[done2]")
