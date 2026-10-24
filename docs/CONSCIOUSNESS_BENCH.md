@@ -146,6 +146,48 @@ Every value in `nltsa.py` is a plain function with explicit defaults so a
 result table can name the estimator and parameters; the table above is the
 report.
 
+## GPU path (`nltsa_batched.py`, `gpu.sbatch`)
+
+Six measure families are re-expressed as jitted functions over a (B, T)
+stack of channel-epochs and dispatched to the default JAX device when it is
+an accelerator: the recurrence profile (8 RQA / recurrence-network
+measures from one N×N matrix), Rosenstein Lyapunov, correlation
+dimension, 0-1 chaos, sample entropy and multiscale entropy. They were
+~90 % of the per-epoch CPU cost. The rest (Lempel-Ziv parsing, which is
+sequential; ordinal, fractal, Hjorth, DFA, specparam) stay in numpy on
+joblib workers pinned to the CPU backend, running concurrently with the
+device. Parity with the scalar numpy versions (which are the ones checked
+against pyunicorn / nolds / antropy) is float32-exact: on the propofol
+benchmark every batched measure agrees with the 20-core CPU run to
+< 3 × 10⁻⁴ of a between-subject SD and every Cohen's d to four decimals.
+
+GB10 per channel-epoch (10 s at 250 Hz, chunk 64), against one CPU core:
+
+| measure | GPU | numpy, 1 core |
+|---|---|---|
+| recurrence profile (8 measures) | 17 ms | 500 ms |
+| correlation dimension | 6.5 ms | 126 ms |
+| 0-1 chaos | 0.3 ms | 134 ms |
+| Lyapunov | 0.1 ms | 78 ms |
+| multiscale entropy | 2 ms | 30 ms |
+
+Same propofol job (80 recordings × 6 epochs × 10 channels, 43 measures):
+
+| | wall | cores |
+|---|---|---|
+| `run_bench.sbatch` (cpu partition) | 824 s | 20 |
+| `gpu.sbatch` (GB10 + joblib) | 195 s | 8 |
+
+Two things that made the GPU path slower than numpy before they were
+fixed, kept here so they are not re-introduced: (1) the run-length
+histogram for RQA lines used a scatter-add; on the GPU every non-line cell
+is an atomic add into bin 0 and the recurrence profile took 300 s per
+item — it is now a sort + searchsorted; (2) `lax.map` outside `jit`
+re-traces and recompiles on every call when handed a fresh `partial`, so
+the compiled chunked maps are cached by (measure, parameters, chunk, T).
+Matmul precision is forced to "highest" for the adjacency products (TF32
+default on the GB10; see the HIGGS note in the memory file).
+
 ## Datasets
 
 Root: `/data/raw/consciousness-bench/` (override with `CB_ROOT`).
