@@ -76,16 +76,34 @@ def _jitted_map(key: tuple, f, chunk: int):
     return _COMPILED[key]
 
 
+_CHUNK_OK: dict[tuple, int] = {}
+
+
 def _map(f, X, chunk, key: tuple, *extra):
     """vmap ``f`` over the leading axis of ``X`` in chunks of ``chunk`` (lax.map
     batch_size). ``key`` identifies ``f`` and its static parameters for the
-    compile cache; ``extra`` arrays are passed to ``f`` as traced arguments."""
+    compile cache; ``extra`` arrays are passed to ``f`` as traced arguments.
+    If the GPU compiler rejects a fusion at this chunk (XLA's Triton emitter
+    has a 2²⁰-element limit per tile and fails on some (chunk, T) shapes), the
+    chunk is halved and the working value remembered for that (key, T)."""
     X = jnp.asarray(X, jnp.float32)
+    T = X.shape[1]
     if chunk is None:
-        chunk = chunk_size(X.shape[1], 1)
+        chunk = _CHUNK_OK.get(key + (T,), chunk_size(T, 1))
     chunk = int(min(chunk, X.shape[0]))
     with jax.default_matmul_precision("highest"):
-        return _jitted_map(key + (chunk, X.shape[1]), f, chunk)(X, *extra)
+        while True:
+            try:
+                out = _jitted_map(key + (chunk, T), f, chunk)(X, *extra)
+                jax.block_until_ready(out)
+                _CHUNK_OK[key + (T,)] = chunk
+                return out
+            except jax.errors.JaxRuntimeError as e:
+                if chunk == 1 or "Triton" not in str(e):
+                    raise
+                print(f"[nltsa_batched] {key[0]} T={T}: compiler rejected chunk {chunk} ({str(e).splitlines()[0][:80]}); "
+                      f"retrying with {chunk // 2}", flush=True)
+                chunk //= 2
 
 
 def _dist(emb):
