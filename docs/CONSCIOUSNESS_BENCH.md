@@ -153,6 +153,31 @@ MEG (NMDA) and Chennu propofol (GABA-A) as first fits → hierarchical
 maps → simulate from fitted models to test whether they reproduce the
 phasic MSE / Lyapunov / 0-1 chaos residues.
 
+**First fit, Chennu propofol (job 1866, `dcm_propofol.py`; 20 subjects × 4
+levels, one region on the leading spatial mode, 80 inversions, 21 s each):**
+
+| contrast vs baseline | tau_i (GABA-A decay) | Hi (inhibitory gain) | He | C | a_u |
+|---|---|---|---|---|---|
+| mild | −0.09 (d −0.33, p 0.29) | +0.03 | +0.02 | +0.04 | +0.02 |
+| moderate | **−0.40 (d −0.88, p 0.002)** | **+0.20 (d 0.82, p 0.001)** | +0.09 (d 0.81) | **+0.17 (d 1.07, p 1e-4)** | +0.11 (d 0.79) |
+| recovery | +0.08 (d 0.39, p 0.08) | −0.04 (d −0.34, p 0.02) | −0.02 | −0.02 | −0.02 |
+
+(log-scalings; paired Cohen's d and Wilcoxon p over 20 subjects.)  Moderate
+sedation is read by the one-column model as *faster, stronger* inhibition
+with more intrinsic gain — the opposite of the GABA-A expectation (propofol
+prolongs the IPSC) — because a single Jansen-Rit column has one resonance
+and the only way it can produce the propofol ~15-20 Hz beta is a shorter
+inhibitory time constant.  The fits are also poor (RMSE 0.6-0.7 in log
+power; the predicted alpha peak is 0.5 log units above its neighbours
+where the data show 1.8), and the free energy is multimodal on real data
+too (the best of the 4 starts was not the prior start in 8/80 fits; median
+F spread across starts 22 nats).  Conclusion: the inverter works, the
+model is too small.  Next: a two-population (or canonical-microcircuit)
+column with separate alpha and beta generators, several sources with a
+real leadfield, and then the `spm_dcm_csd` parity check (SPM-Python needs
+the x86-only MATLAB Runtime, so on the aarch64 Spark it has to run under
+emulation).  Outputs: `propofol-chennu2016/dcm/{posteriors,fits,spectra,contrasts}.csv`.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
