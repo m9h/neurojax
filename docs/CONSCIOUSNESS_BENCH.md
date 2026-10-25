@@ -538,9 +538,17 @@ Signal-complexity rows only, high-pass × epoch length:
   its epoch length (10 s, because LZ depends on it). Binarisation also
   differs across the psychedelic papers (Hilbert amplitude at the mean
   or median, raw signal at the mean or median) and LZ76 vs LZ78.
-- **Shared data.** Counts are analyses, not datasets: the Carhart-Harris
-  2016 LSD MEG is reanalysed five times, the Imperial DMT EEG four, and
-  the Murphy 2011 propofol EEG twice.
+- **Shared data.** Counts are analyses, not datasets; `dataset_id`
+  groups reanalyses of the same recordings (108 rows → 77 datasets;
+  72 complexity rows → 47 datasets, 13 anaesthesia and 36 psychedelic,
+  with Farnes 2020 and Li 2019 in both). The Massimini/Laureys
+  Milan–Liège propofol/xenon/ketamine TMS-EEG and hd-EEG recordings
+  (Zenodo 806176) account for 8 rows: Casali 2013, Sarasso 2015,
+  Casarotto 2016, Colombo 2019 ×2, Comolatti 2019, Ruiz de Miras 2019
+  and Maschke 2024. The Carhart-Harris 2016 LSD MEG accounts for 6
+  (Schartner 2017, Toker 2022 ×2, Mediano 2024, Rajpal 2022,
+  Muthukumaraswamy & Liley 2018), the Imperial DMT EEG for 5 and the
+  Murphy 2011 propofol EEG for 3 (Barrett 2012, Schartner 2015 ×2).
 
 ### Caveats
 
