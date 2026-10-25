@@ -585,8 +585,8 @@ APIs where marked):
 | Farnes 2020 | ketamine | 10 | no placebo | Dryad (preprocessed) |
 | Sutherland 2026 | psilocybin + midazolam | 8 | open label | Zenodo 17080375 (post-ICA) |
 
-Restricted: Milan–Liège propofol/xenon/ketamine (Zenodo 806176, request
-pending), Oxford ultraslow propofol (Zenodo 1168447), Stanford propofol
+Restricted: Milan–Liège propofol/xenon/ketamine (Zenodo 806176, not yet
+requested), Oxford ultraslow propofol (Zenodo 1168447), Stanford propofol
 (Eagleman 2019), Imperial psilocybin dry-EEG (Godfrey/Lyons). Highest
 value on request: Imperial DMT EEG-fMRI (Timmermann 2023, n = 20,
 placebo), Imperial DMT EEG (Timmermann 2019, n = 13), psilocybin MEG
