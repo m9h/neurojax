@@ -550,6 +550,58 @@ Signal-complexity rows only, high-pass × epoch length:
   Muthukumaraswamy & Liley 2018), the Imperial DMT EEG for 5 and the
   Murphy 2011 propofol EEG for 3 (Barrett 2012, Schartner 2015 ×2).
 
+### Data availability for an EEG/MEG mega-analysis (`consciousness_bench/data_availability.csv`)
+
+Target design: an EEG/MEG analogue of Girn et al. 2026 (Nat Med), which
+pooled 11 raw rs-fMRI psychedelic datasets, ran one fMRIPrep pipeline at
+each site, reported four denoising pipelines and fitted a Bayesian
+hierarchical model with per-study and per-drug hyperpriors. The
+literature table collapses to 63 distinct recordings (reanalyses merged
+via `dataset_id` and notes); 11 further public datasets were found by
+searching OpenNeuro, Zenodo, Dataverse, Dryad, DANDI and PhysioNet.
+Metadata only; nothing downloaded.
+
+| status (63 from the literature) | n |
+|---|---|
+| open | 11 (3 of them derived values only) |
+| restricted (request / DUA) | 4 |
+| on request from authors | 14 |
+| no statement found | 32 |
+| not available | 2 |
+
+Open raw or preprocessed data usable now (verified via the repository
+APIs where marked):
+
+| dataset | drug | n | design | where |
+|---|---|---|---|---|
+| Pallavicini 2021 (in hand) | inhaled DMT | 34 | EO/EC baseline, no placebo | Zenodo 3992359 |
+| Cavanna 2022 (in hand) | psilocybin 0.5 g microdose | ~30 | placebo crossover | Zenodo 5745892 |
+| Chennu 2016 (in hand) | propofol | 20 | baseline/mild/moderate/recovery | Cambridge repository |
+| Carhart-Harris 2016 LSD MEG ✓ | LSD 75 µg IV | 15 pairs | placebo crossover | Harvard Dataverse doi:10.7910/DVN/9Q1SKM, CC0 |
+| Muthukumaraswamy 2015 ketamine MEG ✓ | ketamine | 18 pairs | placebo crossover | same Dataverse deposit |
+| PsiConnect, Stoliker 2026 ✓ | psilocybin 19 mg | 62–65 | baseline vs drug session, BIDS | OpenNeuro ds006110, CC0 |
+| Bajwa, Wisconsin ✓ | propofol sedation | 21 | awake / sedated, 65 ch, BIDS | OpenNeuro ds005620, CC0 |
+| Niedernhuber 2026 | DMT + harmine | 25 | placebo + harmine-only | Zenodo 18850897 (preprocessed) |
+| Farnes 2020 | ketamine | 10 | no placebo | Dryad (preprocessed) |
+| Sutherland 2026 | psilocybin + midazolam | 8 | open label | Zenodo 17080375 (post-ICA) |
+
+Restricted: Milan–Liège propofol/xenon/ketamine (Zenodo 806176, request
+pending), Oxford ultraslow propofol (Zenodo 1168447), Stanford propofol
+(Eagleman 2019), Imperial psilocybin dry-EEG (Godfrey/Lyons). Highest
+value on request: Imperial DMT EEG-fMRI (Timmermann 2023, n = 20,
+placebo), Imperial DMT EEG (Timmermann 2019, n = 13), psilocybin MEG
+(Muthukumaraswamy 2013, n = 15), Prague psilocybin 256-ch time course
+(Nikolic, n = 20), Zurich psilocybin rest + TMS-EEG (Ort 2023, n = 22),
+UCL 5-MeO-DMT (Blackburne 2025, n = 29), Michigan ketamine and
+sevoflurane. No statement but worth asking: Murray 2024 (LSD low dose,
+n = 21) and Lewis-Healey 2026 (inhaled DMT, n = 19). OpenNeuro has no
+LSD, DMT or ayahuasca EEG/MEG.
+
+With what is open today a first pass covers DMT, LSD, psilocybin
+(full dose and microdose), ketamine, DMT + harmine and propofol at
+two sites: about 6 psychedelic and 2 anaesthesia datasets, versus
+Girn's 11.
+
 ### Caveats
 
 - The DMT recordings start at exhalation and run until the self-reported
