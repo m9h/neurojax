@@ -137,6 +137,22 @@ columns:
   and change scores over the time course; treat as detectors to be explained,
   not explanations.
 
+### Mechanistic models (started 2026-10-25)
+
+The spectral results above say the data-side object that matters is the
+full cross-spectrum plus a small non-Gaussian residue, so the next layer is
+a generative model of the spectrum whose parameters are pharmacological:
+`neurojax.inverse.csd_dcm` is a JAX spectral DCM (Jansen-Rit network
+linearised at its fixed point → transfer function → 1/f innovations →
+leadfield → sensor CSD; variational Laplace with free energy;
+`docs/tutorials/spectral_dcm.md`).  Handles: `tau_i`/`Hi` (GABA-A,
+propofol), `He`/`tau_e` (glutamatergic kinetics, ketamine), `A_forward`
+(between-region gains).  Plan: SPM-Python `spm_dcm_csd` parity → ketamine
+MEG (NMDA) and Chennu propofol (GABA-A) as first fits → hierarchical
+(study × drug) priors on the receptor-level parameters → regional receptor
+maps → simulate from fitted models to test whether they reproduce the
+phasic MSE / Lyapunov / 0-1 chaos residues.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
