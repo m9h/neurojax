@@ -470,6 +470,78 @@ CPU cores with n = 20).
   (0.48/0.37 vs 0.19/0.15 at 10 s), and chaos_01, branching ratio and DFA
   again change sign across lengths.
 
+### What filtering and windowing the published literature used (`consciousness_bench/literature_windowing.csv`)
+
+Methods extracted from 108 analyses: the 46 anaesthesia EEG/TMS-EEG
+studies of Sarasso et al. 2021 (Neurosci Conscious, Table 1) plus
+Chennu 2016, Toker 2022, Maschke 2024 and Newman 2026; and 43 human
+EEG/MEG complexity studies under acute psilocybin, LSD, DMT,
+5-MeO-DMT, DMT+harmine or psychedelic-dose ketamine. Each row carries a
+verbatim Methods quote, access status (93 full text, 10 abstract only)
+and `NR` where a value was not reported. `hpf_class`, `epoch_class` and
+`signal_complexity` (single-signal complexity, entropy, criticality or
+aperiodic measure, as opposed to connectivity/spectral) were assigned by
+hand. Yan 2020 (acupoint stimulation, not a drug) is flagged `exclude`.
+Girn et al. 2026 (Nat Med) is an fMRI functional-connectivity
+mega-analysis with whole-scan correlations and only a 128 s DCT
+high-pass, so it is not in the table. No pooled or meta-analysis of
+complexity measures under anaesthesia exists; Sarasso 2021 lists
+studies without methods and Vakitbilir 2026 (BMC Biomed Eng, 94
+BIS/entropy studies) reports heterogeneity qualitatively.
+
+Signal-complexity rows only, high-pass × epoch length:
+
+| literature | high-pass | <2 s | 2–3 s | 4–8 s | 10 s | >10 s | evoked | NR |
+|---|---|---|---|---|---|---|---|---|
+| anaesthesia (24) | none, demean/detrend | 1 | | | 3 | 1 | | |
+| | <0.5 Hz | | | | | | 2 | |
+| | 0.5 Hz | | 1 | 1 | 3 | | | 1 |
+| | 1 Hz | | | | 1 | 1 | 1 | |
+| | NR | | | | | | 4 | 4 |
+| psychedelic (48) | none, demean/detrend | 1 | 2 | | 3 | | | |
+| | <0.5 Hz | | 1 | | 1 | | | 1 |
+| | 0.5 Hz | 2 | 2 | 3 | 1 | | | 1 |
+| | 1 Hz | | 17 | 2 | | 2 | 2 | 1 |
+| | ≥2 Hz | | 1 | | | | | |
+| | band-limited / NR | | | | | 1 | | 4 |
+
+- **The two literatures use different defaults.** Psychedelic EEG/MEG
+  complexity is dominated by one recipe: 1 Hz high-pass and 2–3 s epochs
+  (17 of 48 rows; Schartner 2017, Timmermann 2019/2023, Pallavicini 2021,
+  Cavanna 2022 and most Imperial-lineage reanalyses). The anaesthesia
+  complexity work since 2016 converges on 0.5 Hz and 10 s epochs
+  (Maschke 2024, Newman 2026, both on Chennu-style preprocessing;
+  connectivity papers such as Chennu 2016 and Afshani 2019 use the
+  same), which is this benchmark's
+  reference setting; earlier work is mostly unfiltered or not reported.
+- **Several high-profile analyses keep all slow content.** Toker 2022
+  (anaesthesia ECoG and LSD MEG), Mediano 2024, Li 2019 and Schartner
+  2015's main analysis apply no high-pass, only demean/detrend, on 1–10 s
+  windows. On the DMT data this is the setting that doubled effect sizes
+  for MSE, LZ and RQA measures.
+- **The cutoff decides the sign of DMT LZ on these data.** Our sweep at
+  the psychedelic literature's recipe (1 Hz, 2 s) gives DMT − eyes-open
+  d = +0.33 for envelope LZ76 (the Pallavicini/Schartner binarisation),
+  +0.16 for LZ76 and +0.10 for LZ78. At the anaesthesia recipe (0.5 Hz,
+  10 s) the same contrast is +0.03, −0.05 and −0.14, and with demean
+  only it is −0.17, −0.25 and −0.13. Permutation entropy is +0.33 to
+  +0.41 under all three. The "increased complexity under psychedelics"
+  LZ result is therefore not comparable with the anaesthesia "decreased
+  complexity" result without matching the filter.
+- **Propofol LZ is robust to the same switch; DFA and MSE are not.** At
+  1 Hz / 2 s the propofol moderate − baseline LZ effects stay within 0.1
+  of the reference, but DFA goes −0.07 → −0.91, MSE −0.88 → −1.12 and
+  chaos_01 +0.10 → −0.47.
+- **Only one paper tests its own cutoff.** Schartner 2015 repeated the
+  propofol LZ/ACE/SCE contrasts after a 1 Hz high-pass (subjects with
+  d > 0.8 fell from 7/7 to 5–6/7). Ort 2023 is the only one to justify
+  its epoch length (10 s, because LZ depends on it). Binarisation also
+  differs across the psychedelic papers (Hilbert amplitude at the mean
+  or median, raw signal at the mean or median) and LZ76 vs LZ78.
+- **Shared data.** Counts are analyses, not datasets: the Carhart-Harris
+  2016 LSD MEG is reanalysed five times, the Imperial DMT EEG four, and
+  the Murphy 2011 propofol EEG twice.
+
 ### Caveats
 
 - The DMT recordings start at exhalation and run until the self-reported
