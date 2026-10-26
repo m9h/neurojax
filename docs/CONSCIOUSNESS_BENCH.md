@@ -474,7 +474,15 @@ sedation levels −680 to −890).  Even with 16 starts 78 % of recordings
 have a >3 nat gap between the best and the runner-up: the landscape is
 rugged and the reported F is a lower bound.  The paired moderate effects
 are unchanged (right-frontal sp→sp d +0.74, left-frontal ii→ii −0.52,
-right-frontal ii→ii −0.49; no time-constant effect).
+right-frontal ii→ii −0.49; no time-constant effect).  PEB on this set:
+the drug-present rise of the glutamatergic time constants again (17
+effects above 3 nats across mild / moderate / recovery) and, level-
+specific, moderate left-frontal ii→ii −0.53 (3.4 nats).  Simulation
+comparison (job 1886): linear simulation relative beta 1.25 vs 1.41
+observed, relative alpha −0.91 vs −1.03, MSE −0.78 vs −0.90 (the best
+MSE recovery so far, 87 %), Lyapunov −0.18 vs −0.45, pair correlation
+−0.03 vs −0.17, spurious 0-1 chaos −0.48; amplitude 0.3 adds nothing.
+This is the reference fit set for the next steps.
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
