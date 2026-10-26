@@ -457,10 +457,24 @@ the moments of the good dynamics-only starts agree to 0.01 across starts.
 The prior mean itself is the worst start (−721, a trap of the smoothing
 stage), and fitting the spatial block first with the dynamics pinned
 locks the moments to the prior dynamics (two-stage F −102).  Moment
-randomisation is therefore off by default (`randomise_moments`; the
-synthetic far-off-orientation test keeps it on), and the lateral network
-is being refitted with dynamics-only starts (job 1885,
-`dcm_sources_lateral_dyn/`).
+randomisation was therefore switched off and the lateral network refitted
+with dynamics-only starts (job 1885, `dcm_sources_lateral_dyn/`).
+
+**The single-subject result did not generalise.**  Over the 80 recordings
+the dynamics-only starts agree more often (1.8 of 8 within 3 nats of the
+best, 33 % of fits with two agreeing starts, vs 1.3 and 18 %) but reach
+worse optima overall: −4 449 nats summed against the moment-drawing run,
+better on 29 recordings and worse on 51.  The two kinds of start find
+different optima, so `invert` now draws the moments in half of the extra
+starts by default (`randomise_moments` is that fraction; the synthetic
+test uses 1), and the per-recording best of the two runs — what a
+mixed-start run gives — is `dcm_sources_lateral_best/` (43 recordings
+from the moment run, 37 from the dynamics-only run; baseline F +42, the
+sedation levels −680 to −890).  Even with 16 starts 78 % of recordings
+have a >3 nat gap between the best and the runner-up: the landscape is
+rugged and the reported F is a lower bound.  The paired moderate effects
+are unchanged (right-frontal sp→sp d +0.74, left-frontal ii→ii −0.52,
+right-frontal ii→ii −0.49; no time-constant effect).
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
