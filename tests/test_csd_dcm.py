@@ -328,6 +328,23 @@ class TestCMC:
         assert cosine > 0.95, (cosine, np.asarray(m))
         assert abs(float(jnp.linalg.norm(m) / jnp.linalg.norm(m_true)) - 1.0) < 0.3
 
+    def test_stability_barrier_keeps_linearisation_stable(self):
+        """A sharpened alpha peak drives the unconstrained fit across the Hopf point; the barrier holds it back."""
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        freqs = jnp.linspace(1.0, 45.0, 89)
+        dcm = SpectralDCM(CMCSpec(), leadfield=jnp.eye(1), freqs=freqs)
+        csd = dcm.predict(dcm.prior_mean)
+        boost = 1.0 + 100.0 * jnp.exp(-0.5 * ((freqs - 10.0) / 0.5) ** 2)  # a sharp 10 Hz peak a well-damped model cannot make
+        csd = csd * boost[:, None, None] * (1.0 + 0.03 * jnp.asarray(np.random.default_rng(2).normal(size=csd.shape)))
+        free = dcm.invert(csd, n_iter=48, n_starts=2)
+        assert float(dcm.max_real_eigenvalue(free.Ep)) > -1.0, float(dcm.max_real_eigenvalue(free.Ep))  # at / past the Hopf point
+        safe = SpectralDCM(CMCSpec(), leadfield=jnp.eye(1), freqs=freqs, stability_margin=2.0)
+        held = safe.invert(csd, n_iter=48, n_starts=2)
+        lam = float(safe.max_real_eigenvalue(held.Ep))
+        assert lam < -1.5, lam
+        assert float(held.F) > float(safe.invert(csd, n_iter=0, n_starts=1).F)  # still improves on the prior
+
     def test_matches_spm_linearisation(self):
         """Jacobian spectrum, input and output matrices of the CMC at the prior equal
         SPM25's spm_fx_cmc / spm_gx_erp (exported with SPM-Python on 2026-10-25,

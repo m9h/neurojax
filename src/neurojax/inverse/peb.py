@@ -74,7 +74,7 @@ class PEBResult(NamedTuple):
     bE: jnp.ndarray  # prior mean of vec(beta)
     bC: jnp.ndarray  # prior covariance of vec(beta)
     X: jnp.ndarray
-    n_clipped: int  # negative first-level information eigenvalues set to zero
+    n_clipped: int  # first-level information eigen-directions treated as uninformed (set to zero)
 
 
 def peb(
@@ -87,6 +87,7 @@ def peb(
     n_iter: int = 32,
     shared_gamma: bool = False,
     cov_floor: float = 1e-6,
+    info_threshold: float = 0.1,
 ) -> PEBResult:
     """Fit the second-level model.  ``Ep`` (n_sub, n_par), ``Cp`` (n_sub, n_par, n_par), ``X`` (n_sub, n_cov).
 
@@ -118,13 +119,19 @@ def peb(
     Cp = jnp.einsum("nij,nj,nkj->nik", VC, wC, VC)
     Pp = jnp.linalg.inv(Cp)  # (n, p, p)
     w, V = jnp.linalg.eigh(Pp - P0[None])
-    n_clipped = int(jnp.sum(w < 0))
-    Lam = jnp.einsum("nij,nj,nkj->nik", V, jnp.maximum(w, 0.0), V)  # first-level information, PSD
+    # a direction counts as informed only if the first level gained at least
+    # `info_threshold` of the prior precision there: in a barely-informed
+    # direction the posterior mean differs from the prior mean by optimisation
+    # noise, and the implied data location Λ⁻¹h = O(noise / Λ) is huge, which
+    # drives the between-subject variance to infinity
+    prior_prec_dir = jnp.einsum("nik,ij,njk->nk", V, P0, V)  # vₖᵀ P0 vₖ per direction k
+    keep = w > info_threshold * prior_prec_dir
+    n_clipped = int(jnp.sum(~keep))
+    Lam = jnp.einsum("nij,nj,nkj->nik", V, jnp.where(keep, w, 0.0), V)  # first-level information, PSD
     h = jnp.einsum("nij,nj->ni", Pp, Ep) - (P0 @ pE)[None]  # Pp Ep − P0 pE
     # the linear term must live in the retained directions: a direction with no
-    # information (clipped) cannot carry a location either
-    keep = (w > 0).astype(h.dtype)
-    h = jnp.einsum("nij,nj,nkj,nk->ni", V, keep, V, h)
+    # information cannot carry a location either
+    h = jnp.einsum("nij,nj,nkj,nk->ni", V, keep.astype(h.dtype), V, h)
     # per-subject constant part of the reduction identity (independent of the empirical prior mean)
     const = 0.5 * jax.vmap(_logdet)(Cp * 0 + pC[None]) - 0.5 * jax.vmap(_logdet)(Cp) - 0.5 * (
         jnp.einsum("ni,nij,nj->n", Ep, Pp, Ep) - (pE @ P0 @ pE)

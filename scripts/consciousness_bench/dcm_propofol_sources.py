@@ -13,7 +13,8 @@ network with occipital -> frontal forward and frontal -> occipital backward
 connections is inverted per subject x sedation level.
 
 Outputs under ``$CB_OUT/propofol-chennu2016/dcm_sources_free/`` (or
-``dcm_sources/`` with ``--fixed-orientation``): posteriors.csv, fits.csv,
+``dcm_sources/`` with ``--fixed-orientation``, ``dcm_sources_stable/`` with
+``--stability-margin``): posteriors.csv, fits.csv,
 spectra.csv (observed vs predicted log power of mode 0), contrasts.csv,
 leadfield_<subject>.npz (free-moment leadfield ``L3`` (C, 4, 3), normals
 ``nn``, modes ``U``) and posterior_<subject>_<condition>.npz.
@@ -97,7 +98,8 @@ def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0) 
     return out
 
 
-def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path):
+def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path,
+                stability_margin: float | None = None):
     jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
@@ -116,9 +118,11 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
              sources=list(SOURCES), positions_mm=[picked[k] for k in SOURCES])
     spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(A_FORWARD), A_backward=jnp.asarray(A_BACKWARD))
     if free_orientation:
-        dcm = SpectralDCM(spec, leadfield=jnp.einsum("cm,cik->mik", U, L3), orientation=jnp.asarray(nn), freqs=jnp.asarray(FREQS))
+        dcm = SpectralDCM(spec, leadfield=jnp.einsum("cm,cik->mik", U, L3), orientation=jnp.asarray(nn), freqs=jnp.asarray(FREQS),
+                          stability_margin=stability_margin)
     else:
-        dcm = SpectralDCM(spec, leadfield=jnp.asarray(U.T @ np.einsum("cik,ik->ci", L3, nn)), freqs=jnp.asarray(FREQS))
+        dcm = SpectralDCM(spec, leadfield=jnp.asarray(U.T @ np.einsum("cik,ik->ci", L3, nn)), freqs=jnp.asarray(FREQS),
+                          stability_margin=stability_margin)
     post, fits, spectra = [], [], []
     for cond in CONDITIONS:
         if cond not in by_cond:
@@ -143,10 +147,12 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
         for f, o, p in zip(FREQS, obs[:, 0], pred[:, 0]):
             spectra.append(dict(subject=subject, condition=cond, f=float(f), observed=float(o), predicted=float(p)))
         ep = dict(zip(dcm.names, np.asarray(res.Ep)))
+        max_re = float(dcm.max_real_eigenvalue(res.Ep))
+        fits[-1]["max_re_eig"] = max_re
         mom = dcm.moments(res.Ep)
         mom_txt = "" if mom is None else " |m|=" + ",".join(f"{x:.2f}" for x in np.linalg.norm(np.asarray(mom), axis=1))
         print(f"{subject} {cond:9s} F={float(res.F):9.1f} rmse={rmse:.2f} T_ii(LO,LF)={ep['T[0, 2]']:+.2f},{ep['T[2, 2]']:+.2f} "
-              f"A_fwd(LF<-LO)={ep['A_forward[2, 0]']:+.2f}{mom_txt} {dt:6.0f}s", flush=True)
+              f"A_fwd(LF<-LO)={ep['A_forward[2, 0]']:+.2f}{mom_txt} maxRe={max_re:+.1f} {dt:6.0f}s", flush=True)
     return post, fits, spectra
 
 
@@ -158,15 +164,19 @@ def main():
     ap.add_argument("--n-iter", type=int, default=48)
     ap.add_argument("--n-starts", type=int, default=4)
     ap.add_argument("--fixed-orientation", action="store_true", help="pin dipole moments to the cortical normal")
+    ap.add_argument("--stability-margin", type=float, default=None,
+                    help="soft barrier keeping max Re eigenvalue below -margin (1/s); outputs go to dcm_sources_stable/")
     ap.add_argument("--out", default=os.environ.get("CB_OUT", "/data/datasets/consciousness-bench"))
     a = ap.parse_args()
-    out = Path(a.out) / "propofol-chennu2016" / ("dcm_sources" if a.fixed_orientation else "dcm_sources_free")
+    out = Path(a.out) / "propofol-chennu2016" / (
+        "dcm_sources_stable" if a.stability_margin is not None else "dcm_sources" if a.fixed_orientation else "dcm_sources_free")
     out.mkdir(parents=True, exist_ok=True)
     recs = load_chennu_propofol(subjects=a.subjects)
     subjects = sorted({r.subject for r in recs})
     print(f"{len(recs)} recordings, {len(subjects)} subjects, {a.n_modes} modes", flush=True)
     results = Parallel(n_jobs=a.n_jobs)(
-        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_modes, a.n_iter, a.n_starts, not a.fixed_orientation, out)
+        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_modes, a.n_iter, a.n_starts, not a.fixed_orientation, out,
+                             a.stability_margin)
         for s in subjects
     )
     post = pd.DataFrame([x for r in results for x in r[0]])

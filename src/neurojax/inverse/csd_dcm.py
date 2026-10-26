@@ -320,6 +320,7 @@ def variational_laplace(
     hC: float = 16.0,
     tol: float = 1e-3,
     p0: jnp.ndarray | None = None,
+    penalty: Callable[[jnp.ndarray], jnp.ndarray] | None = None,
 ) -> VLResult:
     """Gauss-Newton variational Laplace (after ``spm_nlsi_GN``).
 
@@ -328,6 +329,11 @@ def variational_laplace(
     posterior over ``p`` fixed) with a trust-region Gauss-Newton update of
     ``p``; a step is kept only if the free energy ``F`` rises.  Returns the
     Laplace posterior and ``F``.
+
+    ``penalty(p)`` is an optional residual vector of unit precision that
+    enters the objective as an extra log-prior term ``−½ ‖penalty(p)‖²``
+    (gradient and Gauss-Newton curvature included; not scaled by ``h``):
+    a soft constraint such as the stability barrier of ``SpectralDCM``.
     """
     y = jnp.asarray(y, dtype=jnp.float64)
     pE = jnp.asarray(pE, dtype=jnp.float64)
@@ -336,13 +342,20 @@ def variational_laplace(
     ipC = jnp.linalg.inv(pC)
     f_jit = jax.jit(f)
     jac = jax.jit(jax.jacfwd(f))
+    if penalty is None:
+        pen_jit = jax.jit(lambda p: jnp.zeros(1))
+        pen_jac = jax.jit(lambda p: jnp.zeros((1, p.shape[0])))
+    else:
+        pen_jit = jax.jit(penalty)
+        pen_jac = jax.jit(jax.jacfwd(penalty))
 
     def free_energy(p, h, e, J):
         iS = jnp.exp(h)
-        Cp = jnp.linalg.inv(J.T @ J * iS + ipC)
+        r, Jr = pen_jit(p), pen_jac(p)
+        Cp = jnp.linalg.inv(J.T @ J * iS + ipC + Jr.T @ Jr)
         ep = p - pE
         L1 = 0.5 * n * h - 0.5 * iS * (e @ e) - 0.5 * n * jnp.log(2 * jnp.pi)
-        L2 = 0.5 * _logdet(ipC) - 0.5 * ep @ ipC @ ep + 0.5 * _logdet(Cp)
+        L2 = 0.5 * _logdet(ipC) - 0.5 * ep @ ipC @ ep + 0.5 * _logdet(Cp) - 0.5 * r @ r
         Ch = 1.0 / (0.5 * iS * (e @ e + jnp.trace(J @ Cp @ J.T)) + 1.0 / hC)
         L3 = -0.5 * jnp.log(hC) - 0.5 * (h - hE) ** 2 / hC + 0.5 * jnp.log(Ch)
         return L1 + L2 + L3, Cp
@@ -372,7 +385,7 @@ def variational_laplace(
     v = 1.0  # trust-region scale on the Gauss-Newton step
     for _ in range(n_iter):
         iS = jnp.exp(h)
-        g = J.T @ e * iS - ipC @ (p - pE)
+        g = J.T @ e * iS - ipC @ (p - pE) - pen_jac(p).T @ pen_jit(p)
         dp = Cp @ g
         accepted = False
         for _ in range(8):
@@ -455,6 +468,8 @@ class SpectralDCM:
     fixed: tuple[str, ...] = ()
     orientation: jnp.ndarray | None = None
     moment_var: float = 1.0
+    stability_margin: float | None = None
+    stability_weight: float = 10.0
     params: tuple[_Param, ...] = field(init=False)
     _noise_default: float = field(init=False)
 
@@ -570,6 +585,15 @@ class SpectralDCM:
         a_n = self._spectral(p, "a_n")[0] * self._noise_default
         a_c = self._spectral(p, "a_c")[0] * self._noise_default
         return shape * (a_n * jnp.eye(nc) + a_c * jnp.ones((nc, nc))) + 0j
+
+    def max_real_eigenvalue(self, p: jnp.ndarray) -> jnp.ndarray:
+        """Largest real part of the network Jacobian's eigenvalues at ``p`` (1/s; < 0 is stable)."""
+        A, _, _ = linearise(self.spec, self.theta(p))
+        return jnp.max(jnp.real(jnp.linalg.eigvals(A)))
+
+    def _stability_residual(self, p: jnp.ndarray) -> jnp.ndarray:
+        """Unit-precision residual ``weight · softplus(max Re λ + margin)`` (see ``invert``)."""
+        return jnp.atleast_1d(self.stability_weight * jax.nn.softplus(self.max_real_eigenvalue(p) + self.stability_margin))
 
     def _sensor_csd(self, p: jnp.ndarray, include_noise: bool = True, freqs: jnp.ndarray | None = None) -> jnp.ndarray:
         freqs = self.freqs if freqs is None else freqs
@@ -703,7 +727,20 @@ class SpectralDCM:
         along frequency with each ``sigma`` in Hz in turn, each stage
         starting from the previous posterior mean.  ``F`` and the posterior
         come from the last stage of the best start.
+
+        With ``stability_margin`` (1/s) set on the model, a soft barrier
+        keeps the posterior's linearisation stable: the residual
+        ``stability_weight · softplus(max Re λ + margin)`` of unit precision
+        is added to the objective, i.e. an eigenvalue ``x`` 1/s past
+        ``−margin`` costs about ``½ (weight x)²`` nats (weight 10: 50 nats
+        at 1/s past the margin; weight 1 lets the fit sit at the margin).  Without it the
+        inverter sharpens a spectral peak by pushing the corresponding mode
+        across the Hopf point (48 of 80 Chennu propofol fits), where the
+        transfer-function CSD is still defined but describes no stationary
+        process.
         """
+        if self.stability_margin is not None:
+            kw = dict(kw, penalty=self._stability_residual)
         csd = jnp.asarray(csd, dtype=jnp.complex128)
         if csd.shape != (self.freqs.shape[0], self.leadfield.shape[0], self.leadfield.shape[0]):
             raise ValueError(f"csd shape {csd.shape} does not match (n_freq, n_sensors, n_sensors)")
