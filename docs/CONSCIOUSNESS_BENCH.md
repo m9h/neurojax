@@ -224,6 +224,24 @@ starts, and no lateral connections are the likely causes.  Treat the
 frontal `T_ii` result as a lead to confirm with the SPM parity check and a
 better-converged fit, not as a finding.
 
+**Second level (`neurojax.inverse.peb`, `dcm_peb.py`, job 1869 refit of
+the one-source CMC with full posterior covariances):** parametric
+empirical Bayes with subject indicator columns plus mild / moderate /
+recovery columns, Bayesian model reduction for each effect.  Effects with
+> 3 nats of evidence: mild and moderate raise the superficial-pyramidal
+time constant `T_sp` (+0.74 ± 0.20, 7 nats) and `T_ss` (+0.5-0.6 ± 0.16,
+4-6 nats) and lower `G_ss→sp` (−0.45 ± 0.16); recovery raises `T_ss`
+(+0.72 ± 0.15, 11 nats) and `T_ii` (+0.70 ± 0.19, 6 nats).  268 of 1520
+first-level information eigenvalues are non-positive (parameters the
+one-source fit did not learn about), so the hierarchy is working on a
+weak first level: with recovery looking as different from baseline as
+moderate sedation, the one-source CMC posteriors are not yet
+pharmacologically interpretable, and the PEB result is a demonstration of
+the machinery (the per-study / per-drug hyperprior layer of the planned
+mega-analysis) rather than a finding.  The first-level fits also changed
+between runs when the CMC input gain was aligned to SPM (512), i.e. the
+posteriors are sensitive to the innovation scale.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
