@@ -744,11 +744,14 @@ class SpectralDCM:
 def _gaussian_series(S: jnp.ndarray, fs: float, n: int, key: jax.Array) -> jnp.ndarray:
     """``(C, n)`` real Gaussian series whose one-sided CSD on the rfft grid is ``S`` ``(n//2+1, C, C)``.
 
-    ``X_k = sqrt(fs n / 2) chol(S_k) z_k`` with unit complex-normal ``z_k`` and
+    ``X_k = sqrt(fs n / 2) S_k^{1/2} z_k`` with unit complex-normal ``z_k`` and
     ``x = irfft(X)``, so ``Var x = Σ_k S_kk Δf``; the DC bin is zero.
     """
     nf, c, _ = S.shape
-    Lc = jnp.linalg.cholesky(S + 1e-12 * jnp.trace(S.real, axis1=1, axis2=2).mean() * jnp.eye(c))
+    # Hermitian square root by eigendecomposition (a Cholesky factor fails on the
+    # numerically indefinite CSDs of a low-rank source model on many sensors)
+    w, V = jnp.linalg.eigh(0.5 * (S + jnp.conj(jnp.swapaxes(S, 1, 2))))
+    Lc = V * jnp.sqrt(jnp.maximum(w, 0.0))[:, None, :]
     k1, k2 = jax.random.split(key)
     z = (jax.random.normal(k1, (nf, c)) + 1j * jax.random.normal(k2, (nf, c))) / jnp.sqrt(2.0)
     X = jnp.sqrt(fs * n / 2.0) * jnp.einsum("fij,fj->fi", Lc, z)

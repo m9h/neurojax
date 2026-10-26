@@ -7,9 +7,13 @@ empirical Bayes model with design ``[subject indicators, mild, moderate, recover
 with its posterior sd and the Bayesian-model-reduction evidence (nats) for
 keeping it.
 
+The between-subject covariance is one component scaled by a single
+log-precision (as ``spm_dcm_peb``); ``--per-parameter-gamma`` estimates one
+per parameter (slow beyond ~20 parameters).
+
 Usage::
 
-    python scripts/consciousness_bench/dcm_peb.py /data/datasets/consciousness-bench/propofol-chennu2016/dcm_cmc
+    python scripts/consciousness_bench/dcm_peb.py /data/datasets/consciousness-bench/propofol-chennu2016/dcm_cmc [--per-parameter-gamma]
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from neurojax.inverse.peb import bmr_effects, peb  # noqa: E402
 COND = ["mild", "moderate", "recovery"]
 
 
-def main(d: Path):
+def main(d: Path, shared_gamma: bool = True):
     files = sorted(d.glob("posterior_*.npz"))
     rows, Ep, Cp = [], [], []
     for f in files:
@@ -42,9 +46,8 @@ def main(d: Path):
     # subject indicator columns (fixed effects for the pairing) + sedation-level columns; no intercept
     X = np.column_stack([[1.0 if s == sub else 0.0 for s, _ in rows] for sub in subjects]
                         + [[1.0 if c == k else 0.0 for _, c in rows] for k in COND])
-    n_sub = len(subjects)
     print(f"{len(rows)} recordings, {Ep.shape[1]} parameters, design {X.shape}", flush=True)
-    res = peb(jnp.asarray(Ep), jnp.asarray(Cp), jnp.asarray(pE), jnp.asarray(pC), jnp.asarray(X))
+    res = peb(jnp.asarray(Ep), jnp.asarray(Cp), jnp.asarray(pE), jnp.asarray(pC), jnp.asarray(X), shared_gamma=shared_gamma)
     dF = bmr_effects(res)
     sd = np.sqrt(np.diag(np.asarray(res.Cb))).reshape(res.Eb.shape)
     out = []
@@ -59,4 +62,4 @@ def main(d: Path):
 
 
 if __name__ == "__main__":
-    main(Path(sys.argv[1]))
+    main(Path(sys.argv[1]), shared_gamma="--per-parameter-gamma" not in sys.argv[2:])

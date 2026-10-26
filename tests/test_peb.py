@@ -4,7 +4,6 @@ Laplace posteriors (Friston et al. 2016) with Bayesian model reduction."""
 import jax
 import jax.numpy as jnp
 import numpy as np
-import pytest
 
 jax.config.update("jax_enable_x64", True)
 
@@ -99,3 +98,22 @@ class TestPEBPairedDesign:
         dF = bmr_effects(res)[n_sub:]
         assert dF[1, 0] > 10, dF
         assert np.all(dF[other] < 3), dF
+
+
+def test_shared_gamma_matches_per_parameter_on_homogeneous_data():
+    """With one between-subject log-precision the fit is close to the per-parameter one when all parameters share it."""
+    from neurojax.inverse.peb import peb
+
+    rng = np.random.default_rng(11)
+    n, p = 24, 4
+    pE, pC = jnp.zeros(p), jnp.eye(p) * 0.25
+    X = jnp.asarray(np.column_stack([np.ones(n), rng.normal(size=n)]))
+    beta = np.array([[0.2, -0.1, 0.0, 0.3], [0.4, 0.0, 0.0, 0.0]])
+    theta = np.asarray(X) @ beta + rng.normal(size=(n, p)) * 0.2
+    Cp = jnp.asarray(np.tile(np.eye(p) * 0.01, (n, 1, 1)))
+    Ep = jnp.asarray(theta + rng.normal(size=(n, p)) * 0.1)
+    full = peb(Ep, Cp, pE, pC, X)
+    shared = peb(Ep, Cp, pE, pC, X, shared_gamma=True)
+    assert shared.gamma.shape == (1,)
+    assert np.allclose(np.asarray(full.Eb), np.asarray(shared.Eb), atol=0.05)
+    assert np.allclose(np.sqrt(np.diag(np.asarray(shared.Sigma))), 0.2, atol=0.1)

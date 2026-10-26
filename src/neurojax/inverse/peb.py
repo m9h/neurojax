@@ -85,6 +85,7 @@ def peb(
     X: jnp.ndarray,
     gamma_prior_var: float = 4.0,
     n_iter: int = 32,
+    shared_gamma: bool = False,
 ) -> PEBResult:
     """Fit the second-level model.  ``Ep`` (n_sub, n_par), ``Cp`` (n_sub, n_par, n_par), ``X`` (n_sub, n_cov).
 
@@ -97,7 +98,11 @@ def peb(
     inverted; its negative eigenvalues (directions where the Laplace
     posterior is broader than the prior) are clipped to zero, and the number
     clipped is reported.  The prior on each row of ``beta`` is ``N(0, pC)``
-    and ``gamma ~ N(0, gamma_prior_var)`` with ``Sigma = diag(pC) exp(−gamma)``.
+    and ``gamma ~ N(0, gamma_prior_var)`` with ``Sigma = diag(pC) exp(−gamma)``;
+    ``gamma`` has one entry per parameter, or a single entry with
+    ``shared_gamma`` (one covariance component scaled by one log-precision,
+    the ``spm_dcm_peb`` default, and far cheaper for many parameters: the
+    Newton step needs a Hessian in ``gamma``).
     """
     Ep, Cp, pE, pC, X = (jnp.asarray(a, dtype=jnp.float64) for a in (Ep, Cp, pE, pC, X))
     n, p = Ep.shape
@@ -123,8 +128,10 @@ def peb(
     A = jnp.einsum("nc,kq->nkcq", X, jnp.eye(p)).reshape(n, p, c * p)
     sig_base = jnp.diag(pC)
 
+    n_gamma = 1 if shared_gamma else p
+
     def free_energy(gamma):
-        Sigma = jnp.diag(sig_base * jnp.exp(-gamma))
+        Sigma = jnp.diag(sig_base * jnp.exp(-(gamma if not shared_gamma else jnp.repeat(gamma, p))))
         Pr = jnp.linalg.inv(Sigma)
         Q = Pr[None] + Lam  # (n, p, p)
         Qinv = jnp.linalg.inv(Q)
@@ -143,14 +150,14 @@ def peb(
             - 0.5 * _logdet(Pb)
             + 0.5 * Eb @ Pb @ Eb
             - 0.5 * gamma @ gamma / gamma_prior_var
-            - 0.5 * p * jnp.log(2 * jnp.pi * gamma_prior_var)
+            - 0.5 * n_gamma * jnp.log(2 * jnp.pi * gamma_prior_var)
         )
         return F, (Eb, Pb, Sigma)
 
     f = jax.jit(lambda g: free_energy(g)[0])
     grad = jax.jit(jax.grad(f))
     hess = jax.jit(jax.hessian(f))
-    gamma = jnp.zeros(p)
+    gamma = jnp.zeros(n_gamma)
     F = f(gamma)
     for _ in range(n_iter):
         H = hess(gamma)
