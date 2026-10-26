@@ -345,6 +345,24 @@ the spectral contrasts at every amplitude (relative beta d 0.4) because
 48 of the 80 fits are unstable; the stability-constrained, pooled-modes
 refit (job 1876, `dcm_sources_stable/`) is the one to redo this with.
 
+**Stability-constrained, pooled-modes fits (job 1876,
+`dcm_sources_stable/`, `--stability-margin 2`):** a soft barrier on the
+leading eigenvalue (unit-precision residual `10 · softplus(max Re λ + 2)`
+inside variational Laplace; `SpectralDCM(stability_margin=...)`) and
+spatial modes from the covariance pooled over the four levels.  All 80
+linearisations are now stable (max Re λ −1.7 to −7/s).  The price is
+telling: baseline F *rises* (−337 vs −746, pooled modes) while the three
+sedation levels lose ~500 nats each (mild −1054, moderate −1060, recovery
+−1222; log-power RMSE 0.39-0.43 vs 0.33 at baseline) — the sedation
+spectra want a sharper alpha than any stable linear model produces at this
+noise level, i.e. the propofol alpha behaves like a near- or
+super-critical mode.  Paired contrasts weaken but keep their sign:
+moderate − baseline left-frontal `G_ii→ii` −0.59 (d −0.67, p 0.004),
+left-occipital `G_ii→ii` −0.30 (d −0.53), frontal `G_sp→sp` +0.29-0.30
+(d 0.53-0.59), frontal `T_ss` +0.21-0.27 (d 0.46); no `T_ii` effect
+survives; 84 of 320 extrinsic gains still sit > 3 prior SD out and the F
+spread across starts is unchanged (median 129 nats).
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
