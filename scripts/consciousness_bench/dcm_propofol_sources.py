@@ -1,18 +1,22 @@
 """Multi-source spectral DCM on the Chennu 2016 propofol data (CMC, real leadfield).
 
 Four cortical sources (left/right occipital, left/right frontal; fsaverage
-ico-5 vertices nearest to the MNI targets, fixed orientation = cortical
-normal) are projected to the 91-channel EGI montage through the fsaverage
-three-layer BEM (MNE, fiducials estimated from the montage).  As in
+ico-5 vertices nearest to the MNI targets) are projected to the 91-channel
+EGI montage through the fsaverage three-layer BEM (MNE, fiducials estimated
+from the montage).  By default each source's dipole moment is a free
+parameter with the cortical normal as prior mean (as the ECD moments of
+``spm_L_priors``); ``--fixed-orientation`` pins it to the normal.  As in
 ``spm_dcm_csd`` the sensor data are reduced to ``--n-modes`` spatial modes
 (PCA of each subject's baseline covariance; the same modes for every
 level) and the leadfield is projected onto them.  A canonical-microcircuit
 network with occipital -> frontal forward and frontal -> occipital backward
 connections is inverted per subject x sedation level.
 
-Outputs under ``$CB_OUT/propofol-chennu2016/dcm_sources/``: posteriors.csv,
-fits.csv, spectra.csv (observed vs predicted log power of mode 0),
-contrasts.csv, leadfield_<subject>.npz.
+Outputs under ``$CB_OUT/propofol-chennu2016/dcm_sources_free/`` (or
+``dcm_sources/`` with ``--fixed-orientation``): posteriors.csv, fits.csv,
+spectra.csv (observed vs predicted log power of mode 0), contrasts.csv,
+leadfield_<subject>.npz (free-moment leadfield ``L3`` (C, 4, 3), normals
+``nn``, modes ``U``) and posterior_<subject>_<condition>.npz.
 
 Usage::
 
@@ -52,8 +56,8 @@ A_FORWARD = np.array([[0, 0, 0, 0], [0, 0, 0, 0], [400, 0, 0, 0], [0, 400, 0, 0]
 A_BACKWARD = np.array([[0, 0, 400, 0], [0, 0, 0, 400], [0, 0, 0, 0], [0, 0, 0, 0]], float)
 
 
-def build_leadfield(info: mne.Info) -> tuple[np.ndarray, dict]:
-    """(n_channels, 4) fixed-orientation EEG leadfield on fsaverage for this montage."""
+def build_leadfield(info: mne.Info) -> tuple[np.ndarray, np.ndarray, dict]:
+    """Free-moment EEG leadfield ``(n_channels, 4, 3)``, cortical normals ``(4, 3)`` and picked positions."""
     fs_dir = Path(fetch_fsaverage(verbose="ERROR"))
     subjects_dir = fs_dir.parent
     src_all = mne.read_source_spaces(fs_dir / "bem" / "fsaverage-ico-5-src.fif", verbose="ERROR")
@@ -73,9 +77,8 @@ def build_leadfield(info: mne.Info) -> tuple[np.ndarray, dict]:
     coreg.fit_icp(n_iterations=6, nasion_weight=2.0, verbose="ERROR")
     bem = fs_dir / "bem" / "fsaverage-5120-5120-5120-bem-sol.fif"
     fwd = mne.make_forward_solution(info, coreg.trans, vol, bem, meg=False, eeg=True, verbose="ERROR")
-    fwd = mne.convert_forward_solution(fwd, force_fixed=True, use_cps=False, verbose="ERROR")
-    L = fwd["sol"]["data"]  # (n_ch, 4), average-referenced by MNE for EEG
-    return L, picked
+    L3 = fwd["sol"]["data"].reshape(info["nchan"], len(SOURCES), 3)  # average-referenced by MNE for EEG
+    return L3, np.asarray(ori), picked
 
 
 def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0) -> np.ndarray:
@@ -94,7 +97,7 @@ def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0) 
     return out
 
 
-def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, out: Path):
+def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path):
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
         return [], [], []
@@ -104,14 +107,17 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
         Path(os.environ.get("CB_ROOT", "/data/raw/consciousness-bench")) / "propofol-chennu2016" / "unzipped"
         / "Sedation-RestingState" / f"{base.meta['file']}.set", verbose="ERROR").get_montage()
     info.set_montage(montage)
-    L, picked = build_leadfield(info)
+    L3, nn, picked = build_leadfield(info)
     X = base.data - base.data.mean(axis=1, keepdims=True)
     U, s, _ = np.linalg.svd(X @ X.T / X.shape[1])
     U = U[:, :n_modes]
-    np.savez(out / f"leadfield_{subject}.npz", L=L, U=U, explained=(s[:n_modes].sum() / s.sum()), channels=base.channels,
+    np.savez(out / f"leadfield_{subject}.npz", L3=L3, nn=nn, U=U, explained=(s[:n_modes].sum() / s.sum()), channels=base.channels,
              sources=list(SOURCES), positions_mm=[picked[k] for k in SOURCES])
     spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(A_FORWARD), A_backward=jnp.asarray(A_BACKWARD))
-    dcm = SpectralDCM(spec, leadfield=jnp.asarray(U.T @ L), freqs=jnp.asarray(FREQS))
+    if free_orientation:
+        dcm = SpectralDCM(spec, leadfield=jnp.einsum("cm,cik->mik", U, L3), orientation=jnp.asarray(nn), freqs=jnp.asarray(FREQS))
+    else:
+        dcm = SpectralDCM(spec, leadfield=jnp.asarray(U.T @ np.einsum("cik,ik->ci", L3, nn)), freqs=jnp.asarray(FREQS))
     post, fits, spectra = [], [], []
     for cond in CONDITIONS:
         if cond not in by_cond:
@@ -136,8 +142,10 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
         for f, o, p in zip(FREQS, obs[:, 0], pred[:, 0]):
             spectra.append(dict(subject=subject, condition=cond, f=float(f), observed=float(o), predicted=float(p)))
         ep = dict(zip(dcm.names, np.asarray(res.Ep)))
+        mom = dcm.moments(res.Ep)
+        mom_txt = "" if mom is None else " |m|=" + ",".join(f"{x:.2f}" for x in np.linalg.norm(np.asarray(mom), axis=1))
         print(f"{subject} {cond:9s} F={float(res.F):9.1f} rmse={rmse:.2f} T_ii(LO,LF)={ep['T[0, 2]']:+.2f},{ep['T[2, 2]']:+.2f} "
-              f"A_fwd(LF<-LO)={ep['A_forward[2, 0]']:+.2f} {dt:6.0f}s", flush=True)
+              f"A_fwd(LF<-LO)={ep['A_forward[2, 0]']:+.2f}{mom_txt} {dt:6.0f}s", flush=True)
     return post, fits, spectra
 
 
@@ -147,16 +155,18 @@ def main():
     ap.add_argument("--n-jobs", type=int, default=20)
     ap.add_argument("--n-modes", type=int, default=6)
     ap.add_argument("--n-iter", type=int, default=48)
-    ap.add_argument("--n-starts", type=int, default=2)
+    ap.add_argument("--n-starts", type=int, default=4)
+    ap.add_argument("--fixed-orientation", action="store_true", help="pin dipole moments to the cortical normal")
     ap.add_argument("--out", default=os.environ.get("CB_OUT", "/data/datasets/consciousness-bench"))
     a = ap.parse_args()
-    out = Path(a.out) / "propofol-chennu2016" / "dcm_sources"
+    out = Path(a.out) / "propofol-chennu2016" / ("dcm_sources" if a.fixed_orientation else "dcm_sources_free")
     out.mkdir(parents=True, exist_ok=True)
     recs = load_chennu_propofol(subjects=a.subjects)
     subjects = sorted({r.subject for r in recs})
     print(f"{len(recs)} recordings, {len(subjects)} subjects, {a.n_modes} modes", flush=True)
     results = Parallel(n_jobs=a.n_jobs)(
-        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_modes, a.n_iter, a.n_starts, out) for s in subjects
+        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_modes, a.n_iter, a.n_starts, not a.fixed_orientation, out)
+        for s in subjects
     )
     post = pd.DataFrame([x for r in results for x in r[0]])
     fits = pd.DataFrame([x for r in results for x in r[1]])

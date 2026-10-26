@@ -423,12 +423,18 @@ class _Param:
 class SpectralDCM:
     """Jansen-Rit DCM for cross-spectral density.
 
-    Parameters (all log-scalings, prior mean 0):
+    Parameters (log-scalings except ``L``, which is additive; prior mean 0):
+
+    ``leadfield`` is ``(n_sensors, n_regions)`` for fixed dipoles or
+    ``(n_sensors, n_regions, 3)`` for free dipole moments, in which case
+    ``orientation`` ``(n_regions, 3)`` is the prior-mean moment (e.g. the
+    cortical normal) and ``moment_var`` the prior variance of each component.
 
     ===========  ======================  ==========  ===========
     name         shape                   prior var   default
     ===========  ======================  ==========  ===========
     column       spec.param_spec()       1/16, 1/8   Jansen-Rit: He, Hi, tau_e, tau_i, C, A_forward; CMC: T, G, A_forward, A_backward
+    L            per region x 3          moment_var  dipole moment minus ``orientation`` (free-moment leadfield only)
     a_u          per region              1/4         innovation amplitude
     b_u          scalar                  1/16        innovation 1/f exponent (1)
     a_n          scalar                  1/4         channel-specific noise amplitude
@@ -447,6 +453,8 @@ class SpectralDCM:
     freqs: jnp.ndarray
     noise_fraction: float = 0.01
     fixed: tuple[str, ...] = ()
+    orientation: jnp.ndarray | None = None
+    moment_var: float = 1.0
     params: tuple[_Param, ...] = field(init=False)
     _noise_default: float = field(init=False)
 
@@ -455,9 +463,21 @@ class SpectralDCM:
         L = jnp.asarray(self.leadfield, dtype=jnp.float64)
         if L.shape[1] != n:
             raise ValueError(f"leadfield has {L.shape[1]} sources, spec has {n} regions")
+        if L.ndim == 3:
+            if L.shape[2] != 3 or self.orientation is None:
+                raise ValueError("a free-moment leadfield is (n_sensors, n_regions, 3) and needs `orientation` (n_regions, 3)")
+            object.__setattr__(self, "orientation", jnp.asarray(self.orientation, dtype=jnp.float64).reshape(n, 3))
+        elif L.ndim != 2:
+            raise ValueError("leadfield must be (n_sensors, n_regions) or (n_sensors, n_regions, 3)")
         object.__setattr__(self, "leadfield", L)
         object.__setattr__(self, "freqs", jnp.asarray(self.freqs, dtype=jnp.float64))
         params = [_Param(name, idx, var) for name, idx, var in self.spec.param_spec()]
+        if L.ndim == 3:
+            # dipole moment of region i = orientation[i] + L[i, :] (additive, so the
+            # moment can rotate and flip; cf. spm_L_priors ECD moments, prior mean 0 /
+            # variance 64 there — a zero-moment prior mean is a stationary point of
+            # our log-power features, hence the given orientation as prior mean)
+            params += [_Param("L", (i, k), self.moment_var) for i in range(n) for k in range(3)]
         params += [_Param("a_u", (i,), 1 / 16) for i in range(n)]
         # spectral nuisance priors are tight (as in spm_csd_mtf, 1/128) so the
         # 1/f terms cannot absorb what the neural-mass parameters should explain
@@ -524,6 +544,19 @@ class SpectralDCM:
         ks = [k for k, prm in enumerate(self.params) if prm.name == name]
         return jnp.exp(p[jnp.array(ks)])
 
+    def moments(self, p: jnp.ndarray) -> jnp.ndarray | None:
+        """Dipole moments ``(n_regions, 3)`` for a free-moment leadfield (``None`` for a fixed one)."""
+        if self.leadfield.ndim != 3:
+            return None
+        ks = [k for k, prm in enumerate(self.params) if prm.name == "L"]
+        return self.orientation + p[jnp.array(ks)].reshape(self.spec.n_regions, 3)
+
+    def effective_leadfield(self, p: jnp.ndarray) -> jnp.ndarray:
+        """``(n_sensors, n_regions)`` leadfield at parameters ``p``."""
+        if self.leadfield.ndim == 2:
+            return self.leadfield
+        return jnp.einsum("cik,ik->ci", self.leadfield, self.moments(p))
+
     def _sensor_csd(self, p: jnp.ndarray, include_noise: bool = True) -> jnp.ndarray:
         th = self.theta(p)
         A, B, C = linearise(self.spec, th)
@@ -532,7 +565,7 @@ class SpectralDCM:
         b_u = self._spectral(p, "b_u")[0]
         G_u = self._spectral(p, "a_u")[None, :] * f ** (-b_u)  # (nf, n)
         S_src = jnp.einsum("fij,fj,fkj->fik", H, G_u.astype(jnp.complex128), jnp.conj(H))
-        L = self.leadfield
+        L = self.effective_leadfield(p)
         S = jnp.einsum("ci,fij,dj->fcd", L, S_src, L)
         if include_noise:
             nc = L.shape[0]
@@ -591,7 +624,8 @@ class SpectralDCM:
         synaptic parameters (e.g. a lower inhibitory gain with a shorter
         inhibitory time constant mimics a longer one), so the inversion is
         run from ``n_starts`` points — the prior mean plus ``n_starts - 1``
-        draws from the prior over the neural-mass parameters (seeded) — and
+        draws from the prior over the neural-mass parameters and dipole
+        moments (seeded) — and
         the start with the highest ``F`` is returned (``F_starts`` lists
         all).  ``smooth_schedule`` is a coarse-to-fine continuation within
         each start: features (model and data alike) are Gaussian-smoothed
@@ -606,7 +640,10 @@ class SpectralDCM:
         data_power = float(jnp.mean(jnp.real(jnp.diagonal(csd, axis1=1, axis2=2))))
         scale = prior_power / data_power
         y_full = self.features(csd * scale)
-        dyn = jnp.array([p.name in self.dynamic_names for p in self.params])
+        # randomise the neural-mass parameters and (free) dipole moments: the log-power
+        # features have a barrier wherever a sensor projection L·m changes sign, so a
+        # moment of the wrong sign pattern is a local optimum of its own
+        dyn = jnp.array([p.name in self.dynamic_names or p.name == "L" for p in self.params])
         sd = jnp.sqrt(jnp.diag(self.prior_cov)) * dyn
         draws = jax.random.normal(jax.random.PRNGKey(seed), (max(n_starts - 1, 0), self.n_params)) * sd
         starts = [self.prior_mean] + [self.prior_mean + d for d in draws]

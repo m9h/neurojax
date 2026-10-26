@@ -304,6 +304,30 @@ class TestCMC:
         err = float(jnp.abs(res.Ep[i] - theta_true[i]))
         assert err < 0.15, (err, float(jnp.sqrt(res.Cp[i, i])))
 
+    def test_free_dipole_moments_recover_orientation(self):
+        """A (sensors, regions, 3) leadfield frees each source's dipole moment (prior mean = given orientation)."""
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        L3 = jnp.asarray(np.random.default_rng(1).normal(size=(4, 1, 3)))
+        ori = jnp.array([[1.0, 0.0, 0.0]])
+        dcm = SpectralDCM(CMCSpec(), leadfield=L3, orientation=ori, freqs=jnp.linspace(1.0, 45.0, 45))
+        assert dcm.index("L", 0, 2) >= 0 and dcm.index("L", 0, 0) < dcm.index("L", 0, 2)
+        # prior-mean prediction equals the fixed-orientation model
+        fixed = SpectralDCM(CMCSpec(), leadfield=jnp.einsum("cik,ik->ci", L3, ori), freqs=dcm.freqs)
+        assert np.allclose(np.asarray(dcm.predict(dcm.prior_mean)), np.asarray(fixed.predict(fixed.prior_mean)))
+        m_true = jnp.array([0.4, 1.1, -0.3])  # rotated and larger than the prior orientation
+        theta_true = dcm.prior_mean
+        for k in range(3):
+            theta_true = theta_true.at[dcm.index("L", 0, k)].set(m_true[k] - ori[0, k])
+        rng = np.random.default_rng(3)
+        csd = dcm.predict(theta_true)
+        csd = csd * (1.0 + 0.03 * jnp.asarray(rng.normal(size=csd.shape)))
+        res = dcm.invert(csd, n_iter=48, n_starts=4)
+        m = ori[0] + jnp.array([res.Ep[dcm.index("L", 0, k)] for k in range(3)])
+        cosine = abs(float(m @ m_true / (jnp.linalg.norm(m) * jnp.linalg.norm(m_true))))  # m and -m give the same CSD
+        assert cosine > 0.95, (cosine, np.asarray(m))
+        assert abs(float(jnp.linalg.norm(m) / jnp.linalg.norm(m_true)) - 1.0) < 0.3
+
     def test_matches_spm_linearisation(self):
         """Jacobian spectrum, input and output matrices of the CMC at the prior equal
         SPM25's spm_fx_cmc / spm_gx_erp (exported with SPM-Python on 2026-10-25,
