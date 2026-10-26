@@ -332,6 +332,19 @@ found to be low by a factor `nfft` and ~250× slower than necessary (dense
 DPSS eigenproblem per call); both fixed 2026-10-25 — absolute spectral
 levels in earlier tables are off by that constant, nothing relative is.
 
+**Simulation comparison on the float64 posteriors (job 1874,
+amplitudes 0 / 0.1 / 0.3 / 1):** the linear simulation again carries the
+spectral family (relative beta d 1.14 / 1.20 vs 1.13 / 1.41 for mild /
+moderate, Hjorth mobility 0.82 vs 0.86, aperiodic exponent −0.53 vs −0.61,
+Higuchi 0.45 vs 0.75, LZ76 0.54 vs 0.79) and now also most of the
+multiscale-entropy drop under moderate sedation (−0.63 vs −0.90; the
+float32 fits gave −0.23), but not the Lyapunov exponent (0.01 vs −0.45)
+nor pair correlation (0.24 vs −0.17), and it produces a large spurious
+0-1-chaos drop (−1.07 vs 0.02).  The nonlinear integrations still break
+the spectral contrasts at every amplitude (relative beta d 0.4) because
+48 of the 80 fits are unstable; the stability-constrained, pooled-modes
+refit (job 1876, `dcm_sources_stable/`) is the one to redo this with.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
