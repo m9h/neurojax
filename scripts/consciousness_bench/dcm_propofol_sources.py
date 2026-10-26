@@ -112,7 +112,7 @@ def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0, 
 
 def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path,
                 stability_margin: float | None = None, lateral: bool = False, extrinsic_var: float = 1 / 8,
-                bandwidth: float = 2.0, randomise_moments: bool = False):
+                bandwidth: float = 2.0, randomise_moments: float = 0.5):
     jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
@@ -185,8 +185,8 @@ def main():
     ap.add_argument("--lateral", action="store_true", help="add homotopic LO<->RO and LF<->RF reciprocal connections")
     ap.add_argument("--extrinsic-var", type=float, default=1 / 8, help="prior variance of the extrinsic log-gains (SPM 1/8)")
     ap.add_argument("--bandwidth", type=float, default=2.0, help="multitaper half-bandwidth in Hz (1.0 = one taper, 2.0 = three)")
-    ap.add_argument("--randomise-moments", action="store_true",
-                    help="also draw the dipole moments in the extra starts (seeds sign-pattern local optima on real EEG)")
+    ap.add_argument("--randomise-moments", type=float, default=0.5,
+                    help="fraction of the extra starts that also draw the dipole moments (1 = all, 0 = none)")
     ap.add_argument("--name", default=None, help="output subdirectory name (default dcm_sources_stable / dcm_sources / dcm_sources_free)")
     ap.add_argument("--stability-margin", type=float, default=None,
                     help="soft barrier keeping max Re eigenvalue below -margin (1/s); outputs go to dcm_sources_stable/")

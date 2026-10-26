@@ -737,7 +737,7 @@ class SpectralDCM:
         smooth_schedule: tuple[float, ...] = (4.0, 0.0),
         n_starts: int = 4,
         seed: int = 0,
-        randomise_moments: bool = False,
+        randomise_moments: float = 0.5,
         **kw,
     ) -> "SpectralDCMResult":
         """Variational-Laplace inversion of an observed sensor CSD.
@@ -746,16 +746,17 @@ class SpectralDCM:
         synaptic parameters (e.g. a lower inhibitory gain with a shorter
         inhibitory time constant mimics a longer one), so the inversion is
         run from ``n_starts`` points — the prior mean plus ``n_starts - 1``
-        draws from the prior over the neural-mass parameters (seeded; with
-        ``randomise_moments`` also over the free dipole moments) — and
-        the start with the highest ``F`` is returned (``F_starts`` lists
-        all).  The log-power features have a barrier wherever a sensor
-        projection ``L·m`` changes sign, so a wrong sign pattern is a local
-        optimum of its own: randomising the moments finds the right pattern
-        when the prior orientation is far off (synthetic test), but on real
-        EEG with cortical-normal priors it mostly seeds such optima (Chennu
-        subject 02: best F 18 with moment draws, 52 without, and the moments
-        of the good starts agree to 0.01), so it is off by default.  ``smooth_schedule`` is a coarse-to-fine continuation within
+        draws from the prior over the neural-mass parameters (seeded), the
+        first fraction ``randomise_moments`` of which also draw the free
+        dipole moments — and the start with the highest ``F`` is returned
+        (``F_starts`` lists all).  The log-power features have a barrier
+        wherever a sensor projection ``L·m`` changes sign, so a wrong sign
+        pattern is a local optimum of its own.  Moment draws find the right
+        pattern when the prior orientation is far off (synthetic test) but
+        also seed such optima; on Chennu EEG with cortical-normal priors the
+        two kinds of start reach different optima (8 moment-drawing starts
+        beat 8 dynamics-only starts on 51 of 80 recordings and lose on 29,
+        by 4 400 nats in total), so half of each is the default.  ``smooth_schedule`` is a coarse-to-fine continuation within
         each start: features (model and data alike) are Gaussian-smoothed
         along frequency with each ``sigma`` in Hz in turn, each stage
         starting from the previous posterior mean.  ``F`` and the posterior
@@ -781,9 +782,13 @@ class SpectralDCM:
         data_power = float(jnp.mean(jnp.real(jnp.diagonal(csd, axis1=1, axis2=2))))
         scale = prior_power / data_power
         y_full = self.features(csd * scale)
-        dyn = jnp.array([p.name in self.dynamic_names or (randomise_moments and p.name == "L") for p in self.params])
-        sd = jnp.sqrt(jnp.diag(self.prior_cov)) * dyn
-        draws = jax.random.normal(jax.random.PRNGKey(seed), (max(n_starts - 1, 0), self.n_params)) * sd
+        dyn = jnp.array([p.name in self.dynamic_names for p in self.params])
+        mom = jnp.array([p.name == "L" for p in self.params])
+        n_extra = max(n_starts - 1, 0)
+        n_mom = int(round(randomise_moments * n_extra))
+        with_mom = (jnp.arange(n_extra) < n_mom)[:, None]
+        sd = jnp.sqrt(jnp.diag(self.prior_cov)) * jnp.where(with_mom, dyn | mom, dyn)
+        draws = jax.random.normal(jax.random.PRNGKey(seed), (n_extra, self.n_params)) * sd
         starts = [self.prior_mean] + [self.prior_mean + d for d in draws]
         best, F_starts = None, []
         for p in starts:

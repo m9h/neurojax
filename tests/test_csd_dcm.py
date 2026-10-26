@@ -347,7 +347,7 @@ class TestCMC:
         rng = np.random.default_rng(3)
         csd = dcm.predict(theta_true)
         csd = csd * (1.0 + 0.03 * jnp.asarray(rng.normal(size=csd.shape)))
-        res = dcm.invert(csd, n_iter=48, n_starts=4, randomise_moments=True)
+        res = dcm.invert(csd, n_iter=48, n_starts=4, randomise_moments=1.0)
         m = ori[0] + jnp.array([res.Ep[dcm.index("L", 0, k)] for k in range(3)])
         cosine = abs(float(m @ m_true / (jnp.linalg.norm(m) * jnp.linalg.norm(m_true))))  # m and -m give the same CSD
         assert cosine > 0.95, (cosine, np.asarray(m))
