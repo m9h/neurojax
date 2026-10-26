@@ -186,9 +186,11 @@ class CMCSpec:
     ``G[:, 2]``, ``G[:, 3]``, ``G[:, 8]`` the inhibitory gains, ``T[:, 0]`` /
     ``T[:, 1]`` the glutamatergic kinetics, ``A_*`` the extrinsic gains.  The
     fixed point is at ``x = 0`` (the sigmoid is centred), so the linearisation
-    has gain ``R/4`` on every connection.  Default parameters are those of
-    SPM12's ``spm_fx_cmc`` as recalled here; parity against SPM-Python is
-    still to be checked.  Output: superficial-pyramidal depolarisation.
+    has gain ``R/4`` on every connection.  Parity with SPM25's
+    ``spm_fx_cmc`` / ``spm_gx_erp`` at the prior was verified with
+    SPM-Python (2026-10-25): identical Jacobian eigenvalues and transfer
+    function (``tests/test_csd_dcm.py::TestCMC::test_matches_spm_linearisation``).
+    Output: superficial-pyramidal depolarisation.
     """
 
     n_regions: int = 1
@@ -196,6 +198,7 @@ class CMCSpec:
     A_backward: jnp.ndarray | None = None
     T: tuple[float, float, float, float] = (0.002, 0.002, 0.016, 0.028)
     G: tuple[float, ...] = tuple(g * 200.0 for g in (4, 4, 8, 4, 4, 2, 4, 4, 2, 1))
+    u_gain: float = 512.0  # exogenous input gain into ss, as in spm_fx_cmc (B = 512 / T_ss on the ss current)
     n_states: int = 8
     population = ("ss", "sp", "ii", "dp")
 
@@ -233,7 +236,7 @@ class CMCSpec:
         bwd = theta.A_backward @ S[:, 3]  # dp of sources
         inp = jnp.stack(
             [
-                fwd - G[:, 0] * S[:, 0] - G[:, 1] * S[:, 1] - G[:, 2] * S[:, 2] + u,
+                fwd - G[:, 0] * S[:, 0] - G[:, 1] * S[:, 1] - G[:, 2] * S[:, 2] + self.u_gain * u,
                 G[:, 7] * S[:, 0] - G[:, 6] * S[:, 1] + bwd,
                 G[:, 4] * S[:, 0] + G[:, 5] * S[:, 3] - G[:, 3] * S[:, 2] + bwd,
                 fwd - G[:, 8] * S[:, 2] - G[:, 9] * S[:, 3],

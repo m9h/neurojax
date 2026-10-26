@@ -303,3 +303,23 @@ class TestCMC:
         res = dcm.invert(csd, n_iter=48)
         err = float(jnp.abs(res.Ep[i] - theta_true[i]))
         assert err < 0.15, (err, float(jnp.sqrt(res.Cp[i, i])))
+
+    def test_matches_spm_linearisation(self):
+        """Jacobian spectrum, input and output matrices of the CMC at the prior equal
+        SPM25's spm_fx_cmc / spm_gx_erp (exported with SPM-Python on 2026-10-25,
+        tests/data/spm_cmc_prior_linearisation.npz; SPM orders states
+        voltage/current per population, neurojax voltages then currents)."""
+        from pathlib import Path
+
+        from neurojax.inverse.csd_dcm import CMCSpec, linearise, transfer_function
+
+        ref = np.load(Path(__file__).parent / "data" / "spm_cmc_prior_linearisation.npz")
+        spec = CMCSpec()
+        A, B, C = linearise(spec, spec.default_theta())
+        ev = np.sort_complex(np.linalg.eigvals(np.asarray(A)))
+        ev_spm = np.sort_complex(np.linalg.eigvals(ref["J"]))
+        np.testing.assert_allclose(ev, ev_spm, rtol=1e-6, atol=1e-6)
+        w = 2 * np.pi * jnp.asarray(ref["Hz"])
+        H = np.asarray(transfer_function(A, B, C, w))[:, 0, 0]
+        H_spm = np.array([ref["C"] @ np.linalg.solve(1j * x * np.eye(8) - ref["J"], ref["B"].reshape(-1, 1)) for x in np.asarray(w)]).ravel()
+        np.testing.assert_allclose(H, H_spm, rtol=1e-6, atol=1e-12)
