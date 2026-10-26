@@ -398,6 +398,70 @@ a 4-source stationary mass model: candidates are the within-recording
 nonstationarity the DMT decomposition already pointed to, and
 non-Gaussian (burst / spindle) structure.
 
+**Extrinsic connections corrected to `spm_fx_cmc` (2026-10-26):** the SPM
+parity test is single-region, and the extrinsic terms turned out to differ
+from SPM: the backward connection was excitatory (SPM: it *inhibits* the
+target's superficial pyramidals at the gain and its interneurons at half of
+it) and both forward targets received the full gain (SPM: spiny stellates
+at the gain, deep pyramidals at half).  Fixed, with the reciprocal-pair
+reduction (÷5) SPM applies to lateral connections — in the CMC a lateral
+connection *is* a reciprocal forward + backward pair — and a tunable
+extrinsic prior variance.  Every multi-source table above was fitted with
+the earlier semantics.
+
+**Three-taper CSD, SPM semantics (job 1879, `dcm_sources_mt3/`) and
+homotopic lateral pairs with a looser extrinsic prior (job 1880,
+`dcm_sources_lateral/`, variance 1/2):** both stability-constrained,
+pooled modes, 8 starts.  Against the constrained fits above, the
+three-taper / SPM-semantics fit raises F by ~340 nats at baseline and
+~200 at the sedation levels, lowers the log-power RMSE 0.36 → 0.33 and
+cuts the extrinsic gains beyond 3 prior SD from 84 to 27 of 320.  The
+lateral network (8 more gains) wins by 7 800 nats summed over the 80
+recordings (median +21, 56 of 80 in favour; +110 to +130 per recording at
+the sedation levels), so it is the network from here on.  The paired
+moderate-sedation effects are the same in both: frontal superficial-
+pyramidal self-inhibition up (right frontal d +1.06 / +0.79), interneuron
+self-inhibition down (left frontal −0.59 / −0.53, right frontal −0.58 /
+−0.22); no inhibitory time-constant effect.  PEB on either set reproduces
+the baseline-vs-everything rise of the glutamatergic time constants
+(+0.5 to +0.9, 5–12 nats for mild, moderate and recovery alike) and, as
+the only level-specific effect, a moderate drop of interneuron
+self-inhibition (right frontal −0.52, 3.1 nats; right occipital −0.57,
+3.5 nats in the lateral set).  Simulation comparison on both sets
+(jobs 1883 / 1884) repeats the step-4 result exactly: linear simulation
+gives relative beta 1.24 / 1.21 vs 1.41, MSE −0.65 / −0.73 vs −0.90,
+Lyapunov −0.19 / −0.23 vs −0.45, spurious 0-1 chaos −0.55 to −0.59; the
+nonlinear integration at amplitude 0.3 adds nothing.
+
+**Two defects found by these runs.**  (i) One moderate-sedation posterior
+(subject 25) has two frontal time constants fitted at 0.2 ms; the Heun
+integrator at 2 kHz diverged on it and voided a contrast.  `simulate` now
+raises the integration rate to four samples per shortest time constant.
+(ii) The time-constant posteriors are far from their priors in *every* fit
+set: of 1 280 (80 recordings × 16) about 680 sit more than 4 prior SD
+away and 194 more than 6 SD.  The same holds before and after the
+extrinsic correction, so it is not the network: the model cannot produce
+some feature of the mode cross-spectra (log-power RMSE 0.3 remains), and
+the inverter absorbs the misfit in whichever parameter bends.  Until that
+misfit is understood, the absolute parameter values should not be read
+physiologically; the paired contrasts are what the data support.
+
+**Start multimodality (diagnostic on subject 02, moderate; 8 starts
+under three randomisation schemes plus a two-stage warm start):** with 8
+starts only ~1.3 land within 3 nats of the best in both new fit sets, and
+the diagnostic shows why.  Drawing the dipole moments in the extra starts
+seeds sign-pattern local optima: the best start is F 18 when moments are
+drawn (both schemes that draw them), 52 when only the neural-mass
+parameters are drawn — found twice, with three further starts at 16 — and
+the moments of the good dynamics-only starts agree to 0.01 across starts.
+The prior mean itself is the worst start (−721, a trap of the smoothing
+stage), and fitting the spatial block first with the dynamics pinned
+locks the moments to the prior dynamics (two-stage F −102).  Moment
+randomisation is therefore off by default (`randomise_moments`; the
+synthetic far-off-orientation test keeps it on), and the lateral network
+is being refitted with dynamics-only starts (job 1885,
+`dcm_sources_lateral_dyn/`).
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
