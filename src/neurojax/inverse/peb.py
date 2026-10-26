@@ -12,13 +12,14 @@ reduction identity), it is itself Gaussian with precision
 leaves a linear-Gaussian model ``m_i ~ N(X_i beta, Sigma + Lambda_i⁻¹)``
 whose evidence is closed-form in ``beta`` and maximised over the
 between-subject log-precisions ``gamma`` (``Sigma = diag(pC) exp(−gamma)``)
-by Newton steps on the free energy.
+by Newton steps on the free energy.  (The ``m_i`` are never formed.)
 
-``Lambda_i`` is positive definite only where the first-level posterior is
-tighter than its prior; eigenvalues below ``lambda_floor`` times the
-largest are floored (the number floored is reported) — parameters the
-first level did not learn about carry no second-level information, as in
-SPM.
+``Lambda_i`` is positive semi-definite only where the first-level
+posterior is tighter than its prior; it is never inverted here (the
+second-level likelihood is evaluated through the reduction identity, as
+``spm_dcm_peb`` does), and its negative eigenvalues are clipped to zero.
+Parameters the first level did not learn about simply carry no
+second-level information.
 
 Bayesian model reduction (``log_evidence_reduce``, Friston & Penny 2011)
 gives the evidence of any reduced prior from the full posterior without
@@ -73,9 +74,7 @@ class PEBResult(NamedTuple):
     bE: jnp.ndarray  # prior mean of vec(beta)
     bC: jnp.ndarray  # prior covariance of vec(beta)
     X: jnp.ndarray
-    n_floored: int  # first-level precision eigenvalues floored
-    m: jnp.ndarray  # (n_sub, n_par) first-level likelihood means
-    Lambda: jnp.ndarray  # (n_sub, n_par, n_par) first-level likelihood precisions
+    n_clipped: int  # negative first-level information eigenvalues set to zero
 
 
 def peb(
@@ -85,48 +84,63 @@ def peb(
     pC: jnp.ndarray,
     X: jnp.ndarray,
     gamma_prior_var: float = 4.0,
-    lambda_floor: float = 1e-6,
     n_iter: int = 32,
 ) -> PEBResult:
     """Fit the second-level model.  ``Ep`` (n_sub, n_par), ``Cp`` (n_sub, n_par, n_par), ``X`` (n_sub, n_cov).
 
-    The prior on each row of ``beta`` is ``N(0, pC)`` (SPM uses the
-    first-level prior for the intercept); ``gamma ~ N(0, gamma_prior_var)``.
+    The second-level likelihood of subject ``i`` as a function of its
+    empirical prior ``N(X_i beta, Sigma)`` is the Bayesian-model-reduction
+    identity (the evidence under that prior relative to the first-level
+    prior), which is quadratic in ``beta``; so ``beta`` has a closed-form
+    Gaussian posterior for every ``gamma`` and only ``gamma`` is iterated.
+    The first-level information ``Lambda_i = Cp_i⁻¹ − pC⁻¹`` is never
+    inverted; its negative eigenvalues (directions where the Laplace
+    posterior is broader than the prior) are clipped to zero, and the number
+    clipped is reported.  The prior on each row of ``beta`` is ``N(0, pC)``
+    and ``gamma ~ N(0, gamma_prior_var)`` with ``Sigma = diag(pC) exp(−gamma)``.
     """
     Ep, Cp, pE, pC, X = (jnp.asarray(a, dtype=jnp.float64) for a in (Ep, Cp, pE, pC, X))
     n, p = Ep.shape
     c = X.shape[1]
     P0 = jnp.linalg.inv(pC)
     Pp = jnp.linalg.inv(Cp)  # (n, p, p)
-    Lam = Pp - P0[None]
-    # floor the eigenvalues of each Lambda_i
-    w, V = jnp.linalg.eigh(Lam)
-    floor = lambda_floor * jnp.max(w, axis=1, keepdims=True)
-    n_floored = int(jnp.sum(w < floor))
-    w = jnp.maximum(w, floor)
-    Lam = jnp.einsum("nij,nj,nkj->nik", V, w, V)
-    m = jnp.linalg.solve(Lam, (jnp.einsum("nij,nj->ni", Pp, Ep) - (P0 @ pE)[None])[..., None])[..., 0]
-    Lam_inv = jnp.linalg.inv(Lam)
+    w, V = jnp.linalg.eigh(Pp - P0[None])
+    n_clipped = int(jnp.sum(w < 0))
+    Lam = jnp.einsum("nij,nj,nkj->nik", V, jnp.maximum(w, 0.0), V)  # first-level information, PSD
+    h = jnp.einsum("nij,nj->ni", Pp, Ep) - (P0 @ pE)[None]  # Pp Ep − P0 pE
+    # the linear term must live in the retained directions: a direction with no
+    # information (clipped) cannot carry a location either
+    keep = (w > 0).astype(h.dtype)
+    h = jnp.einsum("nij,nj,nkj,nk->ni", V, keep, V, h)
+    # per-subject constant part of the reduction identity (independent of the empirical prior mean)
+    const = 0.5 * jax.vmap(_logdet)(Cp * 0 + pC[None]) - 0.5 * jax.vmap(_logdet)(Cp) - 0.5 * (
+        jnp.einsum("ni,nij,nj->n", Ep, Pp, Ep) - (pE @ P0 @ pE)
+    )
     bE = jnp.zeros(c * p)
     bC = jnp.kron(jnp.eye(c), pC)
     bP = jnp.linalg.inv(bC)
-    # m_i ≈ A_i vec(beta) with vec row-major over (cov, par): row k of A_i picks beta[cov, k] weighted by X[i, cov]
+    # mu_r,i = A_i vec(beta), vec row-major over (cov, par)
     A = jnp.einsum("nc,kq->nkcq", X, jnp.eye(p)).reshape(n, p, c * p)
     sig_base = jnp.diag(pC)
 
     def free_energy(gamma):
         Sigma = jnp.diag(sig_base * jnp.exp(-gamma))
-        V = Lam_inv + Sigma[None]
-        W = jnp.linalg.inv(V)
-        Pb = bP + jnp.einsum("nkq,nkl,nlr->qr", A, W, A)
-        g = jnp.einsum("nkq,nkl,nl->q", A, W, m)
+        Pr = jnp.linalg.inv(Sigma)
+        Q = Pr[None] + Lam  # (n, p, p)
+        Qinv = jnp.linalg.inv(Q)
+        # log evidence of subject i under prior N(mu_r, Sigma):
+        #   const_i − ½ log|Sigma| − ½ log|Q| + ½ (Pr mu_r + h)ᵀ Q⁻¹ (Pr mu_r + h) − ½ mu_rᵀ Pr mu_r
+        # quadratic in mu_r: precision  Pr − Pr Q⁻¹ Pr,  linear term  Pr Q⁻¹ h
+        Prec = Pr[None] - jnp.einsum("ij,njk,kl->nil", Pr, Qinv, Pr)
+        lin = jnp.einsum("ij,njk,nk->ni", Pr, Qinv, h)
+        c0 = const - 0.5 * _logdet(Sigma) - 0.5 * jax.vmap(_logdet)(Q) + 0.5 * jnp.einsum("ni,nij,nj->n", h, Qinv, h)
+        Pb = bP + jnp.einsum("nkq,nkl,nlr->qr", A, Prec, A)
+        g = jnp.einsum("nkq,nk->q", A, lin)
         Eb = jnp.linalg.solve(Pb, g)
         F = (
-            -0.5 * jnp.sum(jax.vmap(_logdet)(V))
-            - 0.5 * n * p * jnp.log(2 * jnp.pi)
+            jnp.sum(c0)
             - 0.5 * _logdet(bC)
             - 0.5 * _logdet(Pb)
-            - 0.5 * jnp.einsum("nk,nkl,nl->", m, W, m)
             + 0.5 * Eb @ Pb @ Eb
             - 0.5 * gamma @ gamma / gamma_prior_var
             - 0.5 * p * jnp.log(2 * jnp.pi * gamma_prior_var)
@@ -140,8 +154,6 @@ def peb(
     F = f(gamma)
     for _ in range(n_iter):
         H = hess(gamma)
-        H = H - 1e-6 * jnp.eye(p)
-        # Newton step on a concave surrogate: use −|H| so the step ascends even where H is indefinite
         wH, VH = jnp.linalg.eigh(H)
         step = VH @ ((VH.T @ grad(gamma)) / jnp.maximum(jnp.abs(wH), 1e-8))
         v = 1.0
@@ -153,12 +165,12 @@ def peb(
             v *= 0.5
         else:
             break
-        if float(F_new - F) < 1e-6:
-            gamma, F = g_new, F_new
-            break
+        done = float(F_new - F) < 1e-6
         gamma, F = g_new, F_new
+        if done:
+            break
     F, (Eb, Pb, Sigma) = free_energy(gamma)
-    return PEBResult(Eb.reshape(c, p), jnp.linalg.inv(Pb), Sigma, gamma, F, bE, bC, X, n_floored, m, Lam)
+    return PEBResult(Eb.reshape(c, p), jnp.linalg.inv(Pb), Sigma, gamma, F, bE, bC, X, n_clipped)
 
 
 def bmr_effects(res: PEBResult, var_reduced: float = 1e-8) -> np.ndarray:

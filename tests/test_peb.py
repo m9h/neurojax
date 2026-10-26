@@ -58,3 +58,44 @@ class TestPEB:
             res = peb(Ep, Cp, jnp.zeros(2), jnp.eye(2) / 16, jnp.asarray(X))
             est = float(jnp.sqrt(jnp.mean(jnp.diag(res.Sigma))))
             assert abs(est - sd_b) / sd_b < 0.5, (sd_b, est)
+
+
+class TestPEBPairedDesign:
+    def test_subject_columns_plus_condition_effects_with_unidentified_directions(self):
+        """20 subjects x 4 conditions; subject indicator columns + 3 condition columns.
+        First-level posteriors are correlated and broader than the prior in one
+        direction (so information eigenvalues get clipped); only condition 2
+        shifts parameter 0."""
+        from neurojax.inverse.peb import bmr_effects, peb
+
+        rng = np.random.default_rng(7)
+        n_sub, n_cond, p = 20, 4, 3
+        pE, pC = np.zeros(p), np.eye(p) / 16
+        subj = 0.15 * rng.normal(size=(n_sub, p))
+        rows, Ep, Cp = [], [], []
+        for s in range(n_sub):
+            for c in range(n_cond):
+                theta = subj[s].copy()
+                if c == 2:
+                    theta[0] += 0.4
+                # posterior covariance: tight on params 0,1 (correlated), as broad as the prior on param 2
+                R = np.array([[1.0, 0.6, 0.0], [0.6, 1.0, 0.0], [0.0, 0.0, 1.0]])
+                sd = np.array([0.04, 0.04, 0.3])
+                C = R * np.outer(sd, sd)
+                Ep.append(theta + rng.multivariate_normal(np.zeros(p), C))
+                Cp.append(C)
+                rows.append((s, c))
+        X = np.column_stack([[1.0 if s == k else 0.0 for s, _ in rows] for k in range(n_sub)]
+                            + [[1.0 if c == k else 0.0 for _, c in rows] for k in (1, 2, 3)])
+        res = peb(jnp.asarray(np.array(Ep)), jnp.asarray(np.array(Cp)), jnp.asarray(pE), jnp.asarray(pC), jnp.asarray(X))
+        assert res.n_clipped > 0
+        eff = np.asarray(res.Eb)[n_sub:]  # (3 conditions, p)
+        sd = np.sqrt(np.diag(np.asarray(res.Cb))).reshape(res.Eb.shape)[n_sub:]
+        assert abs(eff[1, 0] - 0.4) < 0.05, eff
+        other = np.ones_like(eff, dtype=bool)
+        other[1, 0] = False
+        assert np.all(np.abs(eff[other]) < 0.06), eff
+        assert abs(eff[1, 2]) < 1e-6, eff  # unidentified parameter: no effect can be inferred
+        dF = bmr_effects(res)[n_sub:]
+        assert dF[1, 0] > 10, dF
+        assert np.all(dF[other] < 3), dF
