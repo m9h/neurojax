@@ -7,8 +7,8 @@ from the montage).  By default each source's dipole moment is a free
 parameter with the cortical normal as prior mean (as the ECD moments of
 ``spm_L_priors``); ``--fixed-orientation`` pins it to the normal.  As in
 ``spm_dcm_csd`` the sensor data are reduced to ``--n-modes`` spatial modes
-(PCA of each subject's baseline covariance; the same modes for every
-level) and the leadfield is projected onto them.  A canonical-microcircuit
+(PCA of each subject's covariance pooled over levels; the same modes for
+every level) and the leadfield is projected onto them.  A canonical-microcircuit
 network with occipital -> frontal forward and frontal -> occipital backward
 connections is inverted per subject x sedation level.
 
@@ -111,8 +111,11 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
         / "Sedation-RestingState" / f"{base.meta['file']}.set", verbose="ERROR").get_montage()
     info.set_montage(montage)
     L3, nn, picked = build_leadfield(info)
-    X = base.data - base.data.mean(axis=1, keepdims=True)
-    U, s, _ = np.linalg.svd(X @ X.T / X.shape[1])
+    # spatial modes from the covariance pooled over all of the subject's levels: modes
+    # taken from the baseline alone make the baseline CSD "aligned" with the modes
+    # and every other level not, which PEB then reads as a baseline-vs-rest effect
+    cov = sum((lambda X: X @ X.T / X.shape[1])(r.data - r.data.mean(axis=1, keepdims=True)) for r in by_cond.values())
+    U, s, _ = np.linalg.svd(cov / len(by_cond))
     U = U[:, :n_modes]
     np.savez(out / f"leadfield_{subject}.npz", L3=L3, nn=nn, U=U, explained=(s[:n_modes].sum() / s.sum()), channels=base.channels,
              sources=list(SOURCES), positions_mm=[picked[k] for k in SOURCES])
