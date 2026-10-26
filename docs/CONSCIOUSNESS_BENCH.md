@@ -376,6 +376,28 @@ effects are frontal: moderate lowers right-frontal `G_ii→ii` (−0.63 ±
 0.20, 4.8 nats) and mild / moderate raise `G_sp→sp` in the left sources
 (+0.55-0.59, 3.3-4.1 nats); the random-effects sd is 1.0 in prior units.
 
+**Simulation comparison on the constrained fits (job 1877,
+`dcm_sources_stable/sim_vs_observed.csv`, amplitudes 0 / 0.3 / 1 / 3):**
+with stable networks the nonlinear integration finally behaves: at
+amplitude 0.3 it keeps most of the spectral contrasts (relative beta d
+0.98 vs 1.29 linear vs 1.41 observed under moderate sedation; Hjorth
+mobility 0.40 / 0.36 / 0.59; LZ76 0.24 / 0.36 / 0.62), and at amplitude ≥
+1 the sigmoid saturates and the alpha contrast inverts (relative alpha
++0.71 vs −1.03 observed).  Across that whole range the nonlinearity adds
+nothing to the phasic residues: multiscale entropy stays at −0.62 (linear)
+to −0.66 (0.3) against −0.90 observed, the Lyapunov exponent at −0.18 to
+−0.22 against −0.45, pair correlation changes sign (+0.05 to +0.30 vs
+−0.17; mild +0.2 to +0.5 vs −0.52), and 0-1 chaos is a spurious −0.6 to
+−0.7 where the data show 0.  Step 4 of the plan therefore closes with a
+clear answer: the fitted canonical-microcircuit DCM accounts for the
+spectral family of measures by construction and for about 70 % of the
+multiscale-entropy effect, and its own nonlinearity — at any amplitude
+consistent with the spectrum — does not produce the Lyapunov /
+pair-correlation / MSE residues.  Whatever those residues index is outside
+a 4-source stationary mass model: candidates are the within-recording
+nonstationarity the DMT decomposition already pointed to, and
+non-Gaussian (burst / spindle) structure.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
