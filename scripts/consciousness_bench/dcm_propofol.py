@@ -3,7 +3,7 @@
 Per subject: the leading spatial mode (PCA of the baseline recording, same
 weights for every sedation level) gives one sensor series per condition; a
 multitaper CSD averaged over 10 s epochs (1-45 Hz, 0.5 Hz steps) is
-inverted with a one-region Jansen-Rit ``SpectralDCM``.  Outputs under
+inverted with a one-region ``SpectralDCM`` (Jansen-Rit, or canonical microcircuit with ``--model cmc``).  Outputs under
 ``$CB_OUT/propofol-chennu2016/dcm/``:
 
 - ``posteriors.csv``  one row per subject x condition x parameter
@@ -34,7 +34,7 @@ jax.config.update("jax_enable_x64", True)
 
 from neurojax.analysis.multitaper import multitaper_cpsd  # noqa: E402
 from neurojax.bench.consciousness_bench import epoch_recording  # noqa: E402
-from neurojax.inverse.csd_dcm import JansenRitSpec, SpectralDCM  # noqa: E402
+from neurojax.inverse.csd_dcm import CMCSpec, JansenRitSpec, SpectralDCM  # noqa: E402
 from neurojax.io.consciousness_bench import load_chennu_propofol  # noqa: E402
 
 FREQS = np.arange(1.0, 45.5, 0.5)
@@ -66,8 +66,8 @@ def mode_csd(data: np.ndarray, fs: float, w: np.ndarray, epoch_s: float = 10.0) 
     return out[:, None, None].astype(complex)
 
 
-def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int) -> tuple[list, list, list]:
-    spec = JansenRitSpec(n_regions=1)
+def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int, model: str = "jr") -> tuple[list, list, list]:
+    spec = JansenRitSpec(n_regions=1) if model == "jr" else CMCSpec(n_regions=1)
     dcm = SpectralDCM(spec, leadfield=jnp.eye(1), freqs=jnp.asarray(FREQS))
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
@@ -94,7 +94,8 @@ def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int) -> tuple[l
         pred = np.log(np.asarray(res.prediction)[:, 0, 0].real * res.scale)
         for f, o, p in zip(FREQS, obs, pred):
             spectra.append(dict(subject=subject, condition=cond, f=float(f), observed=float(o), predicted=float(p)))
-        print(f"{subject} {cond:9s} F={float(res.F):8.1f} tau_i={dict(zip(dcm.names, np.asarray(res.Ep)))['tau_i[0]']:+.3f} {dt:5.1f}s", flush=True)
+        key = "tau_i[0]" if model == "jr" else "T[0, 2]"
+        print(f"{subject} {cond:9s} F={float(res.F):8.1f} {key}={dict(zip(dcm.names, np.asarray(res.Ep)))[key]:+.3f} {dt:5.1f}s", flush=True)
     return post, fits, spectra
 
 
@@ -125,16 +126,17 @@ def main():
     ap.add_argument("--n-jobs", type=int, default=20)
     ap.add_argument("--n-iter", type=int, default=64)
     ap.add_argument("--n-starts", type=int, default=4)
+    ap.add_argument("--model", choices=["jr", "cmc"], default="jr", help="column model; outputs go to dcm/ (jr) or dcm_cmc/")
     ap.add_argument("--out", default=os.environ.get("CB_OUT", "/data/datasets/consciousness-bench"))
     a = ap.parse_args()
-    out = Path(a.out) / "propofol-chennu2016" / "dcm"
+    out = Path(a.out) / "propofol-chennu2016" / ("dcm" if a.model == "jr" else "dcm_cmc")
     out.mkdir(parents=True, exist_ok=True)
 
     recs = load_chennu_propofol(subjects=a.subjects)
     subjects = sorted({r.subject for r in recs})
     print(f"{len(recs)} recordings, {len(subjects)} subjects", flush=True)
     results = Parallel(n_jobs=a.n_jobs)(
-        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_iter, a.n_starts) for s in subjects
+        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_iter, a.n_starts, a.model) for s in subjects
     )
     post = pd.DataFrame([x for r in results for x in r[0]])
     fits = pd.DataFrame([x for r in results for x in r[1]])

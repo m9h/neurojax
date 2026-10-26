@@ -57,8 +57,14 @@ def transfer_function(A: jnp.ndarray, B: jnp.ndarray, C: jnp.ndarray, omega: jnp
 
 
 # ---------------------------------------------------------------------------
-# Jansen-Rit neural mass
+# Column models
 # ---------------------------------------------------------------------------
+#
+# A column model is a frozen dataclass with ``n_regions``, ``n_states`` (per
+# region), ``default_theta()`` (a NamedTuple of arrays), ``vector_field(theta,
+# x, u)``, ``output(x)`` and ``param_spec()`` -> [(field, index, prior_var)]
+# listing the log-scaled free parameters.  ``fixed_point`` / ``linearise``
+# below work for any of them.
 
 
 class JRTheta(NamedTuple):
@@ -82,7 +88,7 @@ def _sigmoid(v, theta: JRTheta):
 
 @dataclass(frozen=True)
 class JansenRitSpec:
-    """Network structure for a Jansen-Rit DCM.
+    """Network of Jansen-Rit columns (6 states per region).
 
     ``A_forward[i, j] > 0`` declares a connection from region ``j`` into the
     excitatory interneurons of region ``i``; its value is the default gain
@@ -96,6 +102,7 @@ class JansenRitSpec:
     tau_e: float = 0.010
     tau_i: float = 0.020
     C: float = 135.0
+    n_states: int = 6
 
     def default_theta(self) -> JRTheta:
         n = self.n_regions
@@ -109,34 +116,139 @@ class JansenRitSpec:
             A_forward=A,
         )
 
+    def param_spec(self) -> list[tuple[str, tuple[int, ...], float]]:
+        n = self.n_regions
+        out = [(name, (i,), 1 / 16) for name in ("He", "Hi", "tau_e", "tau_i", "C") for i in range(n)]
+        A = np.asarray(self.default_theta().A_forward)
+        out += [("A_forward", (int(i), int(j)), 1 / 8) for i, j in zip(*np.nonzero(A))]
+        return out
 
-def jr_vector_field(spec: JansenRitSpec, theta: JRTheta, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
-    """dx/dt for the coupled Jansen-Rit network.
+    def vector_field(self, theta: JRTheta, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
+        """``x`` is ``(6 n,)`` region-major ``[y0, y1, y2, dy0, dy1, dy2]``; ``u`` ``(n,)`` drives the excitatory population."""
+        n = self.n_regions
+        X = x.reshape(n, 6)
+        y0, y1, y2, d0, d1, d2 = (X[:, k] for k in range(6))
+        a, b = 1.0 / theta.tau_e, 1.0 / theta.tau_i
+        C1, C2, C3, C4 = theta.C, 0.8 * theta.C, 0.25 * theta.C, 0.25 * theta.C
+        v = y1 - y2
+        S_v = _sigmoid(v, theta)
+        coupling = theta.A_forward @ S_v
+        dd0 = theta.He * a * S_v - 2 * a * d0 - a**2 * y0
+        dd1 = theta.He * a * (theta.p0 + u + C2 * _sigmoid(C1 * y0, theta) + coupling) - 2 * a * d1 - a**2 * y1
+        dd2 = theta.Hi * b * C4 * _sigmoid(C3 * y0, theta) - 2 * b * d2 - b**2 * y2
+        return jnp.stack([d0, d1, d2, dd0, dd1, dd2], axis=1).reshape(-1)
 
-    ``x`` is ``(6 n,)`` region-major ``[y0, y1, y2, dy0, dy1, dy2]``; ``u``
-    ``(n,)`` is the stochastic input to the excitatory population.
+    def output(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Pyramidal membrane potential ``y1 − y2`` per region."""
+        X = x.reshape(self.n_regions, 6)
+        return X[:, 1] - X[:, 2]
+
+
+class CMCTheta(NamedTuple):
+    """Canonical-microcircuit parameters (mV, s).  Populations: 0 spiny stellate, 1 superficial pyramidal, 2 inhibitory interneurons, 3 deep pyramidal."""
+
+    T: jnp.ndarray  # (n, 4) synaptic time constants (s)
+    G: jnp.ndarray  # (n, 10) intrinsic gains, see CMCSpec
+    A_forward: jnp.ndarray  # (n, n) sp(source) -> ss and dp (target)
+    A_backward: jnp.ndarray  # (n, n) dp(source) -> sp and ii (target)
+    R: float = 2.0 / 3.0  # sigmoid slope
+
+
+@dataclass(frozen=True)
+class CMCSpec:
+    """Network of canonical microcircuits (Bastos et al. 2012), after ``spm_fx_cmc``.
+
+    Four populations per region, each with a voltage and a current (8 states):
+    spiny stellate (ss, granular; receives the exogenous input and forward
+    afferents), superficial pyramidal (sp; sends forward connections and is
+    the main source of the measured signal), inhibitory interneurons (ii) and
+    deep pyramidal (dp; sends backward connections).  Second-order kinetics
+    ``dv/dt = i``, ``di/dt = (input − 2 i − v / T) / T`` with sigmoid firing
+    ``S(v) = 1 / (1 + exp(−R v)) − 1/2``.  The ten intrinsic gains ``G``
+    (defaults ``[4 4 8 4 4 2 4 4 2 1] × 200``) are:
+
+    ====  ============  ====
+    idx   connection    sign
+    ====  ============  ====
+    0     ss → ss       −
+    1     sp → ss       −
+    2     ii → ss       −
+    3     ii → ii       −
+    4     ss → ii       +
+    5     dp → ii       +
+    6     sp → sp       −
+    7     ss → sp       +
+    8     ii → dp       −
+    9     dp → dp       −
+    ====  ============  ====
+
+    Pharmacology: ``T[:, 2]`` is the inhibitory (GABA-A) time constant,
+    ``G[:, 2]``, ``G[:, 3]``, ``G[:, 8]`` the inhibitory gains, ``T[:, 0]`` /
+    ``T[:, 1]`` the glutamatergic kinetics, ``A_*`` the extrinsic gains.  The
+    fixed point is at ``x = 0`` (the sigmoid is centred), so the linearisation
+    has gain ``R/4`` on every connection.  Default parameters are those of
+    SPM12's ``spm_fx_cmc`` as recalled here; parity against SPM-Python is
+    still to be checked.  Output: superficial-pyramidal depolarisation.
     """
-    n = spec.n_regions
-    X = x.reshape(n, 6)
-    y0, y1, y2, d0, d1, d2 = (X[:, k] for k in range(6))
-    a, b = 1.0 / theta.tau_e, 1.0 / theta.tau_i
-    C1, C2, C3, C4 = theta.C, 0.8 * theta.C, 0.25 * theta.C, 0.25 * theta.C
-    v = y1 - y2
-    S_v = _sigmoid(v, theta)
-    coupling = theta.A_forward @ S_v
-    dd0 = theta.He * a * S_v - 2 * a * d0 - a**2 * y0
-    dd1 = theta.He * a * (theta.p0 + u + C2 * _sigmoid(C1 * y0, theta) + coupling) - 2 * a * d1 - a**2 * y1
-    dd2 = theta.Hi * b * C4 * _sigmoid(C3 * y0, theta) - 2 * b * d2 - b**2 * y2
-    return jnp.stack([d0, d1, d2, dd0, dd1, dd2], axis=1).reshape(-1)
+
+    n_regions: int = 1
+    A_forward: jnp.ndarray | None = None
+    A_backward: jnp.ndarray | None = None
+    T: tuple[float, float, float, float] = (0.002, 0.002, 0.016, 0.028)
+    G: tuple[float, ...] = tuple(g * 200.0 for g in (4, 4, 8, 4, 4, 2, 4, 4, 2, 1))
+    n_states: int = 8
+    population = ("ss", "sp", "ii", "dp")
+
+    def _mat(self, A):
+        n = self.n_regions
+        return jnp.zeros((n, n)) if A is None else jnp.asarray(A, dtype=jnp.float64)
+
+    def default_theta(self) -> CMCTheta:
+        n = self.n_regions
+        return CMCTheta(
+            T=jnp.tile(jnp.asarray(self.T), (n, 1)),
+            G=jnp.tile(jnp.asarray(self.G), (n, 1)),
+            A_forward=self._mat(self.A_forward),
+            A_backward=self._mat(self.A_backward),
+        )
+
+    def param_spec(self) -> list[tuple[str, tuple[int, ...], float]]:
+        n = self.n_regions
+        out = [("T", (i, k), 1 / 16) for i in range(n) for k in range(4)]
+        out += [("G", (i, k), 1 / 16) for i in range(n) for k in range(10)]
+        th = self.default_theta()
+        for name in ("A_forward", "A_backward"):
+            A = np.asarray(getattr(th, name))
+            out += [(name, (int(i), int(j)), 1 / 8) for i, j in zip(*np.nonzero(A))]
+        return out
+
+    def vector_field(self, theta: CMCTheta, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
+        """``x`` is ``(8 n,)`` region-major ``[v_ss, v_sp, v_ii, v_dp, i_ss, i_sp, i_ii, i_dp]``; ``u`` ``(n,)`` drives ss."""
+        n = self.n_regions
+        X = x.reshape(n, 8)
+        v, i = X[:, :4], X[:, 4:]
+        S = 1.0 / (1.0 + jnp.exp(-theta.R * v)) - 0.5  # (n, 4)
+        G, T = theta.G, theta.T
+        fwd = theta.A_forward @ S[:, 1]  # sp of sources
+        bwd = theta.A_backward @ S[:, 3]  # dp of sources
+        inp = jnp.stack(
+            [
+                fwd - G[:, 0] * S[:, 0] - G[:, 1] * S[:, 1] - G[:, 2] * S[:, 2] + u,
+                G[:, 7] * S[:, 0] - G[:, 6] * S[:, 1] + bwd,
+                G[:, 4] * S[:, 0] + G[:, 5] * S[:, 3] - G[:, 3] * S[:, 2] + bwd,
+                fwd - G[:, 8] * S[:, 2] - G[:, 9] * S[:, 3],
+            ],
+            axis=1,
+        )
+        di = (inp - 2.0 * i - v / T) / T
+        return jnp.concatenate([i, di], axis=1).reshape(-1)
+
+    def output(self, x: jnp.ndarray) -> jnp.ndarray:
+        """Superficial-pyramidal depolarisation per region."""
+        return x.reshape(self.n_regions, 8)[:, 1]
 
 
-def jr_output(spec: JansenRitSpec, x: jnp.ndarray) -> jnp.ndarray:
-    """Pyramidal membrane potential ``y1 − y2`` per region."""
-    X = x.reshape(spec.n_regions, 6)
-    return X[:, 1] - X[:, 2]
-
-
-def jr_fixed_point(spec: JansenRitSpec, theta: JRTheta, n_newton: int = 40) -> jnp.ndarray:
+def fixed_point(spec, theta, n_newton: int = 40) -> jnp.ndarray:
     """Fixed point of the deterministic network (``u = 0``) by Newton iteration.
 
     The iteration is unrolled under ``lax.fori_loop`` so gradients flow
@@ -144,23 +256,36 @@ def jr_fixed_point(spec: JansenRitSpec, theta: JRTheta, n_newton: int = 40) -> j
     """
     n = spec.n_regions
     u0 = jnp.zeros(n)
-    f = lambda x: jr_vector_field(spec, theta, x, u0)  # noqa: E731
+    f = lambda x: spec.vector_field(theta, x, u0)  # noqa: E731
     jac = jax.jacfwd(f)
 
     def step(_, x):
         return x - jnp.linalg.solve(jac(x), f(x))
 
-    return jax.lax.fori_loop(0, n_newton, step, jnp.zeros(6 * n))
+    return jax.lax.fori_loop(0, n_newton, step, jnp.zeros(spec.n_states * n))
 
 
-def jr_linearise(spec: JansenRitSpec, theta: JRTheta):
+def linearise(spec, theta):
     """Linear state-space ``(A, B, C)`` of the network at its fixed point."""
-    x0 = jr_fixed_point(spec, theta)
+    x0 = fixed_point(spec, theta)
     u0 = jnp.zeros(spec.n_regions)
-    A = jax.jacfwd(lambda x: jr_vector_field(spec, theta, x, u0))(x0)
-    B = jax.jacfwd(lambda u: jr_vector_field(spec, theta, x0, u))(u0)
-    C = jax.jacfwd(lambda x: jr_output(spec, x))(x0)
+    A = jax.jacfwd(lambda x: spec.vector_field(theta, x, u0))(x0)
+    B = jax.jacfwd(lambda u: spec.vector_field(theta, x0, u))(u0)
+    C = jax.jacfwd(spec.output)(x0)
     return A, B, C
+
+
+# Jansen-Rit aliases
+def jr_vector_field(spec, theta, x, u):
+    return spec.vector_field(theta, x, u)
+
+
+def jr_output(spec, x):
+    return spec.output(x)
+
+
+jr_fixed_point = fixed_point
+jr_linearise = linearise
 
 
 # ---------------------------------------------------------------------------
@@ -300,10 +425,7 @@ class SpectralDCM:
     ===========  ======================  ==========  ===========
     name         shape                   prior var   default
     ===========  ======================  ==========  ===========
-    He, Hi       per region              1/16        spec
-    tau_e, tau_i per region              1/16        spec
-    C            per region              1/16        spec
-    A_forward    per declared edge       1/8         spec.A_forward
+    column       spec.param_spec()       1/16, 1/8   Jansen-Rit: He, Hi, tau_e, tau_i, C, A_forward; CMC: T, G, A_forward, A_backward
     a_u          per region              1/4         innovation amplitude
     b_u          scalar                  1/16        innovation 1/f exponent (1)
     a_n          scalar                  1/4         channel-specific noise amplitude
@@ -317,7 +439,7 @@ class SpectralDCM:
     prior prediction (the scale is returned in the result's ``scale``).
     """
 
-    spec: JansenRitSpec
+    spec: JansenRitSpec | CMCSpec
     leadfield: jnp.ndarray
     freqs: jnp.ndarray
     noise_fraction: float = 0.01
@@ -332,12 +454,7 @@ class SpectralDCM:
             raise ValueError(f"leadfield has {L.shape[1]} sources, spec has {n} regions")
         object.__setattr__(self, "leadfield", L)
         object.__setattr__(self, "freqs", jnp.asarray(self.freqs, dtype=jnp.float64))
-        params: list[_Param] = []
-        for name in ("He", "Hi", "tau_e", "tau_i", "C"):
-            params += [_Param(name, (i,), 1 / 16) for i in range(n)]
-        A = self.spec.default_theta().A_forward
-        for i, j in zip(*np.nonzero(np.asarray(A))):
-            params.append(_Param("A_forward", (int(i), int(j)), 1 / 8))
+        params = [_Param(name, idx, var) for name, idx, var in self.spec.param_spec()]
         params += [_Param("a_u", (i,), 1 / 16) for i in range(n)]
         # spectral nuisance priors are tight (as in spm_csd_mtf, 1/128) so the
         # 1/f terms cannot absorb what the neural-mass parameters should explain
@@ -386,14 +503,19 @@ class SpectralDCM:
 
     # -- forward model ------------------------------------------------------
 
-    def theta(self, p: jnp.ndarray) -> JRTheta:
-        """Map the log-scaling vector onto Jansen-Rit parameters."""
+    def theta(self, p: jnp.ndarray):
+        """Map the log-scaling vector onto the column model's parameters."""
         th = self.spec.default_theta()
-        fields = {k: getattr(th, k) for k in ("He", "Hi", "tau_e", "tau_i", "C", "A_forward")}
+        fields = {}
         for k, prm in enumerate(self.params):
-            if prm.name in fields:
-                fields[prm.name] = fields[prm.name].at[prm.index].multiply(jnp.exp(p[k]))
+            if prm.name in th._fields:
+                cur = fields.get(prm.name, getattr(th, prm.name))
+                fields[prm.name] = cur.at[prm.index].multiply(jnp.exp(p[k]))
         return th._replace(**fields)
+
+    @property
+    def dynamic_names(self) -> tuple[str, ...]:
+        return tuple(self.spec.default_theta()._fields)
 
     def _spectral(self, p: jnp.ndarray, name: str) -> jnp.ndarray:
         ks = [k for k, prm in enumerate(self.params) if prm.name == name]
@@ -401,7 +523,7 @@ class SpectralDCM:
 
     def _sensor_csd(self, p: jnp.ndarray, include_noise: bool = True) -> jnp.ndarray:
         th = self.theta(p)
-        A, B, C = jr_linearise(self.spec, th)
+        A, B, C = linearise(self.spec, th)
         H = transfer_function(A, B, C, 2 * jnp.pi * self.freqs)  # (nf, n, n)
         f = self.freqs[:, None]
         b_u = self._spectral(p, "b_u")[0]
@@ -481,7 +603,7 @@ class SpectralDCM:
         data_power = float(jnp.mean(jnp.real(jnp.diagonal(csd, axis1=1, axis2=2))))
         scale = prior_power / data_power
         y_full = self.features(csd * scale)
-        dyn = jnp.array([p.name in ("He", "Hi", "tau_e", "tau_i", "C", "A_forward") for p in self.params])
+        dyn = jnp.array([p.name in self.dynamic_names for p in self.params])
         sd = jnp.sqrt(jnp.diag(self.prior_cov)) * dyn
         draws = jax.random.normal(jax.random.PRNGKey(seed), (max(n_starts - 1, 0), self.n_params)) * sd
         starts = [self.prior_mean] + [self.prior_mean + d for d in draws]
@@ -526,15 +648,19 @@ class SpectralDCMResult(NamedTuple):
 
 
 __all__ = [
+    "CMCSpec",
+    "CMCTheta",
     "JRTheta",
     "JansenRitSpec",
     "SpectralDCM",
     "SpectralDCMResult",
     "VLResult",
+    "fixed_point",
     "jr_fixed_point",
     "jr_linearise",
     "jr_output",
     "jr_vector_field",
+    "linearise",
     "model_posterior",
     "transfer_function",
     "variational_laplace",

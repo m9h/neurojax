@@ -242,3 +242,64 @@ class TestTwoRegionCoupling:
         csd = csd * (1.0 + 0.03 * jnp.asarray(rng.normal(size=csd.shape)))  # noise-free data give unbounded precision
         res = dcm.invert(csd, n_iter=48)
         assert float(jnp.abs(res.Ep[i] - theta_true[i])) < 0.15
+
+
+# ---------------------------------------------------------------------------
+# Canonical microcircuit
+# ---------------------------------------------------------------------------
+
+
+class TestCMC:
+    def test_stable_with_two_resonances(self):
+        from neurojax.inverse.csd_dcm import CMCSpec, linearise
+
+        spec = CMCSpec()
+        A, _, _ = linearise(spec, spec.default_theta())
+        ev = np.linalg.eigvals(np.asarray(A))
+        assert np.all(ev.real < 0)
+        modes = np.unique(np.round(np.abs(ev.imag) / (2 * np.pi), 1))
+        modes = modes[modes > 0]
+        assert np.any((modes > 4) & (modes < 13)), modes  # alpha-range mode
+        assert np.any((modes > 13) & (modes < 30)), modes  # beta-range mode
+
+    def test_slower_inhibition_slows_beta_mode(self):
+        from neurojax.inverse.csd_dcm import CMCSpec, linearise, transfer_function
+
+        spec = CMCSpec()
+        f = jnp.linspace(1.0, 45.0, 441)
+
+        def peak(theta):
+            A, B, C = linearise(spec, theta)
+            H = transfer_function(A, B, C, 2 * jnp.pi * f)
+            return float(f[jnp.argmax(jnp.abs(H[:, 0, 0]) ** 2)])
+
+        base = spec.default_theta()
+        slow = base._replace(T=base.T.at[0, 2].multiply(1.5))
+        assert peak(slow) < peak(base)
+
+    def test_spectral_dcm_with_cmc(self):
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        spec = CMCSpec(n_regions=2, A_forward=jnp.array([[0.0, 0.0], [800.0, 0.0]]), A_backward=jnp.array([[0.0, 400.0], [0.0, 0.0]]))
+        L = jnp.array([[1.0, 0.2], [0.1, 1.0]])
+        dcm = SpectralDCM(spec, leadfield=L, freqs=jnp.linspace(1.0, 45.0, 45))
+        assert dcm.index("T", 1, 2) == 1 * 4 + 2  # region 1, population ii
+        assert dcm.index("A_backward", 0, 1) >= 0
+        csd = dcm.predict(dcm.prior_mean)
+        assert csd.shape == (45, 2, 2)
+        assert np.all(np.isfinite(np.asarray(csd)))
+        g = jax.grad(lambda p: jnp.sum(jnp.abs(dcm.predict(p)) ** 2))(dcm.prior_mean + 0.05)
+        assert np.all(np.isfinite(np.asarray(g))) and float(jnp.linalg.norm(g)) > 0
+
+    def test_recovers_inhibitory_time_constant(self):
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        dcm = SpectralDCM(CMCSpec(), leadfield=jnp.eye(1), freqs=jnp.linspace(1.0, 45.0, 89))
+        i = dcm.index("T", 0, 2)
+        theta_true = dcm.prior_mean.at[i].set(jnp.log(1.4))
+        rng = np.random.default_rng(5)
+        csd = dcm.predict(theta_true)
+        csd = csd * (1.0 + 0.03 * jnp.asarray(rng.normal(size=csd.shape)))
+        res = dcm.invert(csd, n_iter=48)
+        err = float(jnp.abs(res.Ep[i] - theta_true[i]))
+        assert err < 0.15, (err, float(jnp.sqrt(res.Cp[i, i])))

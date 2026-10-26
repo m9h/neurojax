@@ -10,28 +10,36 @@ identification in :mod:`neurojax.dynamics`.
 """
 
 from neurojax.inverse.csd_dcm import (
+    CMCSpec,
+    CMCTheta,
     JansenRitSpec,
     JRTheta,
     SpectralDCM,
     SpectralDCMResult,
     VLResult,
+    fixed_point,
     jr_fixed_point,
     jr_linearise,
     jr_vector_field,
+    linearise,
     model_posterior,
     transfer_function,
     variational_laplace,
 )
 
 __all__ = [
+    "CMCSpec",
+    "CMCTheta",
     "JRTheta",
     "JansenRitSpec",
     "SpectralDCM",
     "SpectralDCMResult",
     "VLResult",
+    "fixed_point",
     "jr_fixed_point",
     "jr_linearise",
     "jr_vector_field",
+    "linearise",
     "model_posterior",
     "transfer_function",
     "variational_laplace",
