@@ -242,8 +242,10 @@ mega-analysis) rather than a finding.  The first-level fits also changed
 between runs when the CMC input gain was aligned to SPM (512), i.e. the
 posteriors are sensitive to the innovation scale.
 
-**Free dipole moments (job 1870, `dcm_sources_free/`, 4 starts, 68
-parameters, 170-430 s per fit):** the fixed-orientation misfit was spatial
+**Free dipole moments (job 1870, 4 starts, 80 parameters, 170-430 s per
+fit; *these fits ran in float32* — the joblib workers did not inherit the
+x64 setting — and are kept as `dcm_sources_free_f32/`; the float64 refit is
+job 1873 → `dcm_sources_free/`, results to be updated):** the fixed-orientation misfit was spatial
 (mode 0 under-predicted by 1-1.8 log units, modes 2 and 4 over-predicted by
 1-2.7, at every frequency alike), so each source's moment is now a free
 parameter with the cortical normal as prior mean (as `spm_L_priors`' ECD
