@@ -75,3 +75,29 @@ unbounded noise precision and should be avoided.
   ketamine model of Muthukumaraswamy et al. 2015).
 - Conduction delays between regions.
 - Hierarchical (PEB-style) priors across subjects, studies and drugs.
+
+## Parity with SPM (checked 2026-10-25 with SPM-Python 25.1.2, MATLAB Runtime R2025b)
+
+- **Neural mass.** `CMCSpec` at the prior gives the same Jacobian spectrum
+  and the same transfer function as `spm_fx_cmc` / `spm_gx_erp` (to 1e-6;
+  `tests/data/spm_cmc_prior_linearisation.npz`, exported on an x86 machine
+  because the MATLAB Runtime is x86-only).  SPM's exogenous input enters
+  with gain 512, now `CMCSpec.u_gain`.  SPM orders states voltage/current
+  per population; neurojax voltages then currents.
+- **Spectra (`spm_csd_mtf_gu`).** Neuronal innovations
+  `Gu = exp(a₁) f^(−exp(a₂))` times a DCT modulation `exp(X d)` (4
+  coefficients); common channel noise `Gn = exp(b₁ − 2) f^(−exp(b₂))`;
+  specific channel noise `Gs = exp(c₁ − 2) f^(−exp(c₂))`; all priors
+  N(0, 1/128); an optional frequency warp `exp(f₁ + f₂ k/n)` (prior 1/64).
+  neurojax: `a_u` ≙ a₁ (prior 1/16), `b_u` ≙ a₂, `a_c` ≙ b₁, `a_n` ≙ c₁,
+  `b_n` ≙ b₂ = c₂ (one shared channel-noise exponent); no DCT modulation
+  and no warp; channel-noise defaults are `noise_fraction` of the prior
+  neural power instead of e⁻².
+- **Features and hyperpriors (`spm_dcm_csd`, `spm_fs_csd`).** SPM fits the
+  complex CSD, the cross-covariance (every 8th lag) and the MAR(8)
+  coefficients, with the data scaled so the largest cross-covariance is 8,
+  `Nmodes = 8` spatial modes and a tight noise hyperprior (hE = 8,
+  hC = 1/128).  neurojax fits log power and complex coherency with a weak
+  hyperprior; the multi-start / smoothing continuation in `invert` has no
+  SPM counterpart.  Full CSD-level parity therefore needs a feature-mode
+  switch; the linearisation is where the pharmacology lives and is exact.

@@ -122,6 +122,8 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
         res = dcm.invert(jnp.asarray(csd), n_iter=n_iter, n_starts=n_starts)
         dt = time.time() - t0
         sd = np.sqrt(np.diag(np.asarray(res.Cp)))
+        np.savez(out / f"posterior_{subject}_{cond}.npz", Ep=np.asarray(res.Ep), Cp=np.asarray(res.Cp), pE=np.asarray(dcm.prior_mean),
+                 pC=np.asarray(dcm.prior_cov), names=dcm.names, F=float(res.F))
         for name, m, sdev in zip(dcm.names, np.asarray(res.Ep), sd):
             post.append(dict(subject=subject, condition=cond, propofol_ugml=r.meta.get("propofol_ugml"), param=name,
                              mean=float(m), sd=float(sdev)))

@@ -66,7 +66,7 @@ def mode_csd(data: np.ndarray, fs: float, w: np.ndarray, epoch_s: float = 10.0) 
     return out[:, None, None].astype(complex)
 
 
-def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int, model: str = "jr") -> tuple[list, list, list]:
+def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int, model: str = "jr", out: Path | None = None) -> tuple[list, list, list]:
     spec = JansenRitSpec(n_regions=1) if model == "jr" else CMCSpec(n_regions=1)
     dcm = SpectralDCM(spec, leadfield=jnp.eye(1), freqs=jnp.asarray(FREQS))
     by_cond = {r.condition: r for r in recs}
@@ -83,6 +83,9 @@ def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int, model: str
         res = dcm.invert(jnp.asarray(csd), n_iter=n_iter, n_starts=n_starts)
         dt = time.time() - t0
         sd = np.sqrt(np.diag(np.asarray(res.Cp)))
+        if out is not None:
+            np.savez(out / f"posterior_{subject}_{cond}.npz", Ep=np.asarray(res.Ep), Cp=np.asarray(res.Cp), pE=np.asarray(dcm.prior_mean),
+                     pC=np.asarray(dcm.prior_cov), names=dcm.names, F=float(res.F))
         for name, m, s in zip(dcm.names, np.asarray(res.Ep), sd):
             post.append(dict(subject=subject, condition=cond, propofol_ugml=r.meta.get("propofol_ugml"),
                              param=name, mean=float(m), sd=float(s)))
@@ -136,7 +139,7 @@ def main():
     subjects = sorted({r.subject for r in recs})
     print(f"{len(recs)} recordings, {len(subjects)} subjects", flush=True)
     results = Parallel(n_jobs=a.n_jobs)(
-        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_iter, a.n_starts, a.model) for s in subjects
+        delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_iter, a.n_starts, a.model, out) for s in subjects
     )
     post = pd.DataFrame([x for r in results for x in r[0]])
     fits = pd.DataFrame([x for r in results for x in r[1]])

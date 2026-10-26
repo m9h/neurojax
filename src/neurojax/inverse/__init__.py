@@ -5,6 +5,10 @@
   through a leadfield to a sensor CSD and inverted by variational Laplace
   with a free-energy bound for model comparison.
 
+* :mod:`neurojax.inverse.peb` — parametric empirical Bayes over first-level
+  posteriors (group / study / drug effects on model parameters) with
+  Bayesian model reduction.
+
 Source localisation lives in :mod:`neurojax.source`; data-driven dynamics
 identification in :mod:`neurojax.dynamics`.
 """
@@ -26,6 +30,7 @@ from neurojax.inverse.csd_dcm import (
     transfer_function,
     variational_laplace,
 )
+from neurojax.inverse.peb import PEBResult, bmr_effects, log_evidence_reduce, peb
 
 __all__ = [
     "CMCSpec",
@@ -43,4 +48,8 @@ __all__ = [
     "model_posterior",
     "transfer_function",
     "variational_laplace",
+    "PEBResult",
+    "bmr_effects",
+    "log_evidence_reduce",
+    "peb",
 ]
