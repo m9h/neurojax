@@ -68,13 +68,57 @@ Data are fitted as log power (diagonal) and complex coherency
 prior prediction (`result.scale`).  Noise-free synthetic data give an
 unbounded noise precision and should be avoided.
 
+## Free dipole moments
+
+With a fixed-orientation leadfield the multi-source fits on the Chennu
+propofol data misfit by about one log unit at every frequency alike (one
+spatial mode under-, two others over-predicted): a spatial, not a spectral,
+misfit.  Passing a `(n_sensors, n_regions, 3)` leadfield frees each
+source's dipole moment, as the ECD moments of `spm_L_priors` do:
+
+```python
+dcm = SpectralDCM(CMCSpec(n_regions=4, ...), leadfield=L3, orientation=normals,
+                  freqs=freqs, moment_var=1.0)
+m = dcm.moments(result.Ep)            # (n_regions, 3) posterior-mean moments
+```
+
+The moment is `orientation + L[i, :]` with `L` additive (so it can rotate
+and flip; prior mean 0, variance `moment_var` per component).  SPM uses a
+zero prior mean with variance 64; here the given orientation is the prior
+mean because a zero moment is a stationary point of the log-power
+features.  Those features have a barrier wherever a sensor projection
+`L·m` changes sign, so from the prior orientation Gauss-Newton stops in a
+local optimum of the wrong sign pattern (F −914 against 1625 at the truth
+in the unit test); `invert` therefore draws the starting moments from the
+prior along with the neural-mass parameters.
+
+## Simulating a fitted model
+
+```python
+x = result.simulate(fs=250.0, duration_s=60.0, key=jax.random.PRNGKey(0))             # linear-Gaussian, fitted CSD
+x = result.simulate(fs=250.0, duration_s=60.0, key=key, nonlinear=True, amplitude=3.0)  # the network itself
+```
+
+The linear simulation is a Gaussian process with exactly the predicted
+sensor cross-spectrum (Fourier synthesis; `tests/test_csd_dcm.py::TestSimulate`
+checks it against a multitaper estimate).  The nonlinear one integrates
+the network's vector field (Heun at 2 kHz) from its fixed point, driven by
+innovations with the fitted 1/f spectrum, and decimates to `fs`.  A
+cross-spectral fit does not identify the absolute amplitude of the states
+(the data are rescaled on inversion), so `amplitude` sets how far the
+dynamics reach into the sigmoid: as `amplitude → 0` the simulation has the
+predicted CSD, larger values add the model's nonlinearity at the same
+spectrum.  `scripts/consciousness_bench/dcm_simulate_measures.py` uses
+this to ask whether the complexity-measure contrasts of the bench are
+reproduced by the fitted linear model, by its nonlinearity at some
+amplitude, or by neither.
+
 ## What is not there yet
 
-- Parity against `spm_dcm_csd` (needs the SPM-Python oracle container).
-- A canonical-microcircuit model and an NMDA/AMPA split (needed for the
-  ketamine model of Muthukumaraswamy et al. 2015).
+- An NMDA/AMPA split (needed for the ketamine model of Muthukumaraswamy
+  et al. 2015).
 - Conduction delays between regions.
-- Hierarchical (PEB-style) priors across subjects, studies and drugs.
+- SPM's CSD-side features and hyperpriors as an option (see below).
 
 ## Parity with SPM (checked 2026-10-25 with SPM-Python 25.1.2, MATLAB Runtime R2025b)
 

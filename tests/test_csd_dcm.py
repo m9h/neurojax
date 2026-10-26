@@ -347,3 +347,68 @@ class TestCMC:
         H = np.asarray(transfer_function(A, B, C, w))[:, 0, 0]
         H_spm = np.array([ref["C"] @ np.linalg.solve(1j * x * np.eye(8) - ref["J"], ref["B"].reshape(-1, 1)) for x in np.asarray(w)]).ravel()
         np.testing.assert_allclose(H, H_spm, rtol=1e-6, atol=1e-12)
+
+
+def _multitaper_csd(x: np.ndarray, fs: float, freqs: np.ndarray, epoch_s: float = 10.0) -> np.ndarray:
+    """Epoch-averaged multitaper CSD (n_freq, C, C) of a (C, T) series interpolated to ``freqs``
+    (NW = 4, 7 tapers: the log-power sd over 12 epochs is ~0.11)."""
+    from neurojax.analysis.multitaper import multitaper_cpsd
+
+    n = int(epoch_s * fs)
+    acc = None
+    for e in range(x.shape[1] // n):
+        c, f = multitaper_cpsd(jnp.asarray(x[:, e * n : (e + 1) * n].T), fs=fs, bandwidth=4.0)
+        acc = np.asarray(c) if acc is None else acc + np.asarray(c)
+    acc /= x.shape[1] // n
+    f = np.asarray(f)
+    out = np.empty((freqs.size,) + acc.shape[1:], complex)
+    for i in range(acc.shape[1]):
+        for j in range(acc.shape[2]):
+            out[:, i, j] = np.interp(freqs, f, acc[:, i, j].real) + 1j * np.interp(freqs, f, acc[:, i, j].imag)
+    return out
+
+
+class TestSimulate:
+    """Time series sampled from a fitted spectral DCM (the bridge to the complexity measures)."""
+
+    def _model(self):
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        spec = CMCSpec(n_regions=2, A_forward=jnp.array([[0.0, 0.0], [800.0, 0.0]]), A_backward=jnp.array([[0.0, 400.0], [0.0, 0.0]]))
+        dcm = SpectralDCM(spec, leadfield=jnp.array([[1.0, 0.3], [0.2, 1.0]]), freqs=jnp.arange(1.0, 45.01, 0.5))
+        p = dcm.prior_mean.at[dcm.index("T", 1, 2)].set(0.3).at[dcm.index("a_u", 1)].set(-0.4)
+        return dcm, p
+
+    def _compare(self, dcm, p, x, fs):
+        band = (np.asarray(dcm.freqs) >= 2) & (np.asarray(dcm.freqs) <= 40)
+        est = _multitaper_csd(x, fs, np.asarray(dcm.freqs))
+        pred = np.asarray(dcm.predict(p))
+        dp = np.log(np.real(np.diagonal(est, axis1=1, axis2=2)))[band] - np.log(np.real(np.diagonal(pred, axis1=1, axis2=2)))[band]
+        coh = lambda S: np.abs(S[:, 0, 1]) / np.sqrt(np.real(S[:, 0, 0] * S[:, 1, 1]))  # noqa: E731
+        return float(np.sqrt(np.mean(dp**2))), float(np.mean(np.abs(coh(est) - coh(pred))[band]))
+
+    def test_linear_simulation_matches_predicted_csd(self):
+        dcm, p = self._model()
+        x = dcm.simulate(p, fs=250.0, duration_s=120.0, key=jax.random.PRNGKey(0))
+        assert x.shape == (2, 30000) and np.all(np.isfinite(x))
+        rms, dcoh = self._compare(dcm, p, x, 250.0)
+        assert rms < 0.15, rms
+        assert dcoh < 0.1, dcoh
+
+    def test_nonlinear_simulation_at_small_amplitude_matches_linear(self):
+        dcm, p = self._model()
+        x = dcm.simulate(p, fs=250.0, duration_s=120.0, key=jax.random.PRNGKey(1), nonlinear=True, amplitude=0.1)
+        assert x.shape == (2, 30000) and np.all(np.isfinite(x))
+        rms, dcoh = self._compare(dcm, p, x, 250.0)
+        assert rms < 0.2, rms
+        assert dcoh < 0.12, dcoh
+
+    def test_result_simulate_returns_data_units(self):
+        dcm, p = self._model()
+        from neurojax.inverse.csd_dcm import SpectralDCMResult
+
+        res = SpectralDCMResult(p, jnp.eye(dcm.n_params), 0.0, 0.0, np.zeros(1), dcm.predict(p) / 4.0, 4.0, dcm, np.zeros(1))
+        x = res.simulate(fs=250.0, duration_s=20.0, key=jax.random.PRNGKey(2))
+        assert x.shape == (2, 5000)
+        ratio = np.var(x) / np.var(dcm.simulate(p, fs=250.0, duration_s=20.0, key=jax.random.PRNGKey(2)))
+        assert abs(ratio - 1 / 4) < 1e-9, ratio  # the CSD is scaled by 1/scale, the series by 1/sqrt(scale)

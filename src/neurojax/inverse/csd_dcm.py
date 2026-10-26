@@ -557,28 +557,99 @@ class SpectralDCM:
             return self.leadfield
         return jnp.einsum("cik,ik->ci", self.leadfield, self.moments(p))
 
-    def _sensor_csd(self, p: jnp.ndarray, include_noise: bool = True) -> jnp.ndarray:
+    def _innovation_psd(self, p: jnp.ndarray, freqs: jnp.ndarray) -> jnp.ndarray:
+        """Innovation power spectral density per region ``(n_freq, n_regions)``."""
+        b_u = self._spectral(p, "b_u")[0]
+        return self._spectral(p, "a_u")[None, :] * freqs[:, None] ** (-b_u)
+
+    def _noise_csd(self, p: jnp.ndarray, freqs: jnp.ndarray) -> jnp.ndarray:
+        """Channel-noise CSD ``(n_freq, n_sensors, n_sensors)``."""
+        nc = self.leadfield.shape[0]
+        b_n = self._spectral(p, "b_n")[0]
+        shape = (freqs ** (-b_n))[:, None, None]
+        a_n = self._spectral(p, "a_n")[0] * self._noise_default
+        a_c = self._spectral(p, "a_c")[0] * self._noise_default
+        return shape * (a_n * jnp.eye(nc) + a_c * jnp.ones((nc, nc))) + 0j
+
+    def _sensor_csd(self, p: jnp.ndarray, include_noise: bool = True, freqs: jnp.ndarray | None = None) -> jnp.ndarray:
+        freqs = self.freqs if freqs is None else freqs
         th = self.theta(p)
         A, B, C = linearise(self.spec, th)
-        H = transfer_function(A, B, C, 2 * jnp.pi * self.freqs)  # (nf, n, n)
-        f = self.freqs[:, None]
-        b_u = self._spectral(p, "b_u")[0]
-        G_u = self._spectral(p, "a_u")[None, :] * f ** (-b_u)  # (nf, n)
+        H = transfer_function(A, B, C, 2 * jnp.pi * freqs)  # (nf, n, n)
+        G_u = self._innovation_psd(p, freqs)  # (nf, n)
         S_src = jnp.einsum("fij,fj,fkj->fik", H, G_u.astype(jnp.complex128), jnp.conj(H))
         L = self.effective_leadfield(p)
         S = jnp.einsum("ci,fij,dj->fcd", L, S_src, L)
         if include_noise:
-            nc = L.shape[0]
-            b_n = self._spectral(p, "b_n")[0]
-            shape = (f ** (-b_n))[:, :, None]  # (nf,1,1)
-            a_n = self._spectral(p, "a_n")[0] * self._noise_default
-            a_c = self._spectral(p, "a_c")[0] * self._noise_default
-            S = S + shape * (a_n * jnp.eye(nc) + a_c * jnp.ones((nc, nc)))
+            S = S + self._noise_csd(p, freqs)
         return S
 
     def predict(self, p: jnp.ndarray) -> jnp.ndarray:
         """Sensor cross-spectral density ``(n_freq, n_sensors, n_sensors)``."""
         return self._sensor_csd(p)
+
+    # -- simulation -----------------------------------------------------------
+
+    def simulate(
+        self,
+        p: jnp.ndarray,
+        fs: float,
+        duration_s: float,
+        key: jax.Array,
+        nonlinear: bool = False,
+        amplitude: float = 1.0,
+        fs_int: float = 2000.0,
+        burn_in_s: float = 2.0,
+    ) -> np.ndarray:
+        """Sample a ``(n_sensors, T)`` sensor time series from the model at ``p`` (model units;
+        divide by a result's ``scale`` for data units, or use ``SpectralDCMResult.simulate``).
+
+        ``nonlinear=False``: a stationary Gaussian process with exactly the
+        predicted sensor CSD (Fourier synthesis).  ``nonlinear=True``: the
+        network's vector field is integrated (Heun, ``fs_int``) from its
+        fixed point, driven by Gaussian innovations with the fitted
+        spectrum ``G_u`` times ``amplitude``², the output divided by
+        ``amplitude`` and decimated to ``fs``, projected through the
+        (posterior) leadfield, plus Gaussian channel noise with the fitted
+        channel-noise CSD.  A CSD fit does not identify the absolute
+        amplitude of the states (the data are rescaled on inversion), so
+        ``amplitude`` sets how far the dynamics reach into the sigmoid: in the
+        linear regime (``amplitude`` → 0) the nonlinear simulation has the
+        predicted CSD, and larger values add the model's nonlinearity at the
+        same spectrum.  The 1/f innovation and noise shapes are evaluated
+        with frequency floored at ``freqs[0]`` and no DC.
+        """
+        n = int(round(duration_s * fs))
+        f = jnp.maximum(jnp.arange(n // 2 + 1) * fs / n, self.freqs[0])
+        k_lin, k_u, k_n = jax.random.split(key, 3)
+        if not nonlinear:
+            return np.asarray(_gaussian_series(self._sensor_csd(p, freqs=f), fs, n, k_lin))
+        th = self.theta(p)
+        dt = 1.0 / fs_int
+        n_int = int(round((duration_s + burn_in_s) * fs_int))
+        f_int = jnp.maximum(jnp.arange(n_int // 2 + 1) * fs_int / n_int, self.freqs[0])
+        G_u = self._innovation_psd(p, f_int) * amplitude**2  # (nf, n_regions)
+        u = _gaussian_series(jax.vmap(jnp.diag)(G_u.astype(jnp.complex128)), fs_int, n_int, k_u)  # (n_regions, T_int)
+        x0 = fixed_point(self.spec, th)
+        y0 = self.spec.output(x0)
+
+        def step(x, u_t):
+            k1 = self.spec.vector_field(th, x, u_t)
+            k2 = self.spec.vector_field(th, x + dt * k1, u_t)
+            x = x + 0.5 * dt * (k1 + k2)
+            return x, self.spec.output(x) - y0
+
+        _, y = jax.lax.scan(step, x0, u.T)  # (T_int, n_regions)
+        y = np.asarray(y[int(round(burn_in_s * fs_int)) :]) / amplitude
+        from fractions import Fraction
+
+        from scipy.signal import resample_poly
+
+        r = Fraction(fs / fs_int).limit_denominator(100000)
+        y = resample_poly(y, r.numerator, r.denominator, axis=0)[:n]
+        sensors = np.asarray(self.effective_leadfield(p)) @ y.T
+        noise = np.asarray(_gaussian_series(self._noise_csd(p, f), fs, n, k_n))
+        return sensors + noise
 
     # -- data features -------------------------------------------------------
 
@@ -670,6 +741,21 @@ class SpectralDCM:
         )
 
 
+def _gaussian_series(S: jnp.ndarray, fs: float, n: int, key: jax.Array) -> jnp.ndarray:
+    """``(C, n)`` real Gaussian series whose one-sided CSD on the rfft grid is ``S`` ``(n//2+1, C, C)``.
+
+    ``X_k = sqrt(fs n / 2) chol(S_k) z_k`` with unit complex-normal ``z_k`` and
+    ``x = irfft(X)``, so ``Var x = Σ_k S_kk Δf``; the DC bin is zero.
+    """
+    nf, c, _ = S.shape
+    Lc = jnp.linalg.cholesky(S + 1e-12 * jnp.trace(S.real, axis1=1, axis2=2).mean() * jnp.eye(c))
+    k1, k2 = jax.random.split(key)
+    z = (jax.random.normal(k1, (nf, c)) + 1j * jax.random.normal(k2, (nf, c))) / jnp.sqrt(2.0)
+    X = jnp.sqrt(fs * n / 2.0) * jnp.einsum("fij,fj->fi", Lc, z)
+    X = X.at[0].set(0.0)
+    return jnp.fft.irfft(X.T, n=n, axis=1)
+
+
 class SpectralDCMResult(NamedTuple):
     Ep: jnp.ndarray
     Cp: jnp.ndarray
@@ -685,6 +771,10 @@ class SpectralDCMResult(NamedTuple):
         """``{name: (posterior mean, posterior sd)}`` of the log-scalings."""
         sd = np.sqrt(np.diag(np.asarray(self.Cp)))
         return {n: (float(m), float(s)) for n, m, s in zip(self.model.names, np.asarray(self.Ep), sd)}
+
+    def simulate(self, fs: float, duration_s: float, key: jax.Array, **kw) -> np.ndarray:
+        """``(n_sensors, T)`` sample from the posterior-mean model in data units (see ``SpectralDCM.simulate``)."""
+        return self.model.simulate(self.Ep, fs, duration_s, key, **kw) / np.sqrt(self.scale)
 
 
 __all__ = [
