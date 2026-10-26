@@ -178,6 +178,32 @@ real leadfield, and then the `spm_dcm_csd` parity check (SPM-Python needs
 the x86-only MATLAB Runtime, so on the aarch64 Spark it has to run under
 emulation).  Outputs: `propofol-chennu2016/dcm/{posteriors,fits,spectra,contrasts}.csv`.
 
+**Canonical microcircuit on the same data (job 1867, `--model cmc`, 19
+parameters, 27 s per fit, `dcm_cmc/`):** the fits improve (RMSE in log
+power 0.40-0.54 vs 0.6-0.7, the 1/f and beta range now followed) but the
+alpha peak is still under-predicted by ~1 log unit at baseline (the
+default CMC modes at 7 and 17 Hz are heavily damped, max Re λ = −34/s, and
+the 1/16 priors on `G` do not let the fit approach the instability needed
+for a sharp alpha), and the free energy is lower than Jansen-Rit's for 66
+of 80 fits (mean −22 nats: more parameters, little extra accuracy).  The
+moderate-sedation contrast moves to the glutamatergic / deep-layer side:
+spiny-stellate time constant `T_ss` +0.78 (d 0.81, p 0.006),
+superficial-pyramidal self-inhibition `G_sp→sp` +0.35 (d 0.78, p 0.002),
+deep-pyramidal ↔ interneuron gains `G_dp→ii` / `G_ii→dp` −0.27 (d −0.68,
+p 0.001), innovation amplitude −0.09 (d −0.61); the inhibitory time
+constant `T_ii` is +0.12 (d 0.18, n.s.) — the right sign for GABA-A
+prolongation this time, but not where the model puts the effect.  Gains
+that enter the linearised loop only as a product (`G_dp→ii` · `G_ii→dp`,
+`G_ii→ss` · `G_ss→ii`) come out with identical posteriors: the
+linearisation makes them non-identifiable, as in SPM.  Both one-column
+fits therefore say the same thing — on a single spatial mode the model
+explains sedation by reshaping the resonances, not by a clean GABA-A
+parameter — and the next steps stand: a multi-source model with a real
+leadfield (alpha and beta have different topographies under propofol:
+occipital alpha loss, frontal alpha/beta gain), looser or
+hierarchically-estimated priors on the gains, and the SPM parity check
+(running on the x86 machine).
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
