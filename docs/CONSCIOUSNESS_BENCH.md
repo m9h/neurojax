@@ -363,6 +363,19 @@ left-occipital `G_ii→ii` −0.30 (d −0.53), frontal `G_sp→sp` +0.29-0.30
 survives; 84 of 320 extrinsic gains still sit > 3 prior SD out and the F
 spread across starts is unchanged (median 129 nats).
 
+**PEB on the constrained fits:** the baseline-vs-everything effect
+survives the pooled modes — mild, moderate and recovery all raise `T_ss`
+and `T_sp` in every source by +0.5-1.0 (sd 0.19, 3-13 nats) — so it is not
+the mode choice.  Recovery in this dataset is recorded after propofol
+cessation with drug still on board, and the bench's spectral measures also
+separate recovery from baseline (relative beta d 0.42, LZ76 0.67), so a
+dose-insensitive "drug present / session later" effect on the
+glutamatergic time constants is the plainer reading; it cannot be
+separated from session order with this design.  The level-specific
+effects are frontal: moderate lowers right-frontal `G_ii→ii` (−0.63 ±
+0.20, 4.8 nats) and mild / moderate raise `G_sp→sp` in the left sources
+(+0.55-0.59, 3.3-4.1 nats); the random-effects sd is 1.0 in prior units.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
