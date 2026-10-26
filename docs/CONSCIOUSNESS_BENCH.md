@@ -242,6 +242,61 @@ mega-analysis) rather than a finding.  The first-level fits also changed
 between runs when the CMC input gain was aligned to SPM (512), i.e. the
 posteriors are sensitive to the innovation scale.
 
+**Free dipole moments (job 1870, `dcm_sources_free/`, 4 starts, 68
+parameters, 170-430 s per fit):** the fixed-orientation misfit was spatial
+(mode 0 under-predicted by 1-1.8 log units, modes 2 and 4 over-predicted by
+1-2.7, at every frequency alike), so each source's moment is now a free
+parameter with the cortical normal as prior mean (as `spm_L_priors`' ECD
+moments; the starts draw moments from the prior because the log-power
+features have a barrier wherever a sensor projection changes sign).  Log
+power RMSE drops from ~1.0 to 0.36 at all levels and F rises by ~2000 nats
+per fit.  Moderate − baseline (paired d, Wilcoxon): frontal inhibitory time
+constants rise (right `T_ii` +0.71, d 0.98, p 0.001; left +0.32, d 0.51,
+p 0.03 at occipital-left), frontal interneuron self-inhibition `G_ii→ii`
+falls (left −0.72, d −1.28; right −0.65, d −1.0; both p < 0.001), frontal
+superficial-pyramidal self-inhibition `G_sp→sp` rises (+0.6, d 1.1, p <
+0.001) and left-frontal `T_ss` rises (+0.38, d 1.14).  Mild sedation shows
+the same frontal `G_sp→sp` change at half the size (d 0.81); recovery only
+extrinsic gains (d 0.4-0.6).  So with a leadfield the model can fit, the
+propofol effect is frontal, inhibitory and in the GABA-A direction (slower
+`T_ii`, weaker ii→ii) — but two things forbid calling it a finding yet: (i)
+86 of 320 extrinsic-gain posteriors sit > 3 prior SD from the prior and the
+free energy still spreads 150 nats (median) across the 4 starts; (ii)
+**52 of the 80 posterior-mean linearisations are unstable** (max Re λ > 0,
+up to +97/s, always on the ~10 Hz mode): the inverter sharpens the alpha
+peak by pushing the alpha mode across the Hopf point, where the
+transfer-function CSD is still defined but no longer describes a stationary
+linear process.  A stability-constrained inversion (barrier on max Re λ, or
+SPM's practice of accepting it) is the next model step.  Outputs:
+`dcm_sources_free/{posteriors,fits,spectra,contrasts}.csv`,
+`posterior_<subject>_<cond>.npz`, `leadfield_<subject>.npz` (`L3`, `nn`, `U`).
+
+**Simulating the fitted models against the measures (job 1872,
+`dcm_simulate_measures.py`, `dcm_sources_free/sim_vs_observed.csv`):** each
+posterior-mean model was simulated at the 91 sensors (60 s, 250 Hz), scored
+with 15 bench measures on the bench's 10 channels × 6 epochs and
+contrasted as the real data were.  The linear-Gaussian simulation (the
+fitted cross-spectrum, `amplitude 0`) reproduces the spectral contrasts —
+relative beta d 1.06 / 1.03 / 0.42 (mild / moderate / recovery) against
+observed 1.13 / 1.41 / 0.42, Hjorth mobility 0.76 vs 0.86, aperiodic
+exponent −0.46 vs −0.61, LZ76 0.53 vs 0.79, recovery's alpha 0.52 vs 0.49 —
+but not the phasic residues: multiscale entropy gives d −0.23 under
+moderate sedation where the data give −0.90 (the bench's 60 %-phasic
+measure), the Lyapunov exponent 0.02 vs −0.45, pair correlation 0.04 vs
+−0.52 (mild).  The nonlinear integration of the same posteriors (innovation
+`amplitude` 0.1-3; the CSD fit does not identify it) moves MSE part of the
+way (−0.37 to −0.53) but breaks the spectral contrasts even at amplitude
+0.1 (relative beta d 0.28) and inverts the Lyapunov sign at amplitude 3 —
+because 52 of the 80 fitted networks are unstable (above) and settle on a
+limit cycle, not because of a small nonlinear correction.  Conclusion so
+far: the spectral DCM accounts for the spectral family of measures by
+construction and for none of the phasic residues; testing whether the
+model's nonlinearity can produce them needs the stability-constrained
+fits first.  The multitaper used throughout (`analysis.multitaper`) was
+found to be low by a factor `nfft` and ~250× slower than necessary (dense
+DPSS eigenproblem per call); both fixed 2026-10-25 — absolute spectral
+levels in earlier tables are off by that constant, nothing relative is.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is

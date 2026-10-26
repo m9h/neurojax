@@ -117,3 +117,22 @@ def test_shared_gamma_matches_per_parameter_on_homogeneous_data():
     assert shared.gamma.shape == (1,)
     assert np.allclose(np.asarray(full.Eb), np.asarray(shared.Eb), atol=0.05)
     assert np.allclose(np.sqrt(np.diag(np.asarray(shared.Sigma))), 0.2, atol=0.1)
+
+
+def test_indefinite_first_level_covariance_is_floored():
+    """A slightly indefinite (single-precision) Cp must not blow the effects up."""
+    from neurojax.inverse.peb import bmr_effects, peb
+
+    rng = np.random.default_rng(5)
+    n, p = 16, 3
+    pE, pC = jnp.zeros(p), jnp.eye(p) * 0.25
+    X = jnp.asarray(np.column_stack([np.ones(n), rng.normal(size=n)]))
+    theta = np.asarray(X) @ np.array([[0.3, 0.0, 0.0], [0.0, 0.4, 0.0]]) + rng.normal(size=(n, p)) * 0.1
+    Cp = np.tile(np.diag([0.01, 0.01, 1e-7]), (n, 1, 1)).astype(np.float32)
+    Cp[:, 2, 2] = -1e-7  # indefinite, as a float32 Laplace covariance can be
+    Ep = jnp.asarray(theta + rng.normal(size=(n, p)) * 0.1)
+    res = peb(Ep, jnp.asarray(Cp), pE, pC, X, shared_gamma=True)
+    assert np.all(np.abs(np.asarray(res.Eb)) < 2.0)
+    assert abs(float(res.Eb[0, 0]) - 0.3) < 0.1 and abs(float(res.Eb[1, 1]) - 0.4) < 0.1
+    dF = bmr_effects(res, covariates=[1])
+    assert np.isnan(dF[0]).all() and dF[1, 1] > 3 and dF[1, 2] < 3

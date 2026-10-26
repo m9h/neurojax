@@ -98,6 +98,7 @@ def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0) 
 
 
 def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path):
+    jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
         return [], [], []

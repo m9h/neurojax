@@ -67,6 +67,7 @@ def mode_csd(data: np.ndarray, fs: float, w: np.ndarray, epoch_s: float = 10.0) 
 
 
 def fit_subject(subject: str, recs: list, n_iter: int, n_starts: int, model: str = "jr", out: Path | None = None) -> tuple[list, list, list]:
+    jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     spec = JansenRitSpec(n_regions=1) if model == "jr" else CMCSpec(n_regions=1)
     dcm = SpectralDCM(spec, leadfield=jnp.eye(1), freqs=jnp.asarray(FREQS))
     by_cond = {r.condition: r for r in recs}

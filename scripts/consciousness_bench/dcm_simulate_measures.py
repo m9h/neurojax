@@ -61,6 +61,7 @@ DEFAULT_MEASURES = [
 
 
 def simulate_recording(d: Path, f: Path, amplitude: float, duration_s: float, fs: float, n_channels: int, seed: int):
+    jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     subject, cond = f.stem.split("_")[1:3]
     z = np.load(f, allow_pickle=True)
     lf = np.load(d / f"leadfield_{subject}.npz", allow_pickle=True)

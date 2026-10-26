@@ -86,6 +86,7 @@ def peb(
     gamma_prior_var: float = 4.0,
     n_iter: int = 32,
     shared_gamma: bool = False,
+    cov_floor: float = 1e-6,
 ) -> PEBResult:
     """Fit the second-level model.  ``Ep`` (n_sub, n_par), ``Cp`` (n_sub, n_par, n_par), ``X`` (n_sub, n_cov).
 
@@ -108,6 +109,13 @@ def peb(
     n, p = Ep.shape
     c = X.shape[1]
     P0 = jnp.linalg.inv(pC)
+    # first-level covariances saved in single precision (or from a Laplace step that
+    # stopped early) can be slightly indefinite; symmetrise and floor their spectrum
+    # at cov_floor × the largest eigenvalue before inverting
+    Cp = 0.5 * (Cp + jnp.swapaxes(Cp, 1, 2))
+    wC, VC = jnp.linalg.eigh(Cp)
+    wC = jnp.maximum(wC, cov_floor * wC.max(axis=1, keepdims=True))
+    Cp = jnp.einsum("nij,nj,nkj->nik", VC, wC, VC)
     Pp = jnp.linalg.inv(Cp)  # (n, p, p)
     w, V = jnp.linalg.eigh(Pp - P0[None])
     n_clipped = int(jnp.sum(w < 0))
@@ -180,17 +188,20 @@ def peb(
     return PEBResult(Eb.reshape(c, p), jnp.linalg.inv(Pb), Sigma, gamma, F, bE, bC, X, n_clipped)
 
 
-def bmr_effects(res: PEBResult, var_reduced: float = 1e-8) -> np.ndarray:
+def bmr_effects(res: PEBResult, var_reduced: float = 1e-8, covariates: list[int] | None = None) -> np.ndarray:
     """F(full) − F(effect pinned to zero) for every covariate × parameter effect (n_cov, n_par).
 
     Positive values favour keeping the effect; ~3 nats ≈ posterior probability 0.95.
+    ``covariates`` restricts the rows evaluated (others are NaN); each effect is
+    one reduction of a ``(n_cov n_par)``-dimensional posterior.
     """
     c, p = res.Eb.shape
     mu = res.Eb.reshape(-1)
-    out = np.zeros((c, p))
-    for k in range(c * p):
-        Sr = res.bC.at[k, k].set(var_reduced)
-        out.flat[k] = -float(log_evidence_reduce(res.bE, res.bC, mu, res.Cb, res.bE, Sr))
+    out = np.full((c, p), np.nan)
+    for ci in range(c) if covariates is None else covariates:
+        for k in range(ci * p, (ci + 1) * p):
+            Sr = res.bC.at[k, k].set(var_reduced)
+            out.flat[k] = -float(log_evidence_reduce(res.bE, res.bC, mu, res.Cb, res.bE, Sr))
     return out
 
 

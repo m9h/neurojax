@@ -48,7 +48,7 @@ def main(d: Path, shared_gamma: bool = True):
                         + [[1.0 if c == k else 0.0 for _, c in rows] for k in COND])
     print(f"{len(rows)} recordings, {Ep.shape[1]} parameters, design {X.shape}", flush=True)
     res = peb(jnp.asarray(Ep), jnp.asarray(Cp), jnp.asarray(pE), jnp.asarray(pC), jnp.asarray(X), shared_gamma=shared_gamma)
-    dF = bmr_effects(res)
+    dF = bmr_effects(res, covariates=list(range(len(subjects), len(subjects) + len(COND))))  # sedation effects only
     sd = np.sqrt(np.diag(np.asarray(res.Cb))).reshape(res.Eb.shape)
     out = []
     for ci, cname in enumerate([f"subject_{s}" for s in subjects] + COND):
