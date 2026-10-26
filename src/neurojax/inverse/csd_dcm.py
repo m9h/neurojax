@@ -661,7 +661,11 @@ class SpectralDCM:
         linear regime (``amplitude`` → 0) the nonlinear simulation has the
         predicted CSD, and larger values add the model's nonlinearity at the
         same spectrum.  The 1/f innovation and noise shapes are evaluated
-        with frequency floored at ``freqs[0]`` and no DC.
+        with frequency floored at ``freqs[0]`` and no DC.  ``fs_int`` is
+        raised if needed so that the step is at most a quarter of the
+        shortest synaptic time constant at ``p`` (Heun is unstable past
+        ``dt ≈ T``; fitted time constants can be an order of magnitude below
+        their prior).
         """
         n = int(round(duration_s * fs))
         f = jnp.maximum(jnp.arange(n // 2 + 1) * fs / n, self.freqs[0])
@@ -669,6 +673,8 @@ class SpectralDCM:
         if not nonlinear:
             return np.asarray(_gaussian_series(self._sensor_csd(p, freqs=f), fs, n, k_lin))
         th = self.theta(p)
+        if hasattr(th, "T"):
+            fs_int = max(fs_int, 4.0 / float(jnp.min(th.T)))
         dt = 1.0 / fs_int
         n_int = int(round((duration_s + burn_in_s) * fs_int))
         f_int = jnp.maximum(jnp.arange(n_int // 2 + 1) * fs_int / n_int, self.freqs[0])

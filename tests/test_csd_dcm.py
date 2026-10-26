@@ -445,6 +445,15 @@ class TestSimulate:
         assert rms < 0.2, rms
         assert dcoh < 0.12, dcoh
 
+    def test_nonlinear_step_adapts_to_short_time_constants(self):
+        """A posterior with a 0.2 ms time constant must integrate finitely at the default fs_int."""
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        dcm = SpectralDCM(CMCSpec(), leadfield=jnp.eye(1), freqs=jnp.linspace(1.0, 45.0, 45))
+        p = dcm.prior_mean.at[dcm.index("T", 0, 0)].set(jnp.log(0.1))  # 2 ms -> 0.2 ms
+        x = dcm.simulate(p, fs=250.0, duration_s=2.0, key=jax.random.PRNGKey(0), nonlinear=True, amplitude=0.1)
+        assert x.shape == (1, 500) and np.all(np.isfinite(x))
+
     def test_result_simulate_returns_data_units(self):
         dcm, p = self._model()
         from neurojax.inverse.csd_dcm import SpectralDCMResult
