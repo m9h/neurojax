@@ -291,6 +291,31 @@ class TestCMC:
         g = jax.grad(lambda p: jnp.sum(jnp.abs(dcm.predict(p)) ** 2))(dcm.prior_mean + 0.05)
         assert np.all(np.isfinite(np.asarray(g))) and float(jnp.linalg.norm(g)) > 0
 
+    def test_extrinsic_connections_follow_spm_fx_cmc(self):
+        """Forward: sp(source) -> ss at the gain, dp at half; backward: dp(source) inhibits sp at the gain, ii at half;
+        a reciprocal pair is reduced by 1/5 (``spm_fx_cmc``)."""
+        from neurojax.inverse.csd_dcm import CMCSpec, linearise
+
+        spec = CMCSpec(n_regions=2, A_forward=jnp.array([[0.0, 0.0], [800.0, 0.0]]), A_backward=jnp.array([[0.0, 400.0], [0.0, 0.0]]))
+        th = spec.default_theta()
+        A, _, _ = linearise(spec, th)
+        A = np.asarray(A)
+        # states are region-major [v_ss, v_sp, v_ii, v_dp, i_ss, i_sp, i_ii, i_dp]; the linearised sigmoid slope is R/4
+        g = th.R / 4
+        # forward 0 -> 1: d(i_ss of region 1)/d(v_sp of region 0) = +800 g / T_ss, d(i_dp)/d(v_sp) = +400 g / T_dp
+        assert np.isclose(A[8 + 4, 1], 800 * g / spec.T[0])
+        assert np.isclose(A[8 + 7, 1], 400 * g / spec.T[3])
+        # backward 1 -> 0: d(i_sp of region 0)/d(v_dp of region 1) = -400 g / T_sp, d(i_ii)/d(v_dp) = -200 g / T_ii
+        assert np.isclose(A[5, 8 + 3], -400 * g / spec.T[1])
+        assert np.isclose(A[6, 8 + 3], -200 * g / spec.T[2])
+        recip = CMCSpec(n_regions=2, A_forward=jnp.array([[0.0, 800.0], [800.0, 0.0]]))
+        Ar = np.asarray(linearise(recip, recip.default_theta())[0])
+        assert np.isclose(Ar[8 + 4, 1], 800 * g / spec.T[0] / 5)
+        assert np.isclose(Ar[4, 8 + 1], 800 * g / spec.T[0] / 5)
+        assert np.isclose(Ar[8 + 7, 1], 400 * g / spec.T[3] / 5)
+        loose = CMCSpec(n_regions=2, A_forward=jnp.array([[0.0, 0.0], [800.0, 0.0]]), extrinsic_var=0.5)
+        assert [v for name, _, v in loose.param_spec() if name == "A_forward"] == [0.5]
+
     def test_recovers_inhibitory_time_constant(self):
         from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
 

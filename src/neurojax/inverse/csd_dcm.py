@@ -149,8 +149,8 @@ class CMCTheta(NamedTuple):
 
     T: jnp.ndarray  # (n, 4) synaptic time constants (s)
     G: jnp.ndarray  # (n, 10) intrinsic gains, see CMCSpec
-    A_forward: jnp.ndarray  # (n, n) sp(source) -> ss and dp (target)
-    A_backward: jnp.ndarray  # (n, n) dp(source) -> sp and ii (target)
+    A_forward: jnp.ndarray  # (n, n) sp(source) -> ss (gain) and dp (half the gain) of the target
+    A_backward: jnp.ndarray  # (n, n) dp(source) -> sp (gain) and ii (half), inhibitory, on the target
     R: float = 2.0 / 3.0  # sigmoid slope
 
 
@@ -182,14 +182,28 @@ class CMCSpec:
     9     dp → dp       −
     ====  ============  ====
 
+    Extrinsic connections follow ``spm_fx_cmc``: a forward connection with
+    gain ``A_forward[i, j]`` drives the target's spiny stellates from the
+    source's superficial pyramidals at that gain and its deep pyramidals at
+    half of it (SPM's ``E = [1 1/2] × 200``); a backward connection
+    ``A_backward[i, j]`` *inhibits* the target's superficial pyramidals at
+    the gain and its interneurons at half of it.  Where a connection is
+    reciprocal (present in both directions in the same matrix) both gains
+    are divided by 5, as SPM does for lateral connections; SPM's lateral
+    connection is exactly a reciprocal forward + backward pair, so declare it
+    that way.  Each nonzero entry is one log-scaling parameter with prior
+    variance ``extrinsic_var`` (SPM: 1/8).
+
     Pharmacology: ``T[:, 2]`` is the inhibitory (GABA-A) time constant,
     ``G[:, 2]``, ``G[:, 3]``, ``G[:, 8]`` the inhibitory gains, ``T[:, 0]`` /
     ``T[:, 1]`` the glutamatergic kinetics, ``A_*`` the extrinsic gains.  The
     fixed point is at ``x = 0`` (the sigmoid is centred), so the linearisation
     has gain ``R/4`` on every connection.  Parity with SPM25's
     ``spm_fx_cmc`` / ``spm_gx_erp`` at the prior was verified with
-    SPM-Python (2026-10-25): identical Jacobian eigenvalues and transfer
-    function (``tests/test_csd_dcm.py::TestCMC::test_matches_spm_linearisation``).
+    SPM-Python (2026-10-25) for a single region: identical Jacobian
+    eigenvalues and transfer function
+    (``tests/test_csd_dcm.py::TestCMC::test_matches_spm_linearisation``); the
+    extrinsic terms are transcribed from ``spm_fx_cmc.m`` and unit-tested.
     Output: superficial-pyramidal depolarisation.
     """
 
@@ -199,12 +213,18 @@ class CMCSpec:
     T: tuple[float, float, float, float] = (0.002, 0.002, 0.016, 0.028)
     G: tuple[float, ...] = tuple(g * 200.0 for g in (4, 4, 8, 4, 4, 2, 4, 4, 2, 1))
     u_gain: float = 512.0  # exogenous input gain into ss, as in spm_fx_cmc (B = 512 / T_ss on the ss current)
+    extrinsic_var: float = 1 / 8  # prior variance of the extrinsic log-gains
     n_states: int = 8
     population = ("ss", "sp", "ii", "dp")
 
     def _mat(self, A):
         n = self.n_regions
         return jnp.zeros((n, n)) if A is None else jnp.asarray(A, dtype=jnp.float64)
+
+    def _reciprocal_scaling(self, A) -> jnp.ndarray:
+        """1/5 where a connection exists in both directions (``spm_fx_cmc``'s lateral reduction), 1 elsewhere."""
+        M = self._mat(A) != 0
+        return jnp.where(M & M.T, 0.2, 1.0)
 
     def default_theta(self) -> CMCTheta:
         n = self.n_regions
@@ -222,7 +242,7 @@ class CMCSpec:
         th = self.default_theta()
         for name in ("A_forward", "A_backward"):
             A = np.asarray(getattr(th, name))
-            out += [(name, (int(i), int(j)), 1 / 8) for i, j in zip(*np.nonzero(A))]
+            out += [(name, (int(i), int(j)), self.extrinsic_var) for i, j in zip(*np.nonzero(A))]
         return out
 
     def vector_field(self, theta: CMCTheta, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
@@ -232,14 +252,14 @@ class CMCSpec:
         v, i = X[:, :4], X[:, 4:]
         S = 1.0 / (1.0 + jnp.exp(-theta.R * v)) - 0.5  # (n, 4)
         G, T = theta.G, theta.T
-        fwd = theta.A_forward @ S[:, 1]  # sp of sources
-        bwd = theta.A_backward @ S[:, 3]  # dp of sources
+        fwd = (theta.A_forward * self._reciprocal_scaling(self.A_forward)) @ S[:, 1]  # sp of sources
+        bwd = (theta.A_backward * self._reciprocal_scaling(self.A_backward)) @ S[:, 3]  # dp of sources
         inp = jnp.stack(
             [
                 fwd - G[:, 0] * S[:, 0] - G[:, 1] * S[:, 1] - G[:, 2] * S[:, 2] + self.u_gain * u,
-                G[:, 7] * S[:, 0] - G[:, 6] * S[:, 1] + bwd,
-                G[:, 4] * S[:, 0] + G[:, 5] * S[:, 3] - G[:, 3] * S[:, 2] + bwd,
-                fwd - G[:, 8] * S[:, 2] - G[:, 9] * S[:, 3],
+                G[:, 7] * S[:, 0] - G[:, 6] * S[:, 1] - bwd,
+                G[:, 4] * S[:, 0] + G[:, 5] * S[:, 3] - G[:, 3] * S[:, 2] - 0.5 * bwd,
+                0.5 * fwd - G[:, 8] * S[:, 2] - G[:, 9] * S[:, 3],
             ],
             axis=1,
         )
@@ -446,7 +466,7 @@ class SpectralDCM:
     ===========  ======================  ==========  ===========
     name         shape                   prior var   default
     ===========  ======================  ==========  ===========
-    column       spec.param_spec()       1/16, 1/8   Jansen-Rit: He, Hi, tau_e, tau_i, C, A_forward; CMC: T, G, A_forward, A_backward
+    column       spec.param_spec()       1/16, 1/8   Jansen-Rit: He, Hi, tau_e, tau_i, C, A_forward; CMC: T, G, A_forward, A_backward (``extrinsic_var``)
     L            per region x 3          moment_var  dipole moment minus ``orientation`` (free-moment leadfield only)
     a_u          per region              1/4         innovation amplitude
     b_u          scalar                  1/16        innovation 1/f exponent (1)

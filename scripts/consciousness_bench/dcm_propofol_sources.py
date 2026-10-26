@@ -52,9 +52,18 @@ from neurojax.io.consciousness_bench import load_chennu_propofol  # noqa: E402
 
 # MNI targets (mm): occipital (visual alpha) and frontal (propofol frontal alpha/beta)
 SOURCES = {"LO": (-25, -90, 5), "RO": (25, -90, 5), "LF": (-30, 40, 30), "RF": (30, 40, 30)}
-# extrinsic gains (same units as the intrinsic CMC gains, whose defaults are 200-1600)
-A_FORWARD = np.array([[0, 0, 0, 0], [0, 0, 0, 0], [400, 0, 0, 0], [0, 400, 0, 0]], float)  # row = target
-A_BACKWARD = np.array([[0, 0, 400, 0], [0, 0, 0, 400], [0, 0, 0, 0], [0, 0, 0, 0]], float)
+# extrinsic gains at SPM's defaults (spm_fx_cmc E = 200): occipital -> frontal forward, frontal -> occipital backward
+A_FORWARD = np.array([[0, 0, 0, 0], [0, 0, 0, 0], [200, 0, 0, 0], [0, 200, 0, 0]], float)  # row = target
+A_BACKWARD = np.array([[0, 0, 200, 0], [0, 0, 0, 200], [0, 0, 0, 0], [0, 0, 0, 0]], float)
+# homotopic lateral connections (LO<->RO, LF<->RF): in the CMC a lateral connection is a reciprocal
+# forward + backward pair, which spm_fx_cmc reduces by 1/5
+A_LATERAL = np.array([[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], float) * 200
+
+
+def network(lateral: bool) -> tuple[np.ndarray, np.ndarray]:
+    if lateral:
+        return A_FORWARD + A_LATERAL, A_BACKWARD + A_LATERAL
+    return A_FORWARD, A_BACKWARD
 
 
 def build_leadfield(info: mne.Info) -> tuple[np.ndarray, np.ndarray, dict]:
@@ -82,12 +91,15 @@ def build_leadfield(info: mne.Info) -> tuple[np.ndarray, np.ndarray, dict]:
     return L3, np.asarray(ori), picked
 
 
-def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0) -> np.ndarray:
-    """Multitaper CSD (n_freq, k, k) of the spatial modes ``U`` (C, k), averaged over epochs."""
+def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0, bandwidth: float = 2.0) -> np.ndarray:
+    """Multitaper CSD (n_freq, k, k) of the spatial modes ``U`` (C, k), averaged over epochs.
+
+    ``bandwidth`` is the half-bandwidth in Hz: 1.0 is a single taper, 2.0 three tapers.
+    """
     ep = epoch_recording(Recording("x", "x", "x", data, fs), epoch_s=epoch_s)  # (E, C, T)
     acc = None
     for e in ep:
-        cpsd, f = multitaper_cpsd(jnp.asarray((U.T @ e).T), fs=fs, bandwidth=1.0)
+        cpsd, f = multitaper_cpsd(jnp.asarray((U.T @ e).T), fs=fs, bandwidth=bandwidth)
         acc = np.asarray(cpsd) if acc is None else acc + np.asarray(cpsd)
     acc = acc / len(ep)
     f = np.asarray(f)
@@ -99,7 +111,8 @@ def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0) 
 
 
 def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path,
-                stability_margin: float | None = None):
+                stability_margin: float | None = None, lateral: bool = False, extrinsic_var: float = 1 / 8,
+                bandwidth: float = 2.0):
     jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
@@ -117,9 +130,11 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
     cov = sum((lambda X: X @ X.T / X.shape[1])(r.data - r.data.mean(axis=1, keepdims=True)) for r in by_cond.values())
     U, s, _ = np.linalg.svd(cov / len(by_cond))
     U = U[:, :n_modes]
+    A_fwd, A_bwd = network(lateral)
     np.savez(out / f"leadfield_{subject}.npz", L3=L3, nn=nn, U=U, explained=(s[:n_modes].sum() / s.sum()), channels=base.channels,
-             sources=list(SOURCES), positions_mm=[picked[k] for k in SOURCES])
-    spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(A_FORWARD), A_backward=jnp.asarray(A_BACKWARD))
+             sources=list(SOURCES), positions_mm=[picked[k] for k in SOURCES], A_forward=A_fwd, A_backward=A_bwd,
+             extrinsic_var=extrinsic_var, bandwidth=bandwidth)
+    spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(A_fwd), A_backward=jnp.asarray(A_bwd), extrinsic_var=extrinsic_var)
     if free_orientation:
         dcm = SpectralDCM(spec, leadfield=jnp.einsum("cm,cik->mik", U, L3), orientation=jnp.asarray(nn), freqs=jnp.asarray(FREQS),
                           stability_margin=stability_margin)
@@ -131,7 +146,7 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
         if cond not in by_cond:
             continue
         r = by_cond[cond]
-        csd = mode_csd(r.data, r.fs, U)
+        csd = mode_csd(r.data, r.fs, U, bandwidth=bandwidth)
         t0 = time.time()
         res = dcm.invert(jnp.asarray(csd), n_iter=n_iter, n_starts=n_starts)
         dt = time.time() - t0
@@ -167,19 +182,23 @@ def main():
     ap.add_argument("--n-iter", type=int, default=48)
     ap.add_argument("--n-starts", type=int, default=4)
     ap.add_argument("--fixed-orientation", action="store_true", help="pin dipole moments to the cortical normal")
+    ap.add_argument("--lateral", action="store_true", help="add homotopic LO<->RO and LF<->RF reciprocal connections")
+    ap.add_argument("--extrinsic-var", type=float, default=1 / 8, help="prior variance of the extrinsic log-gains (SPM 1/8)")
+    ap.add_argument("--bandwidth", type=float, default=2.0, help="multitaper half-bandwidth in Hz (1.0 = one taper, 2.0 = three)")
+    ap.add_argument("--name", default=None, help="output subdirectory name (default dcm_sources_stable / dcm_sources / dcm_sources_free)")
     ap.add_argument("--stability-margin", type=float, default=None,
                     help="soft barrier keeping max Re eigenvalue below -margin (1/s); outputs go to dcm_sources_stable/")
     ap.add_argument("--out", default=os.environ.get("CB_OUT", "/data/datasets/consciousness-bench"))
     a = ap.parse_args()
-    out = Path(a.out) / "propofol-chennu2016" / (
-        "dcm_sources_stable" if a.stability_margin is not None else "dcm_sources" if a.fixed_orientation else "dcm_sources_free")
+    out = Path(a.out) / "propofol-chennu2016" / (a.name or (
+        "dcm_sources_stable" if a.stability_margin is not None else "dcm_sources" if a.fixed_orientation else "dcm_sources_free"))
     out.mkdir(parents=True, exist_ok=True)
     recs = load_chennu_propofol(subjects=a.subjects)
     subjects = sorted({r.subject for r in recs})
     print(f"{len(recs)} recordings, {len(subjects)} subjects, {a.n_modes} modes", flush=True)
     results = Parallel(n_jobs=a.n_jobs)(
         delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_modes, a.n_iter, a.n_starts, not a.fixed_orientation, out,
-                             a.stability_margin)
+                             a.stability_margin, a.lateral, a.extrinsic_var, a.bandwidth)
         for s in subjects
     )
     post = pd.DataFrame([x for r in results for x in r[0]])

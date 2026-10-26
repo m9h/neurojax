@@ -44,7 +44,6 @@ jax.config.update("jax_enable_x64", True)
 
 sys.path.insert(0, str(Path(__file__).parent))
 from dcm_propofol import CONDITIONS, FREQS  # noqa: E402
-from dcm_propofol_sources import A_BACKWARD, A_FORWARD  # noqa: E402
 
 from neurojax.analysis.nltsa import MEASURES  # noqa: E402
 from neurojax.analysis.spectral_baselines import SPECTRAL_MEASURES  # noqa: E402
@@ -65,7 +64,10 @@ def simulate_recording(d: Path, f: Path, amplitude: float, duration_s: float, fs
     subject, cond = f.stem.split("_")[1:3]
     z = np.load(f, allow_pickle=True)
     lf = np.load(d / f"leadfield_{subject}.npz", allow_pickle=True)
-    spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(A_FORWARD), A_backward=jnp.asarray(A_BACKWARD))
+    if "A_forward" not in lf:  # fits from before 2026-10-26 used pre-SPM extrinsic semantics; the simulator would not match them
+        raise ValueError(f"{d}: leadfield files carry no network; refit with the current dcm_propofol_sources.py")
+    spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(lf["A_forward"]), A_backward=jnp.asarray(lf["A_backward"]),
+                   extrinsic_var=float(lf["extrinsic_var"]))
     dcm = SpectralDCM(spec, leadfield=jnp.asarray(lf["L3"]), orientation=jnp.asarray(lf["nn"]), freqs=jnp.asarray(FREQS))
     assert list(z["names"]) == dcm.names, "posterior parameterisation differs from the channel-space model"
     key = jax.random.PRNGKey(seed + 1000 * int(subject) + CONDITIONS.index(cond))
