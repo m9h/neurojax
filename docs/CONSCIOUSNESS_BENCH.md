@@ -204,6 +204,26 @@ occipital alpha loss, frontal alpha/beta gain), looser or
 hierarchically-estimated priors on the gains, and the SPM parity check
 (running on the x86 machine).
 
+**Multi-source CMC with a real leadfield (job 1868, `dcm_propofol_sources.py`,
+`dcm_sources/`):** four sources (bilateral occipital and frontal, fsaverage
+ico-5 vertices nearest the MNI targets, cortical-normal orientation) through
+the fsaverage BEM to the 91-channel EGI montage, reduced to 6 spatial modes
+(87 % of baseline variance) as in `spm_dcm_csd`; occipital → frontal
+forward and frontal → occipital backward CMC connections; 64 parameters,
+2 starts, 72 s per fit.  The GABA-A effect now has a location: the right
+frontal inhibitory time constant `T_ii` rises under moderate sedation
+(+0.49, d 0.69, p 0.015) with the right-frontal ii self-inhibition falling
+(−0.58, d −1.1, p < 0.001), while occipital `T_ii` does not move (d 0.00,
+−0.07) and left frontal only weakly (+0.09) — consistent with propofol's
+frontal alpha/beta and occipital alpha loss being different mechanisms.
+But the fits are worse than the single-mode ones (RMSE in log power 0.74 /
+0.97 / 1.28 at the 10/50/90 % quantiles) and 37 of 320 extrinsic-gain
+posteriors sit more than 3 prior SD from the prior, so the model is still
+not explaining these spectra well: fixed dipole orientations, only two
+starts, and no lateral connections are the likely causes.  Treat the
+frontal `T_ii` result as a lead to confirm with the SPM parity check and a
+better-converged fit, not as a finding.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
