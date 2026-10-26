@@ -273,6 +273,39 @@ SPM's practice of accepting it) is the next model step.  Outputs:
 `dcm_sources_free/{posteriors,fits,spectra,contrasts}.csv`,
 `posterior_<subject>_<cond>.npz`, `leadfield_<subject>.npz` (`L3`, `nn`, `U`).
 
+**Float64 refit (job 1873, `dcm_sources_free/`):** same fit quality (log
+power RMSE 0.33-0.36, F −450 to −750, median F spread across starts 145
+nats) and the same picture — moderate − baseline: frontal `G_ii→ii` falls
+(right −0.63, d −1.01, p < 0.001; left −0.59, d −0.72), `G_sp→sp` rises in
+all four sources (d 0.76-1.04), left-frontal `T_ii` +0.56 (d 0.77, p 0.006;
+the right-frontal `T_ii` of the float32 run is no longer significant),
+frontal `T_ss` +0.36-0.41 (d 0.65-0.71), `G_dp↔ii` −0.48 (d −0.63);
+mild: `G_sp→sp` again (d 0.62-0.68); recovery: right `G_ii→ii` −0.28 (d
+−0.54), `G_sp→sp` +0.34 (d 0.67).  89 of 320 extrinsic-gain posteriors are
+> 3 prior SD from the prior and **48 of 80 linearisations are unstable**
+(moderate: median max Re λ +15.5/s), so precision was not the cause of
+either.
+
+**PEB on these posteriors (`dcm_peb.py`, shared between-subject
+log-precision, BMR on the sedation columns):** two more fixes were needed
+first — a per-parameter log-precision is intractable at 80 parameters
+(hours in the Hessian) and, more importantly, the reduction identity blew
+the between-subject variance up (sd 72, then 6·10⁵ on synthetic data) in
+*barely informed* first-level directions: there the posterior mean differs
+from the prior mean only by optimisation noise, so the implied data
+location Λ⁻¹h is enormous.  A direction now counts as informed only if the
+first level gained ≥ 10 % of the prior precision in it.  With that, the
+effects > 3 nats are: every sedation level, *including recovery*, raises
+`T_ss` and `T_sp` in all four sources by +0.6-1.0 (sd 0.18, 4-17 nats), and
+mild / moderate raise `G_sp→sp` (+0.5-0.67, 3.5-5.5 nats); nothing on the
+inhibitory parameters survives (the random-effects sd settles at 0.97 in
+prior units, i.e. the subject-to-subject scatter of these fits is large).
+An effect shared identically by mild, moderate and recovery is not
+pharmacology; the likely culprit is that the spatial modes `U` are the
+baseline covariance's eigenvectors, so the baseline CSD is "aligned" with
+the modes and the other three levels are not — the next run should take
+the modes from the pooled covariance of all four levels.
+
 **Simulating the fitted models against the measures (job 1872,
 `dcm_simulate_measures.py`, `dcm_sources_free/sim_vs_observed.csv`):** each
 posterior-mean model was simulated at the 91 sensors (60 s, 250 Hz), scored
