@@ -546,8 +546,21 @@ on average 1.1 Hz wider (FWHM 3.0 Hz observed vs 3.9–4.2 predicted;
 moderate 4.6 vs 6.2) and 0.26 log units shorter, at the right frequency
 (0.5 Hz mean offset).  The inverter buys sharpness with implausible
 time constants; whether the stability barrier (margin 2 /s, which
-allows a Lorentzian down to 0.6 Hz FWHM) is the limit is being probed on
-four subjects at margin 0.5 (job 1890, `probe_margin05/`).
+allows a Lorentzian down to 0.6 Hz FWHM) is the limit was probed on
+four subjects at margin 0.5 (job 1890, `probe_margin05/`, 15 of 16
+recordings; the last hung for 7 h near criticality and was cancelled):
+F moves by tens of nats in both directions (02 baseline +108, 09
+baseline +153, 25 mild −260, 25 recovery −326) with no systematic gain,
+so the barrier is not the limit.  Remaining candidates for the peak
+width are the fixed sigmoid slope, the absent conduction delays (SPM
+has them) and the 1/f innovation shape; delays are the cheapest to test.
+
+**Simulation comparison on the per-mode-noise fits (job 1891):** the
+step-4 result once more — linear simulation gives relative beta 1.29 vs
+1.41 observed, relative alpha −0.78 vs −1.03, MSE −0.66 vs −0.90,
+Lyapunov −0.07 vs −0.45, pair correlation +0.03 vs −0.17, spurious
+0-1 chaos −0.70 and permutation entropy −0.74 where the data show ~0;
+amplitude 0.3 adds nothing.  Five fit sets now agree on this.
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
