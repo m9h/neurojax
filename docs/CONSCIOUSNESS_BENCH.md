@@ -531,7 +531,14 @@ self-inhibition d −0.98 (p < 0.001; right frontal −0.55, left occipital
 first time in a constrained fit — the left-frontal *inhibitory* time
 constant +0.63 (p 0.014), the GABA-A direction propofol predicts.
 Extrinsic excursions 65 of 960; the time-constant excursions are
-unchanged (713 of 1 280 beyond 4 prior SD).
+unchanged (713 of 1 280 beyond 4 prior SD).  PEB on this set: the
+drug-present rise of the glutamatergic time constants in every region
+(+0.5 to +1.0, up to 14 nats, for mild, moderate and recovery alike),
+and the strongest level-specific effects so far — moderate lowers
+interneuron self-inhibition in right frontal (−0.69, 6.1 nats) and left
+occipital (−0.65, 5.1 nats) cortex and raises superficial-pyramidal
+self-inhibition (left occipital +0.62, 4.7 nats; right frontal +0.55,
+4.0 nats).
 
 **Peak shape is what remains.**  Over the 466 mode-recordings of the
 merged set with an alpha peak above 0.5 log units, the model's peak is
