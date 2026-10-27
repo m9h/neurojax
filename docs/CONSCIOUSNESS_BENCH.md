@@ -515,6 +515,33 @@ and −0.08.  The time-constant excursions are unchanged (133 of 256 beyond
 beta (rms 0.33–0.48 there), not of the noise floor.  The full set is
 being refitted with this noise prior (job 1889, `dcm_sources_noise/`).
 
+**Full refit with the per-mode channel noise (job 1889,
+`dcm_sources_noise/`; lateral network, extrinsic variance 1/2, noise
+prior 10 % with variance 1/4, stability margin 2, 8 mixed starts):**
+F rises by 15 963 nats over the 16-start merged set (median +72 per
+recording, better on 64 of 80); baseline F +152, sedation levels −490
+to −580 (were −680 to −890).  The noise takes 15–35 % of the weak
+modes' power at the delta / gamma edges and 1–17 % in alpha / beta, the
+coherence bias is −0.02 to −0.07, and the log-power residual keeps its
+per-mode bias (mode 2 under-predicted 0.2 in theta–beta, modes 4–5
+over-predicted 0.1–0.2) with no band structure.  The paired
+moderate-sedation contrasts sharpen: left-frontal interneuron
+self-inhibition d −0.98 (p < 0.001; right frontal −0.55, left occipital
+−0.64), left-frontal spiny-stellate time constant +0.88, and — for the
+first time in a constrained fit — the left-frontal *inhibitory* time
+constant +0.63 (p 0.014), the GABA-A direction propofol predicts.
+Extrinsic excursions 65 of 960; the time-constant excursions are
+unchanged (713 of 1 280 beyond 4 prior SD).
+
+**Peak shape is what remains.**  Over the 466 mode-recordings of the
+merged set with an alpha peak above 0.5 log units, the model's peak is
+on average 1.1 Hz wider (FWHM 3.0 Hz observed vs 3.9–4.2 predicted;
+moderate 4.6 vs 6.2) and 0.26 log units shorter, at the right frequency
+(0.5 Hz mean offset).  The inverter buys sharpness with implausible
+time constants; whether the stability barrier (margin 2 /s, which
+allows a Lorentzian down to 0.6 Hz FWHM) is the limit is being probed on
+four subjects at margin 0.5 (job 1890, `probe_margin05/`).
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
