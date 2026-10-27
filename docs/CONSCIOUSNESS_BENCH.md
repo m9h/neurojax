@@ -484,6 +484,26 @@ MSE recovery so far, 87 %), Lyapunov −0.18 vs −0.45, pair correlation
 −0.03 vs −0.17, spurious 0-1 chaos −0.48; amplitude 0.3 adds nothing.
 This is the reference fit set for the next steps.
 
+**What the model cannot fit (residuals of the reference set,
+`dcm_sources_lateral_best/residuals.csv`):** the log-power residual has
+no band structure — rms 0.3–0.5 log units in every band and mode, mean
+bias within ±0.3 and mostly per mode (mode 2 under-predicted by
+0.15–0.3, modes 3–5 over-predicted by 0.1–0.2) — so the misfit is
+fine-scale peak shape, not a missing resonance.  The coherence residual
+is structured: the model over-predicts the coherence between *every*
+pair of spatial modes (0.30 predicted vs 0.23 observed, mean residual
+−0.1 in every band), i.e. the data carry more mode-specific independent
+variance than four sources through a common transfer function can give,
+and the channel-noise terms absorb under 2 % of the power because a
+single noise amplitude with prior variance 1/128 cannot take it up.
+SPM's channel-specific noise is one amplitude per channel
+(`spm_ssr_priors` ``c``); the model now has one per sensor / mode with a
+tunable prior (`noise_var`).  Probe on 4 subjects: per-mode noise at the
+old prior (job 1887, `probe_noise_default/`) and at a 10 % prior
+fraction with variance 1/4 (job 1888, `probe_noise_loose/`), to see
+whether the extra freedom closes the coherence gap and relaxes the
+time-constant excursions.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
