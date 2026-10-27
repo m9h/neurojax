@@ -502,7 +502,18 @@ tunable prior (`noise_var`).  Probe on 4 subjects: per-mode noise at the
 old prior (job 1887, `probe_noise_default/`) and at a 10 % prior
 fraction with variance 1/4 (job 1888, `probe_noise_loose/`), to see
 whether the extra freedom closes the coherence gap and relaxes the
-time-constant excursions.
+time-constant excursions.  Per-mode noise at the old prior changes
+nothing (F −630 over the 16 recordings, fitted amplitudes within 10 % of
+the prior: the prior pins them).  At the loose prior F rises by 4 468
+nats (median +124 per recording, better on 12 of 16), the fitted
+amplitudes sit 4–34× above the 10 % prior — the noise takes 10–35 % of
+the weak modes' power at the delta and gamma edges and 1–15 % in alpha /
+beta — the log-power rms falls in most mode × band cells (mode 2 delta
+0.51 → 0.24) and the coherence bias shrinks from −0.1 to between −0.01
+and −0.08.  The time-constant excursions are unchanged (133 of 256 beyond
+4 prior SD), so they are a property of the peak-shape misfit in alpha /
+beta (rms 0.33–0.48 there), not of the noise floor.  The full set is
+being refitted with this noise prior (job 1889, `dcm_sources_noise/`).
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
