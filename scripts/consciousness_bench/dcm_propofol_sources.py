@@ -112,7 +112,8 @@ def mode_csd(data: np.ndarray, fs: float, U: np.ndarray, epoch_s: float = 10.0, 
 
 def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: int, free_orientation: bool, out: Path,
                 stability_margin: float | None = None, lateral: bool = False, extrinsic_var: float = 1 / 8,
-                bandwidth: float = 2.0, randomise_moments: float = 0.5):
+                bandwidth: float = 2.0, randomise_moments: float = 0.5,
+                noise_fraction: float = 0.01, noise_var: float = 1 / 128):
     jax.config.update("jax_enable_x64", True)  # joblib workers do not inherit the parent's JAX config
     by_cond = {r.condition: r for r in recs}
     if "baseline" not in by_cond:
@@ -133,14 +134,14 @@ def fit_subject(subject: str, recs: list, n_modes: int, n_iter: int, n_starts: i
     A_fwd, A_bwd = network(lateral)
     np.savez(out / f"leadfield_{subject}.npz", L3=L3, nn=nn, U=U, explained=(s[:n_modes].sum() / s.sum()), channels=base.channels,
              sources=list(SOURCES), positions_mm=[picked[k] for k in SOURCES], A_forward=A_fwd, A_backward=A_bwd,
-             extrinsic_var=extrinsic_var, bandwidth=bandwidth)
+             extrinsic_var=extrinsic_var, bandwidth=bandwidth, noise_fraction=noise_fraction, noise_var=noise_var)
     spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(A_fwd), A_backward=jnp.asarray(A_bwd), extrinsic_var=extrinsic_var)
     if free_orientation:
         dcm = SpectralDCM(spec, leadfield=jnp.einsum("cm,cik->mik", U, L3), orientation=jnp.asarray(nn), freqs=jnp.asarray(FREQS),
-                          stability_margin=stability_margin)
+                          stability_margin=stability_margin, noise_fraction=noise_fraction, noise_var=noise_var)
     else:
         dcm = SpectralDCM(spec, leadfield=jnp.asarray(U.T @ np.einsum("cik,ik->ci", L3, nn)), freqs=jnp.asarray(FREQS),
-                          stability_margin=stability_margin)
+                          stability_margin=stability_margin, noise_fraction=noise_fraction, noise_var=noise_var)
     post, fits, spectra = [], [], []
     for cond in CONDITIONS:
         if cond not in by_cond:
@@ -187,6 +188,8 @@ def main():
     ap.add_argument("--bandwidth", type=float, default=2.0, help="multitaper half-bandwidth in Hz (1.0 = one taper, 2.0 = three)")
     ap.add_argument("--randomise-moments", type=float, default=0.5,
                     help="fraction of the extra starts that also draw the dipole moments (1 = all, 0 = none)")
+    ap.add_argument("--noise-fraction", type=float, default=0.01, help="prior channel-noise power as a fraction of the neural prediction")
+    ap.add_argument("--noise-var", type=float, default=1 / 128, help="prior variance of the channel-noise log-amplitudes (SPM 1/128)")
     ap.add_argument("--name", default=None, help="output subdirectory name (default dcm_sources_stable / dcm_sources / dcm_sources_free)")
     ap.add_argument("--stability-margin", type=float, default=None,
                     help="soft barrier keeping max Re eigenvalue below -margin (1/s); outputs go to dcm_sources_stable/")
@@ -200,7 +203,8 @@ def main():
     print(f"{len(recs)} recordings, {len(subjects)} subjects, {a.n_modes} modes", flush=True)
     results = Parallel(n_jobs=a.n_jobs)(
         delayed(fit_subject)(s, [r for r in recs if r.subject == s], a.n_modes, a.n_iter, a.n_starts, not a.fixed_orientation, out,
-                             a.stability_margin, a.lateral, a.extrinsic_var, a.bandwidth, a.randomise_moments)
+                             a.stability_margin, a.lateral, a.extrinsic_var, a.bandwidth, a.randomise_moments,
+                             a.noise_fraction, a.noise_var)
         for s in subjects
     )
     post = pd.DataFrame([x for r in results for x in r[0]])

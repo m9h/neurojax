@@ -468,15 +468,16 @@ class SpectralDCM:
     ===========  ======================  ==========  ===========
     column       spec.param_spec()       1/16, 1/8   Jansen-Rit: He, Hi, tau_e, tau_i, C, A_forward; CMC: T, G, A_forward, A_backward (``extrinsic_var``)
     L            per region x 3          moment_var  dipole moment minus ``orientation`` (free-moment leadfield only)
-    a_u          per region              1/4         innovation amplitude
-    b_u          scalar                  1/16        innovation 1/f exponent (1)
-    a_n          scalar                  1/4         channel-specific noise amplitude
-    a_c          scalar                  1/4         common channel noise amplitude
-    b_n          scalar                  1/16        channel-noise 1/f exponent (1)
+    a_u          per region              1/16        innovation amplitude
+    b_u          scalar                  1/128       innovation 1/f exponent (1)
+    a_n          per sensor              noise_var   channel-specific noise amplitude (``spm_ssr_priors`` ``c``, per channel)
+    a_c          scalar                  noise_var   common channel noise amplitude
+    b_n          scalar                  1/128       channel-noise 1/f exponent (1)
     ===========  ======================  ==========  ===========
 
     Channel-noise defaults are ``noise_fraction`` of the mean sensor power
-    predicted by the neural part at the prior (reported by ``repr``).  Data
+    predicted by the neural part at the prior (reported by ``repr``), with
+    prior variance ``noise_var`` on their log-amplitudes (SPM: 1/128).  Data
     are rescaled on ``invert`` so that their mean diagonal power equals the
     prior prediction (the scale is returned in the result's ``scale``).
     """
@@ -485,6 +486,7 @@ class SpectralDCM:
     leadfield: jnp.ndarray
     freqs: jnp.ndarray
     noise_fraction: float = 0.01
+    noise_var: float = 1 / 128
     fixed: tuple[str, ...] = ()
     orientation: jnp.ndarray | None = None
     moment_var: float = 1.0
@@ -516,7 +518,9 @@ class SpectralDCM:
         params += [_Param("a_u", (i,), 1 / 16) for i in range(n)]
         # spectral nuisance priors are tight (as in spm_csd_mtf, 1/128) so the
         # 1/f terms cannot absorb what the neural-mass parameters should explain
-        params += [_Param("b_u", (), 1 / 128), _Param("a_n", (), 1 / 128), _Param("a_c", (), 1 / 128), _Param("b_n", (), 1 / 128)]
+        params += [_Param("b_u", (), 1 / 128)]
+        params += [_Param("a_n", (i,), self.noise_var) for i in range(self.leadfield.shape[0])]
+        params += [_Param("a_c", (), self.noise_var), _Param("b_n", (), 1 / 128)]
         object.__setattr__(self, "params", tuple(params))
         object.__setattr__(self, "_noise_default", 0.0)
         neural = self._sensor_csd(jnp.zeros(len(params)), include_noise=False)
@@ -602,9 +606,9 @@ class SpectralDCM:
         nc = self.leadfield.shape[0]
         b_n = self._spectral(p, "b_n")[0]
         shape = (freqs ** (-b_n))[:, None, None]
-        a_n = self._spectral(p, "a_n")[0] * self._noise_default
+        a_n = self._spectral(p, "a_n") * self._noise_default  # (nc,)
         a_c = self._spectral(p, "a_c")[0] * self._noise_default
-        return shape * (a_n * jnp.eye(nc) + a_c * jnp.ones((nc, nc))) + 0j
+        return shape * (jnp.diag(a_n) + a_c * jnp.ones((nc, nc))) + 0j
 
     def max_real_eigenvalue(self, p: jnp.ndarray) -> jnp.ndarray:
         """Largest real part of the network Jacobian's eigenvalues at ``p`` (1/s; < 0 is stable)."""

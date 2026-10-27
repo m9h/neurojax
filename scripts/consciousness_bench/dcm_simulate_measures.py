@@ -68,10 +68,20 @@ def simulate_recording(d: Path, f: Path, amplitude: float, duration_s: float, fs
         raise ValueError(f"{d}: leadfield files carry no network; refit with the current dcm_propofol_sources.py")
     spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(lf["A_forward"]), A_backward=jnp.asarray(lf["A_backward"]),
                    extrinsic_var=float(lf["extrinsic_var"]))
-    dcm = SpectralDCM(spec, leadfield=jnp.asarray(lf["L3"]), orientation=jnp.asarray(lf["nn"]), freqs=jnp.asarray(FREQS))
-    assert list(z["names"]) == dcm.names, "posterior parameterisation differs from the channel-space model"
+    dcm = SpectralDCM(spec, leadfield=jnp.asarray(lf["L3"]), orientation=jnp.asarray(lf["nn"]), freqs=jnp.asarray(FREQS),
+                      noise_fraction=float(lf["noise_fraction"]) if "noise_fraction" in lf else 0.01,
+                      noise_var=float(lf["noise_var"]) if "noise_var" in lf else 1 / 128)
+    names = list(z["names"])
+    if names != dcm.names:
+        # the channel-space model has one channel-noise amplitude per channel, the mode-space fit one per mode:
+        # map the fitted parameters by name and give the channels the fitted mean per-mode noise log-amplitude
+        ep = dict(zip(names, np.asarray(z["Ep"])))
+        a_n = np.mean([v for k, v in ep.items() if k.startswith("a_n")])
+        Ep = jnp.asarray([ep.get(k, a_n if k.startswith("a_n") else 0.0) for k in dcm.names])
+    else:
+        Ep = jnp.asarray(z["Ep"])
     key = jax.random.PRNGKey(seed + 1000 * int(subject) + CONDITIONS.index(cond))
-    x = dcm.simulate(jnp.asarray(z["Ep"]), fs=fs, duration_s=duration_s, key=key, nonlinear=amplitude > 0,
+    x = dcm.simulate(Ep, fs=fs, duration_s=duration_s, key=key, nonlinear=amplitude > 0,
                      amplitude=amplitude if amplitude > 0 else 1.0)
     idx = np.linspace(0, x.shape[0] - 1, n_channels).round().astype(int)
     return Recording(f"sim-amp{amplitude:g}", subject, cond, np.asarray(x[idx], dtype=np.float64), fs,
