@@ -562,6 +562,23 @@ Lyapunov −0.07 vs −0.45, pair correlation +0.03 vs −0.17, spurious
 0-1 chaos −0.70 and permutation entropy −0.74 where the data show ~0;
 amplitude 0.3 adds nothing.  Five fit sets now agree on this.
 
+**Conduction delays (2026-10-28).**  `CMCSpec(delays=(intrinsic,
+extrinsic))` adds two log-scaled delays; the CSD uses the exact delayed
+transfer function (SPM uses a first-order delay operator) and the
+nonlinear simulator a state buffer.  Probe on the four test subjects
+with priors 1 ms / 16 ms on top of the per-mode-noise model (job 1894,
+`probe_delays/`): F up on 11 of 16 recordings (median +152 nats, sum
++1 134; the five losses are subjects 22 mild and 25, consistent with
+the rugged landscape), time-constant excursions beyond 4 prior SD halve
+(133 → 67 of 256), and the alpha peak closes about half its width gap
+(FWHM 2.91 Hz observed; 3.82 → 3.39 predicted) and most of its height
+gap (2.24 observed; 1.87 → 2.09).  Caveat: the intrinsic delay runs to
+6–15 ms on 12 of 16 recordings against its 1 ms prior (~10 prior SD),
+so part of the misfit has moved from the time constants into the
+intrinsic delay rather than gone; the extrinsic delay stays near its
+prior (2–25 ms, median 12).  Full refit with delays: job 1895,
+`dcm_sources_delays/`.
+
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
 integrated-covariance width Δ, and specparam-based slope (the log-log fit is
