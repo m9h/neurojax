@@ -12,9 +12,21 @@ Proceedings of the IEEE 70(9):1055-1096.
 
 from __future__ import annotations
 
-import jax
+import functools
+
 import jax.numpy as jnp
 import numpy as np
+import scipy.signal
+
+
+@functools.lru_cache(maxsize=64)
+def _dpss_np(n_samples: int, bandwidth: float, n_tapers: int) -> np.ndarray:
+    tapers = scipy.signal.windows.dpss(n_samples, bandwidth, Kmax=n_tapers, norm=2)  # unit energy
+    tapers = np.array(tapers, dtype=np.float64)
+    for k in range(n_tapers):  # sign convention: positive at the centre
+        if tapers[k, n_samples // 2] < 0:
+            tapers[k] *= -1
+    return tapers
 
 
 def dpss_tapers(
@@ -24,7 +36,9 @@ def dpss_tapers(
 ) -> jnp.ndarray:
     """Compute DPSS (Slepian) tapers.
 
-    Uses the tridiagonal matrix eigenproblem approach.
+    ``scipy.signal.windows.dpss`` (tridiagonal eigenproblem, O(N) per taper)
+    with the result cached per ``(n_samples, bandwidth, n_tapers)``: the
+    former dense N×N eigendecomposition cost ~10 s per 2500-sample epoch.
 
     Parameters
     ----------
@@ -34,39 +48,11 @@ def dpss_tapers(
 
     Returns
     -------
-    tapers : (n_tapers, n_samples) — orthonormal DPSS tapers.
+    tapers : (n_tapers, n_samples) — orthonormal (unit-energy) DPSS tapers.
     """
     if n_tapers is None:
         n_tapers = int(2 * bandwidth - 1)
-
-    N = n_samples
-    W = bandwidth / N
-
-    # Tridiagonal matrix for DPSS eigenproblem
-    # Main diagonal: ((N-1)/2 - n)^2 * cos(2*pi*W)
-    n = np.arange(N)
-    main_diag = ((N - 1) / 2.0 - n) ** 2 * np.cos(2 * np.pi * W)
-    # Off diagonal: n*(N-n)/2
-    off_diag = np.arange(1, N) * np.arange(N - 1, 0, -1) / 2.0
-
-    # Build tridiagonal matrix
-    T = np.diag(main_diag) + np.diag(off_diag, 1) + np.diag(off_diag, -1)
-
-    # Eigendecomposition — want the largest eigenvalues
-    eigenvalues, eigenvectors = np.linalg.eigh(T)
-
-    # Take the n_tapers with largest eigenvalues (they're sorted ascending)
-    tapers = eigenvectors[:, -n_tapers:][:, ::-1].T  # (n_tapers, N)
-
-    # Normalize to unit energy
-    tapers = tapers / np.sqrt(np.sum(tapers ** 2, axis=1, keepdims=True))
-
-    # Fix sign convention: first taper should be positive at center
-    for k in range(n_tapers):
-        if tapers[k, N // 2] < 0:
-            tapers[k] *= -1
-
-    return jnp.array(tapers)
+    return jnp.array(_dpss_np(int(n_samples), float(bandwidth), int(n_tapers)))
 
 
 def multitaper_psd(
@@ -96,18 +82,16 @@ def multitaper_psd(
         nfft = T
 
     tapers = dpss_tapers(T, bandwidth, n_tapers)
-    K = tapers.shape[0]
-
     # Apply tapers and FFT
     # tapered_data: (K, T, C) = tapers[:, :, None] * data[None, :, :]
     tapered = tapers[:, :, None] * data[None, :, :]  # (K, T, C)
 
     # FFT along time axis, one-sided
     Xf = jnp.fft.rfft(tapered, n=nfft, axis=1)  # (K, n_freqs, C)
-    n_freqs = Xf.shape[1]
 
-    # PSD = mean over tapers of |Xf|^2 / (fs * nfft)
-    psd = jnp.mean(jnp.abs(Xf) ** 2, axis=0) / (fs * nfft)
+    # PSD = mean over tapers of |Xf|^2 / fs: the tapers have unit energy, so
+    # this is a density (units^2 / Hz; a white process of variance v gives 2 v / fs)
+    psd = jnp.mean(jnp.abs(Xf) ** 2, axis=0) / fs
 
     # Double the non-DC, non-Nyquist bins for one-sided
     psd = psd.at[1:-1].multiply(2.0)
@@ -141,18 +125,16 @@ def multitaper_cpsd(
         nfft = T
 
     tapers = dpss_tapers(T, bandwidth, n_tapers)
-    K = tapers.shape[0]
 
     tapered = tapers[:, :, None] * data[None, :, :]
     Xf = jnp.fft.rfft(tapered, n=nfft, axis=1)  # (K, n_freqs, C)
-    n_freqs = Xf.shape[1]
 
     # CPSD: mean over tapers of Xf * conj(Xf)^T
-    # cpsd[f, i, j] = mean_k( Xf[k, f, i] * conj(Xf[k, f, j]) ) / (fs * nfft)
+    # cpsd[f, i, j] = mean_k( Xf[k, f, i] * conj(Xf[k, f, j]) ) / fs  (unit-energy tapers: a density)
     cpsd = jnp.mean(
         Xf[:, :, :, None] * jnp.conj(Xf[:, :, None, :]),
         axis=0,
-    ) / (fs * nfft)
+    ) / fs
 
     cpsd = cpsd.at[1:-1].multiply(2.0)
 

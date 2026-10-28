@@ -63,7 +63,7 @@ Three ecosystems for MEG/EEG dynamic brain state analysis, applied to the same d
 | **SINDy** | Not available | `windowed_sindy()` (jaxctrl) | N/A |
 | **Log-Signatures** | Not available | `windowed_signatures()` (signax) | N/A |
 | **Koopman/DMD** | Not available | `windowed_dmd()` (jaxctrl) | N/A |
-| **DCM** | Not available | Not yet (planned via SPM-Python oracle) | `spm_dcm_erp` / `spm_dcm_csd` |
+| **DCM** | Not available | `inverse.csd_dcm.SpectralDCM` (Jansen-Rit CSD-DCM, variational Laplace, free energy; JAX autodiff Jacobians) | `spm_dcm_csd` (oracle parity still to run via SPM-Python) |
 
 **Key difference:** osl-dynamics and NeuroJAX are data-driven (discover states from data). SPM/DCM is model-driven (specify a neural mass model, infer its parameters). The comparison asks whether they agree.
 
@@ -233,7 +233,7 @@ Repeated with ses-04 7T FreeSurfer labels → same bedpostX. Registration: ses-0
 
 ## Planned Additions
 
-- [ ] SPM-Python DCM oracle container
+- [ ] SPM-Python DCM oracle container (JAX `SpectralDCM` exists; parity against `spm_dcm_csd` not yet run)
 - [ ] M-DyNeMo (multi-scale DyNeMo)
 - [ ] SINDy+Signature hybrid (interpretable DyNeMo replacement)
 - [ ] Group-level comparison (multiple WAND subjects)

@@ -1,16 +1,14 @@
 """Tests for multitaper spectral estimation — TDD RED phase."""
 
-import jax
 import jax.numpy as jnp
 import jax.random as jr
 import numpy as np
-import pytest
 
 from neurojax.analysis.multitaper import (
     dpss_tapers,
-    multitaper_psd,
-    multitaper_cpsd,
     multitaper_coherence,
+    multitaper_cpsd,
+    multitaper_psd,
 )
 
 
@@ -64,6 +62,17 @@ class TestMultitaperPSD:
         for ch in range(2):
             cv = float(jnp.std(psd[:, ch]) / jnp.mean(psd[:, ch]))
             assert cv < 0.5, f"PSD not flat enough for white noise, CV={cv}"
+
+    def test_density_normalisation(self):
+        """White noise of variance v has one-sided density 2 v / fs (matches scipy.signal.welch)."""
+        import scipy.signal
+
+        x = np.random.default_rng(0).normal(size=(4000, 1)) * 3.0
+        psd, freqs = multitaper_psd(jnp.asarray(x), fs=250.0, bandwidth=2.0)
+        band = (np.asarray(freqs) > 5) & (np.asarray(freqs) < 120)
+        np.testing.assert_allclose(float(np.mean(np.asarray(psd)[band, 0])), 2 * 9.0 / 250.0, rtol=0.1)
+        fw, pw = scipy.signal.welch(x[:, 0], fs=250.0, nperseg=500)
+        np.testing.assert_allclose(float(np.mean(pw[(fw > 5) & (fw < 120)])), 2 * 9.0 / 250.0, rtol=0.1)
 
     def test_finite(self):
         x = jr.normal(jr.PRNGKey(0), (500, 3))
