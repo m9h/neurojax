@@ -605,6 +605,24 @@ undelayed set, amplitude 0.3 no longer matches the linear run: the
 spectral contrasts collapse (relative beta 0.50), so with delays the
 fitted operating points sit where the sigmoid's curvature matters.
 
+**Control: extrinsic delays only (job 1898, `dcm_sources_extdelay/`,
+intrinsic delay pinned at 1 µs).**  Against the undelayed fits: F sum
+−94 (median +18, 51 of 80 better), time-constant excursions back to 697
+of 1 280, extrinsic delay 12–19 ms (median 14.5).  Against the full
+delay model it loses on 77 of 80 recordings (−12 384 nats).  So the
+whole gain is the ~10 ms *intrinsic* delay.  That delay does not track
+the alpha peak frequency (Spearman ρ −0.02 across recordings, −0.04
+within subject; ~10 ms in every peak-frequency tercile), so it is not
+setting a loop period — it is a fixed lag in the local loops that
+sharpens the resonance, which a cortex-only microcircuit with
+alpha-function synaptic kernels otherwise cannot.  Paired moderate
+effects in this control are those of the undelayed model (left-frontal
+ii→ii d −0.91, frontal sp→sp +0.78 to +0.86).  The fixed sigmoid slope,
+the other candidate, is not one for the spectral fit: at the centred
+fixed point the slope enters the linearisation only as a common R/4
+gain on every connection, which the free log-gains `G` and `A` already
+absorb.
+
 **Correction: the PEB design (2026-10-28).**  Every PEB result above
 used `[subject indicators, mild, moderate, recovery]` with no intercept.
 Every design column has the first-level prior `N(0, pC)` as its prior,
