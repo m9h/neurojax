@@ -56,6 +56,25 @@ def transfer_function(A: jnp.ndarray, B: jnp.ndarray, C: jnp.ndarray, omega: jnp
     return jax.vmap(one)(omega)
 
 
+def delayed_transfer_function(
+    A_local: jnp.ndarray, A_intra: jnp.ndarray, A_extra: jnp.ndarray, B: jnp.ndarray, C: jnp.ndarray,
+    delays: jnp.ndarray, omega: jnp.ndarray,
+) -> jnp.ndarray:
+    """H(ω) = C (iωI − A_local − A_intra e^{−iω d_i} − A_extra e^{−iω d_e})⁻¹ B: exact transfer function of a
+    linear system whose within-region synaptic couplings are delayed by ``d_i`` and whose between-region
+    couplings by ``d_e`` (``delays = (d_i, d_e)`` in s); ``A_local`` (membrane leak, dv/dt = i) is undelayed.
+    SPM (``spm_dcm_delay``) uses a first-order delay operator instead."""
+    n = A_local.shape[0]
+    eye = jnp.eye(n, dtype=jnp.complex128)
+    Bc = B.astype(jnp.complex128)
+
+    def one(w):
+        M = 1j * w * eye - A_local - A_intra * jnp.exp(-1j * w * delays[0]) - A_extra * jnp.exp(-1j * w * delays[1])
+        return C @ jnp.linalg.solve(M, Bc)
+
+    return jax.vmap(one)(omega)
+
+
 # ---------------------------------------------------------------------------
 # Column models
 # ---------------------------------------------------------------------------
@@ -152,6 +171,7 @@ class CMCTheta(NamedTuple):
     A_forward: jnp.ndarray  # (n, n) sp(source) -> ss (gain) and dp (half the gain) of the target
     A_backward: jnp.ndarray  # (n, n) dp(source) -> sp (gain) and ii (half), inhibitory, on the target
     R: float = 2.0 / 3.0  # sigmoid slope
+    D: jnp.ndarray = jnp.zeros(2)  # (intrinsic, extrinsic) conduction delays (s); zero = none
 
 
 @dataclass(frozen=True)
@@ -194,6 +214,13 @@ class CMCSpec:
     that way.  Each nonzero entry is one log-scaling parameter with prior
     variance ``extrinsic_var`` (SPM: 1/8).
 
+    With ``delays`` the synaptic inputs are delayed — within a region by
+    the intrinsic delay, between regions by the extrinsic one — as two
+    log-scaled parameters ``D`` with prior variance ``delay_var``.  The CSD
+    uses the exact delayed transfer function
+    (``delayed_transfer_function``); the stability barrier keeps using the
+    undelayed Jacobian's spectrum as a proxy.
+
     Pharmacology: ``T[:, 2]`` is the inhibitory (GABA-A) time constant,
     ``G[:, 2]``, ``G[:, 3]``, ``G[:, 8]`` the inhibitory gains, ``T[:, 0]`` /
     ``T[:, 1]`` the glutamatergic kinetics, ``A_*`` the extrinsic gains.  The
@@ -214,6 +241,8 @@ class CMCSpec:
     G: tuple[float, ...] = tuple(g * 200.0 for g in (4, 4, 8, 4, 4, 2, 4, 4, 2, 1))
     u_gain: float = 512.0  # exogenous input gain into ss, as in spm_fx_cmc (B = 512 / T_ss on the ss current)
     extrinsic_var: float = 1 / 8  # prior variance of the extrinsic log-gains
+    delays: tuple[float, float] | None = None  # (intrinsic, extrinsic) conduction delays in s (SPM: 1 ms, 16 ms); None = none
+    delay_var: float = 1 / 16  # prior variance of the two delay log-scalings (spm_dcm_neural_priors D)
     n_states: int = 8
     population = ("ss", "sp", "ii", "dp")
 
@@ -233,6 +262,7 @@ class CMCSpec:
             G=jnp.tile(jnp.asarray(self.G), (n, 1)),
             A_forward=self._mat(self.A_forward),
             A_backward=self._mat(self.A_backward),
+            D=jnp.zeros(2) if self.delays is None else jnp.asarray(self.delays, dtype=jnp.float64),
         )
 
     def param_spec(self) -> list[tuple[str, tuple[int, ...], float]]:
@@ -243,17 +273,38 @@ class CMCSpec:
         for name in ("A_forward", "A_backward"):
             A = np.asarray(getattr(th, name))
             out += [(name, (int(i), int(j)), self.extrinsic_var) for i, j in zip(*np.nonzero(A))]
+        if self.delays is not None:
+            out += [("D", (0,), self.delay_var), ("D", (1,), self.delay_var)]
         return out
 
-    def vector_field(self, theta: CMCTheta, x: jnp.ndarray, u: jnp.ndarray) -> jnp.ndarray:
-        """``x`` is ``(8 n,)`` region-major ``[v_ss, v_sp, v_ii, v_dp, i_ss, i_sp, i_ii, i_dp]``; ``u`` ``(n,)`` drives ss."""
+    def split_jacobian(self, theta: CMCTheta, x0: jnp.ndarray) -> tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+        """``(A_local, A_intra, A_extra)`` at ``x0``: leak / dv = i terms, within-region synaptic couplings,
+        between-region couplings — the pieces that are undelayed, intrinsically and extrinsically delayed."""
+        n = self.n_regions
+        u0 = jnp.zeros(n)
+        A = jax.jacfwd(lambda x: self.vector_field(theta, x, u0))(x0)
+        th0 = theta._replace(G=0.0 * theta.G, A_forward=0.0 * theta.A_forward, A_backward=0.0 * theta.A_backward)
+        A_local = jax.jacfwd(lambda x: self.vector_field(th0, x, u0))(x0)
+        mask = jnp.kron(jnp.eye(n), jnp.ones((8, 8)))
+        return A_local, (A - A_local) * mask, A * (1.0 - mask)
+
+    def vector_field(
+        self, theta: CMCTheta, x: jnp.ndarray, u: jnp.ndarray, x_intra: jnp.ndarray | None = None,
+        x_extra: jnp.ndarray | None = None,
+    ) -> jnp.ndarray:
+        """``x`` is ``(8 n,)`` region-major ``[v_ss, v_sp, v_ii, v_dp, i_ss, i_sp, i_ii, i_dp]``; ``u`` ``(n,)`` drives ss.
+
+        ``x_intra`` / ``x_extra`` are the delayed states the within-region / between-region synaptic inputs
+        see (default: ``x``, no delay); the leak terms always use ``x``."""
         n = self.n_regions
         X = x.reshape(n, 8)
         v, i = X[:, :4], X[:, 4:]
-        S = 1.0 / (1.0 + jnp.exp(-theta.R * v)) - 0.5  # (n, 4)
+        sig = lambda z: 1.0 / (1.0 + jnp.exp(-theta.R * z)) - 0.5  # noqa: E731
+        S = sig((x if x_intra is None else x_intra).reshape(n, 8)[:, :4])  # (n, 4), intrinsic inputs
+        Se = sig((x if x_extra is None else x_extra).reshape(n, 8)[:, :4])  # extrinsic inputs
         G, T = theta.G, theta.T
-        fwd = (theta.A_forward * self._reciprocal_scaling(self.A_forward)) @ S[:, 1]  # sp of sources
-        bwd = (theta.A_backward * self._reciprocal_scaling(self.A_backward)) @ S[:, 3]  # dp of sources
+        fwd = (theta.A_forward * self._reciprocal_scaling(self.A_forward)) @ Se[:, 1]  # sp of sources
+        bwd = (theta.A_backward * self._reciprocal_scaling(self.A_backward)) @ Se[:, 3]  # dp of sources
         inp = jnp.stack(
             [
                 fwd - G[:, 0] * S[:, 0] - G[:, 1] * S[:, 1] - G[:, 2] * S[:, 2] + self.u_gain * u,
@@ -623,7 +674,11 @@ class SpectralDCM:
         freqs = self.freqs if freqs is None else freqs
         th = self.theta(p)
         A, B, C = linearise(self.spec, th)
-        H = transfer_function(A, B, C, 2 * jnp.pi * freqs)  # (nf, n, n)
+        if getattr(self.spec, "delays", None) is not None:
+            A_local, A_intra, A_extra = self.spec.split_jacobian(th, fixed_point(self.spec, th))
+            H = delayed_transfer_function(A_local, A_intra, A_extra, B, C, th.D, 2 * jnp.pi * freqs)
+        else:
+            H = transfer_function(A, B, C, 2 * jnp.pi * freqs)  # (nf, n, n)
         G_u = self._innovation_psd(p, freqs)  # (nf, n)
         S_src = jnp.einsum("fij,fj,fkj->fik", H, G_u.astype(jnp.complex128), jnp.conj(H))
         L = self.effective_leadfield(p)
@@ -686,14 +741,32 @@ class SpectralDCM:
         u = _gaussian_series(jax.vmap(jnp.diag)(G_u.astype(jnp.complex128)), fs_int, n_int, k_u)  # (n_regions, T_int)
         x0 = fixed_point(self.spec, th)
         y0 = self.spec.output(x0)
+        if getattr(self.spec, "delays", None) is not None:
+            # delayed synaptic inputs: keep the last m states; the delayed state at t + dt is the next buffer entry
+            d_i, d_e = (max(int(round(float(d) * fs_int)), 1) for d in th.D)
+            m = max(d_i, d_e) + 1
+            buf0 = jnp.tile(x0, (m, 1))
 
-        def step(x, u_t):
-            k1 = self.spec.vector_field(th, x, u_t)
-            k2 = self.spec.vector_field(th, x + dt * k1, u_t)
-            x = x + 0.5 * dt * (k1 + k2)
-            return x, self.spec.output(x) - y0
+            def step(carry, u_t):
+                x, buf = carry
+                xi, xe = buf[m - 1 - d_i], buf[m - 1 - d_e]  # buf[-1] is x(t)
+                k1 = self.spec.vector_field(th, x, u_t, xi, xe)
+                xi1, xe1 = buf[m - d_i], buf[m - d_e]  # the delayed states one step later
+                k2 = self.spec.vector_field(th, x + dt * k1, u_t, xi1, xe1)
+                x = x + 0.5 * dt * (k1 + k2)
+                buf = jnp.concatenate([buf[1:], x[None]], axis=0)
+                return (x, buf), self.spec.output(x) - y0
 
-        _, y = jax.lax.scan(step, x0, u.T)  # (T_int, n_regions)
+            _, y = jax.lax.scan(step, (x0, buf0), u.T)
+        else:
+
+            def step(x, u_t):
+                k1 = self.spec.vector_field(th, x, u_t)
+                k2 = self.spec.vector_field(th, x + dt * k1, u_t)
+                x = x + 0.5 * dt * (k1 + k2)
+                return x, self.spec.output(x) - y0
+
+            _, y = jax.lax.scan(step, x0, u.T)  # (T_int, n_regions)
         y = np.asarray(y[int(round(burn_in_s * fs_int)) :]) / amplitude
         from fractions import Fraction
 

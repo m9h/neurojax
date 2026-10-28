@@ -316,6 +316,47 @@ class TestCMC:
         loose = CMCSpec(n_regions=2, A_forward=jnp.array([[0.0, 0.0], [800.0, 0.0]]), extrinsic_var=0.5)
         assert [v for name, _, v in loose.param_spec() if name == "A_forward"] == [0.5]
 
+    def test_conduction_delays(self):
+        """Tiny delays reproduce the undelayed CSD; an extrinsic delay adds the phase −ω d_e to the forward
+        cross-spectrum; the delay parameters are two log-scalings; the delayed nonlinear simulation at small
+        amplitude has the delayed CSD."""
+        from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
+
+        freqs = jnp.linspace(2.0, 40.0, 39)
+        A_f = jnp.array([[0.0, 0.0], [800.0, 0.0]])
+        plain = SpectralDCM(CMCSpec(n_regions=2, A_forward=A_f), leadfield=jnp.eye(2), freqs=freqs)
+        tiny = SpectralDCM(CMCSpec(n_regions=2, A_forward=A_f, delays=(1e-7, 1e-7)), leadfield=jnp.eye(2), freqs=freqs)
+        assert [n for n in tiny.names if n.startswith("D[")] == ["D[0]", "D[1]"]
+        S0 = np.asarray(plain.predict(plain.prior_mean))
+        S1 = np.asarray(tiny.predict(tiny.prior_mean))
+        assert np.allclose(S0, S1, rtol=1e-4, atol=1e-12)
+        d_e = 0.016
+        delayed = SpectralDCM(CMCSpec(n_regions=2, A_forward=A_f, delays=(1e-7, d_e)), leadfield=jnp.eye(2), freqs=freqs)
+        # region 1 is driven by region 0 only through the delayed forward connection: the neural cross-spectrum
+        # S_10 = H_10 G H_00* picks up exactly e^{-iω d_e} relative to the undelayed model (the common channel
+        # noise adds a real off-diagonal term, so compare the neural parts)
+        N0 = np.asarray(plain._sensor_csd(plain.prior_mean, include_noise=False))
+        N2 = np.asarray(delayed._sensor_csd(delayed.prior_mean, include_noise=False))
+        phase = np.angle(N2[:, 1, 0] / N0[:, 1, 0])
+        expected = np.angle(np.exp(-1j * 2 * np.pi * np.asarray(freqs) * d_e))
+        assert np.allclose(phase, expected, atol=1e-6)
+        # nonlinear simulation with delays: power matches the delayed CSD at small amplitude, and with region 1
+        # driven only through the delayed forward connection (its own innovations silenced, coherence ~1) the
+        # simulated cross-spectrum carries the delay's phase
+        p = delayed.prior_mean.at[delayed.index("a_u", 1)].set(-8.0)
+        x = delayed.simulate(p, fs=250.0, duration_s=120.0, key=jax.random.PRNGKey(3), nonlinear=True, amplitude=0.1)
+        S_sim = _multitaper_csd(x, 250.0, np.asarray(freqs))
+        Sp = np.asarray(delayed._sensor_csd(p))
+        rms = np.sqrt(np.mean((np.log(np.real(np.diagonal(S_sim, axis1=1, axis2=2))) - np.log(np.real(np.diagonal(Sp, axis1=1, axis2=2)))) ** 2))
+        assert rms < 0.25, rms
+        coh = np.abs(S_sim[:, 1, 0]) / np.sqrt(S_sim[:, 0, 0].real * S_sim[:, 1, 1].real)
+        coh_pred = np.abs(Sp[:, 1, 0]) / np.sqrt(Sp[:, 0, 0].real * Sp[:, 1, 1].real)  # < 1 through the channel noise
+        assert coh_pred.mean() > 0.5 and np.abs(coh - coh_pred).mean() < 0.1, (coh.mean(), coh_pred.mean())
+        dphi = np.angle(S_sim[:, 1, 0] / Sp[:, 1, 0])
+        assert np.abs(dphi).mean() < 0.1, np.abs(dphi).mean()  # matches the delayed model
+        Sp0 = np.asarray(plain._sensor_csd(plain.prior_mean.at[plain.index("a_u", 1)].set(-8.0)))
+        assert np.abs(np.angle(S_sim[:, 1, 0] / Sp0[:, 1, 0])).mean() > 1.0  # and not the undelayed one
+
     def test_recovers_inhibitory_time_constant(self):
         from neurojax.inverse.csd_dcm import CMCSpec, SpectralDCM
 

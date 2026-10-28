@@ -67,7 +67,8 @@ def simulate_recording(d: Path, f: Path, amplitude: float, duration_s: float, fs
     if "A_forward" not in lf:  # fits from before 2026-10-26 used pre-SPM extrinsic semantics; the simulator would not match them
         raise ValueError(f"{d}: leadfield files carry no network; refit with the current dcm_propofol_sources.py")
     spec = CMCSpec(n_regions=4, A_forward=jnp.asarray(lf["A_forward"]), A_backward=jnp.asarray(lf["A_backward"]),
-                   extrinsic_var=float(lf["extrinsic_var"]))
+                   extrinsic_var=float(lf["extrinsic_var"]),
+                   delays=tuple(float(d) for d in lf["delays"]) if "delays" in lf and np.size(lf["delays"]) == 2 else None)
     dcm = SpectralDCM(spec, leadfield=jnp.asarray(lf["L3"]), orientation=jnp.asarray(lf["nn"]), freqs=jnp.asarray(FREQS),
                       noise_fraction=float(lf["noise_fraction"]) if "noise_fraction" in lf else 0.01,
                       noise_var=float(lf["noise_var"]) if "noise_var" in lf else 1 / 128)
