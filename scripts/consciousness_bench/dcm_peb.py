@@ -2,10 +2,18 @@
 
 Reads the ``posterior_<subject>_<condition>.npz`` files written by
 ``dcm_propofol.py`` / ``dcm_propofol_sources.py`` and fits a parametric
-empirical Bayes model with design ``[subject indicators, mild, moderate, recovery]``
+empirical Bayes model with design ``[group mean, mild, moderate, recovery, centred subject indicators]``
 (recordings as rows; the subject columns absorb the pairing), reporting each sedation effect on every parameter
 with its posterior sd and the Bayesian-model-reduction evidence (nats) for
 keeping it.
+
+Every design column has the prior ``N(0, pC)``, so a column must not carry an
+offset that the data put far from the prior: uncentred subject indicators
+(4 recordings each) are shrunk hard toward the prior mean, and the offset common
+to every subject then leaks into the sedation columns (20 recordings each) as a
+spurious effect of every drug level, recovery included.  The intercept carries
+that offset (80 recordings, negligible shrinkage); the subject columns are
+centred so they carry only deviations from it.
 
 The between-subject covariance is one component scaled by a single
 log-precision (as ``spm_dcm_peb``); ``--per-parameter-gamma`` estimates one
@@ -43,15 +51,16 @@ def main(d: Path, shared_gamma: bool = True):
         pE, pC, names = z["pE"], z["pC"], list(z["names"])
     Ep, Cp = np.stack(Ep), np.stack(Cp)
     subjects = sorted({s for s, _ in rows})
-    # subject indicator columns (fixed effects for the pairing) + sedation-level columns; no intercept
-    X = np.column_stack([[1.0 if s == sub else 0.0 for s, _ in rows] for sub in subjects]
-                        + [[1.0 if c == k else 0.0 for _, c in rows] for k in COND])
+    # group mean, sedation levels relative to baseline, centred subject indicators (pairing)
+    S = np.array([[1.0 if s == sub else 0.0 for sub in subjects] for s, _ in rows])
+    X = np.column_stack([np.ones(len(rows))] + [[1.0 if c == k else 0.0 for _, c in rows] for k in COND]
+                        + [S - S.mean(axis=0)])
     print(f"{len(rows)} recordings, {Ep.shape[1]} parameters, design {X.shape}", flush=True)
     res = peb(jnp.asarray(Ep), jnp.asarray(Cp), jnp.asarray(pE), jnp.asarray(pC), jnp.asarray(X), shared_gamma=shared_gamma)
-    dF = bmr_effects(res, covariates=list(range(len(subjects), len(subjects) + len(COND))))  # sedation effects only
+    dF = bmr_effects(res, covariates=list(range(1, 1 + len(COND))))  # sedation effects only
     sd = np.sqrt(np.diag(np.asarray(res.Cb))).reshape(res.Eb.shape)
     out = []
-    for ci, cname in enumerate([f"subject_{s}" for s in subjects] + COND):
+    for ci, cname in enumerate(["mean"] + COND + [f"subject_{s}" for s in subjects]):
         for k, name in enumerate(names):
             out.append(dict(effect=cname, param=name, mean=float(res.Eb[ci, k]), sd=float(sd[ci, k]), dF_bmr=float(dF[ci, k])))
     tab = pd.DataFrame(out)

@@ -576,8 +576,56 @@ gap (2.24 observed; 1.87 → 2.09).  Caveat: the intrinsic delay runs to
 6–15 ms on 12 of 16 recordings against its 1 ms prior (~10 prior SD),
 so part of the misfit has moved from the time constants into the
 intrinsic delay rather than gone; the extrinsic delay stays near its
-prior (2–25 ms, median 12).  Full refit with delays: job 1895,
-`dcm_sources_delays/`.
+prior (2–25 ms, median 12).
+
+**Full refit with delays (job 1895, `dcm_sources_delays/`):** F up on 74
+of 80 recordings (median +150 nats, sum +12 290; every level gains
+alike), time-constant excursions beyond 4 prior SD halve (713 → 369 of
+1 280), the alpha peak reaches its observed height (2.09 predicted vs
+2.17 observed over 466 mode-recordings) but its width gap only shrinks
+from 0.88 to 0.67 Hz (FWHM 3.45 observed, 4.33 → 4.12 predicted).  The
+intrinsic delay sits at 8–12 ms at every level (interquartile 6.5–13
+ms, no sedation effect, d < 0.2), the extrinsic delay at 11–14 ms.  The
+better model *weakens* the moderate-sedation effects: left-frontal
+interneuron self-inhibition d −0.63 (p 0.009; was −0.98), right frontal
+−0.39, and the left-frontal spiny-stellate and inhibitory time-constant
+effects vanish (d −0.05, +0.15) — they were partly the time constants
+standing in for the missing delay.  A 10 ms delay inside one cortical
+column is not plausible conduction, so the control is extrinsic-only
+delays (intrinsic pinned at 1 µs; job 1898, `dcm_sources_extdelay/`).
+
+**Correction: the PEB design (2026-10-28).**  Every PEB result above
+used `[subject indicators, mild, moderate, recovery]` with no intercept.
+Every design column has the first-level prior `N(0, pC)` as its prior,
+so the subject columns — four recordings each — were shrunk hard to the
+prior mean, and any offset that all subjects share (a parameter that the
+data put far from its prior, as the time constants and the intrinsic
+delay are) leaked into the three sedation columns, 20 recordings each.
+That is the "drug-present rise of the glutamatergic time constants,
+recovery included": on the delay fits the subject columns averaged 0.28
+for the intrinsic delay against a baseline posterior mean of 2.06, and
+PEB reported +0.9 to +1.0 for every level where the paired difference
+is 0.07.  `dcm_peb.py` now uses `[group mean, mild, moderate, recovery,
+centred subject indicators]` (SPM's convention: constant first), which
+raises the PEB free energy (delay set 22 584 → 23 277).  Re-run on every
+fit set, the sedation effects above 3 nats are:
+
+| fit set | effects > 3 nats (moderate unless noted) |
+|---|---|
+| `dcm_cmc` (sensor, one source) | `G[0, 6]` +0.62 (6.3), `T_ss` +0.48 (3.9); recovery `G[0, 7]` −0.50 (3.4) |
+| `dcm_sources_free` | LF ii→ii −0.62 (5.2), RF ii→ii −0.52 (3.3) |
+| `dcm_sources_stable` | RF ii→ii −0.74 (6.9), LF ii→ii −0.51 (3.2) |
+| `dcm_sources_mt3` | RF ii→ii −0.59 (4.2), LF ii→ii −0.53 (3.4) |
+| `dcm_sources_lateral` | LF ii→ii −0.53 (3.3), RO ii→ii −0.54 (3.2) |
+| `dcm_sources_lateral_best` | LF ii→ii −0.59 (4.2) |
+| `dcm_sources_noise` | RF ii→ii −0.80 (8.8), LO ii→ii −0.55 (3.8), RO `G[1, 0]` +0.58 (3.7) |
+| `dcm_sources_delays` | none (LF ii→ii −0.35, 1.9; RF −0.28, 1.1) |
+
+The time-constant effects are gone from every set, and so are the
+mild- and recovery-level effects in the source models.  What every
+source model agrees on is a single level-specific effect: moderate
+propofol lowers interneuron self-inhibition in frontal cortex.  The
+paired contrasts were never affected.
 
 Not ported from Maschke 2024: avalanche exponents / DCC (needs `powerlaw`
 fits and long recordings), Fano factor, avalanche repertoire, the
