@@ -593,6 +593,17 @@ effects vanish (d −0.05, +0.15) — they were partly the time constants
 standing in for the missing delay.  A 10 ms delay inside one cortical
 column is not plausible conduction, so the control is extrinsic-only
 delays (intrinsic pinned at 1 µs; job 1898, `dcm_sources_extdelay/`).
+Simulation comparison on the delay fits (job 1897; the first attempt,
+1896, ran out of memory because the shortest fitted time constant, ~0.13
+ms, drives the adaptive step to ~30 kHz — 6 workers instead of 20):
+the linear simulation gets the spectral contrasts closest yet (moderate
+relative beta 1.38 vs 1.41 observed, relative alpha −0.88 vs −1.03) and
+less spurious chaos (0-1 test −0.36, permutation entropy −0.48, were
+−0.70 / −0.74), but MSE recovers less (−0.44 vs −0.90) and the alpha-
+envelope DFA now moves the wrong way (−0.83 vs +0.17).  Unlike every
+undelayed set, amplitude 0.3 no longer matches the linear run: the
+spectral contrasts collapse (relative beta 0.50), so with delays the
+fitted operating points sit where the sigmoid's curvature matters.
 
 **Correction: the PEB design (2026-10-28).**  Every PEB result above
 used `[subject indicators, mild, moderate, recovery]` with no intercept.
